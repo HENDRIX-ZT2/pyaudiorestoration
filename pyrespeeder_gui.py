@@ -3,7 +3,7 @@ import soundfile as sf
 import os
 import sys
 import resampy
-from numpy import asarray, arange, interp, repeat, rint, int64, resize, loadtxt, median, mean
+from numpy import asarray, arange, interp, repeat, rint, int64, resize, loadtxt, median, mean, random
 import numpy as np
 import librosa
 import librosa.display
@@ -93,7 +93,7 @@ def draw_spec(filename, fft_size = 8192, fft_overlap = 0.5, use_channel=0):
 	text_file.close()
 	
 
-def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, target_freq = None, use_channels = [0,]):
+def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, target_freq = None, use_channels = [0,], dither=True):
 
 	#read the file
 	soundob = sf.SoundFile(filename)
@@ -173,14 +173,20 @@ def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, tar
 				
 				#apply the different methods
 				if resampling_mode == "Feaster":
-				
+					
+					#multiply each sample by the expansion factor
+					signal_block_s = resampling_factor * speed_samples_r[block_start:block_end]
+					
+					#add -.5 to +.5 random noise before quantization to minimizes the global error at the cost of more local error
+					if dither:
+						signal_block_s = random.rand(len(signal_block_s))-.5 + signal_block_s
+						
 					#the factor has to be rounded and converted to int64 for repeat to accept it
-					speed_samples_i = rint(resampling_factor * speed_samples_r[block_start:block_end]).astype(int64)
+					speed_samples_i = rint(signal_block_s).astype(int64)
 					#repeat each sample by the resampling_factor * the speed factor for that sample
 					upsampled = repeat(signal_block, speed_samples_i)
 					
 					#now divide it by the resampling_factor to return to the original median speed
-					#this is fast and does not cut off high freqs
 				elif resampling_mode == "Blocks":
 					#take a block of the signal
 					#tradeoff between frequency and time precision -> good for wow, unusable for flutter
@@ -189,6 +195,7 @@ def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, tar
 					#here we do not use the specified resampling factor but instead make our own from the average speed of the current block
 					resampling_factor = 1/ mean(speed_samples_r[block_start:block_end])
 				
+				#this is fast and does not cut off high freqs
 				resampled = resampy.resample(upsampled, resampling_factor, 1, filter='sinc_window', num_zeros=4)
 				
 				#fast attenuation of clicks, not perfect but better than nothing
@@ -199,7 +206,7 @@ def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, tar
 				
 				#resample write the output block to the audio file
 				outfile.write(resampled)
-	print("Done!")	
+	print("Done!\n")	
 	#TODO:
 	#cover up block cuts, with overlap
 	#for blocks: adaptive resolution according to speed derivation. more derivation = shorter blocks
@@ -226,16 +233,21 @@ except NameError:  # We are the main py2exe script, not a module
     approot = os.path.dirname(os.path.abspath(sys.argv[0]))
 
 class Application:
-	def print_s(self, *msg):
-		try:
-			print(*msg)
-		except:
-			print("Could not print this!")
 		
+	def dither_changed(self):
+		dither = self.var_dither.get()
+		#print("dither?",dither)
+		if self.var_mode.get() == "Feaster":
+			if dither:
+				self.var_freq_prec.set(str(float(self.var_freq_prec.get())*10))
+			else:
+				self.var_freq_prec.set(str(float(self.var_freq_prec.get())/10))
+			
 	def mode_changed(self, mode):
-		print("new mode",mode)
+		#print("new mode",mode)
 		if mode == "Feaster":
-			self.var_freq_prec.set("0.5")
+			self.var_dither.set(True)
+			self.var_freq_prec.set("5.0")
 			self.var_temp_prec.set("?")
 		elif mode == "Blocks":
 			self.var_freq_prec.set("0.01")
@@ -264,8 +276,9 @@ class Application:
 			use_channels = [k for k, v in self.vars_channels.items() if v.get()]
 			mode = self.var_mode.get()
 			freq_prec = float(self.var_freq_prec.get())
-			print(use_channels,mode,freq_prec)
-			work_resample(self.var_file.get(), resampling_mode=mode, frequency_prec=freq_prec, use_channels=use_channels)
+			dither = self.var_dither.get()
+			print(use_channels,mode,freq_prec,dither)
+			work_resample(self.var_file.get(), resampling_mode=mode, frequency_prec=freq_prec, use_channels=use_channels, dither= dither)
 	
 	def show_channels(self, num_channels):
 		self.vars_channels={}
@@ -318,13 +331,17 @@ class Application:
 		ttk.Label(self.parent, text="Temporal Precision").grid(row=5, column=0, sticky='nsew')
 		ttk.Entry(self.parent, textvariable=self.var_temp_prec).grid(row=5, column=1, sticky='nsew')
 		
-		ttk.Button(self.parent, text="Run Spectrum", command=self.run_spectrum).grid(row=6, column=0, sticky='nsew')
-		ttk.Button(self.parent, text="Run Resample", command=self.run_resample).grid(row=6, column=1, sticky='nsew')
+		self.var_dither = BooleanVar()
+		ttk.Checkbutton(self.parent, text="Use Dither", variable=self.var_dither, command=self.dither_changed).grid(sticky='nw', column=0, row=6)
+				
+		ttk.Button(self.parent, text="Run Spectrum", command=self.run_spectrum).grid(row=7, column=0, sticky='nsew')
+		ttk.Button(self.parent, text="Run Resample", command=self.run_resample).grid(row=7, column=1, sticky='nsew')
 		
 		self.var_fft_size.set("4096")
 		self.var_fft_overlap.set("0.125")
 		self.var_mode.set(modes[0])
 		self.mode_changed(modes[0])
+		self.var_dither.set(True)
 		
 		
 		

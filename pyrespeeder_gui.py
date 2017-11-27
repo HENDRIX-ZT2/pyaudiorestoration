@@ -9,6 +9,98 @@ import librosa
 import librosa.display
 import matplotlib.pyplot as plt
 
+def COG(magnitudes, freqs, NL, NU):
+	#adapted from Czyzewski et al. (2007)
+	#18
+	#calculate the COG with hanned frequency importance
+	#error in the printed formula: the divisor also has to contain the hann window
+	weighted_magnitudes = np.hanning(NU-NL) * magnitudes[NL:NU]
+	return np.sum(weighted_magnitudes * np.log2(freqs[NL:NU])) / np.sum(weighted_magnitudes)
+	
+# def hann(freqs, fL, fU):
+	#adapted from Czyzewski et al. (2007)
+	# #17
+	# #custom hann window around the frequency band fL, fU for frequencies freqs
+	# return 0.5-0.5*np.cos(2*np.pi*(np.log2(freqs) - np.log2(fL)) / (np.log2(fU) - np.log2(fL)))
+
+def trace_cog(filename, fft_size = 8192, fft_overlap = 1, use_channel=0, fL = 2260, fU = 2320):
+	#adapted from Czyzewski et al. (2007)
+
+	soundob = sf.SoundFile(filename)
+	signal = soundob.read(always_2d=True)
+	sr = soundob.samplerate
+	N = 1 + fft_size
+	
+	hop = int(fft_overlap*fft_size)
+	D = librosa.stft(signal[:,use_channel], n_fft=fft_size, hop_length=hop)
+	#print(D.shape)
+	
+	#bin indices of the starting band
+	NL = int(round(fL / sr * N))
+	NU = int(round(fU / sr * N))
+	
+	print(NL,NU)
+	#the frequencies of the bins
+	freqs = librosa.fft_frequencies(sr=sr, n_fft=fft_size)
+
+	LSCoct = []
+	LfL = []
+	LfU = []
+	times = []
+	
+	#calculate the first COG
+	SCoct0  = COG(np.abs(D[:, 0]), freqs, NL, NU)
+	#16a,b
+	#the limits for the first time frame
+	#constant for all time frames
+	#SCoct[0]: the the first COG
+	dfL = SCoct0 - np.log2(fL)
+	dfU = np.log2(fU) - SCoct0
+	print(dfL,dfU)
+	
+	for i in range(0, D.shape[1]-1):
+		#18
+		#calculate the COG with hanned frequency importance
+		#error in the printed formula: the divisor also has to contain the hann window
+		SCoct = COG(np.abs(D[:, i]), freqs, NL, NU)
+		
+		#save the data of this frame
+		
+		#19
+		#Hz = 2^COG
+		LSCoct.append(2**SCoct)
+		LfL.append(fL)
+		LfU.append(fU)
+		times.append(i*hop/sr)
+		
+		#15a,b
+		#set the limits for the consecutive frame [i+1]
+		#based on those of the first frame
+		fL = 2**(SCoct-dfL)
+		fU = 2**(SCoct+dfU)
+		NL = int(round(fL / sr * N))
+		NU = int(round(fU / sr * N))
+	
+	# plt.plot(times, LSCoct, label="LSCoct")
+	# plt.plot(times, LfU, label="LfU")
+	# plt.plot(times, LfL, label="LfL")
+	
+	
+	# plt.xlabel('Time (samples)')
+	# plt.ylabel('Freg Hz')
+	# plt.legend(frameon=True, framealpha=0.75)
+	# plt.show()
+	
+	#write the data to the speed file
+	print("Writing speed data")
+	speedfilename = filename.rsplit('.', 1)[0]+".speed"
+	outstr = "\n".join([str(t)+" "+str(f) for t, f in zip(times, LSCoct)])
+	text_file = open(speedfilename, "w")
+	text_file.write(outstr)
+	text_file.close()
+	
+	
+	
 class LineBuilder:
 	def __init__(self, line):
 		self.line = line
@@ -80,6 +172,13 @@ def draw_spec(filename, fft_size = 8192, fft_overlap = 0.5, use_channel=0):
 	
 	fig = plt.figure()
 	hop = int(fft_overlap*fft_size)
+	
+	# #working mel scaled spectrum - but the accuracy is not perfect
+	# S = librosa.feature.melspectrogram(signal[:,use_channel], n_fft=fft_size, hop_length=hop, n_mels = int(fft_size/4))
+	# D = librosa.logamplitude(S, ref_power=np.max)
+	# librosa.display.specshow(D, sr=sr, x_axis="time", y_axis='mel', hop_length=hop)#, shading="gouraud")
+	
+	
 	D = librosa.amplitude_to_db(librosa.stft(signal[:,use_channel], n_fft=fft_size, hop_length=hop), ref=np.max)
 	librosa.display.specshow(D, sr=sr, x_axis="time", y_axis='log', hop_length=hop)#, shading="gouraud")
 	plt.colorbar(format='%+2.0f dB')
@@ -280,7 +379,7 @@ class Application:
 			self.var_temp_prec.set("0.226s")
 		
 	def open_file(self):
-		file_path = filedialog.askopenfilename(filetypes = [('WAV', '.wav'), ('FLAC', '.flac')], defaultextension=".wav", initialdir="", parent=self.parent, title="Open Audio File" )
+		file_path = filedialog.askopenfilename(filetypes = [("Audio Files", (".wav", ".flac")), ('All Files', '.*'), ('WAV Files', '.wav'), ('FLAC Files', '.flac')], defaultextension=".wav", initialdir="", parent=self.parent, title="Open Audio File" )
 		if file_path:
 			#read the file
 			soundob = sf.SoundFile(file_path)
@@ -296,6 +395,18 @@ class Application:
 			fft_overlap = float(self.var_fft_overlap.get())
 			print(use_channel,fft_size,fft_overlap)
 			draw_spec(self.var_file.get(), fft_size = fft_size, fft_overlap = fft_overlap, use_channel=use_channel)
+			
+	def run_cog_trace(self):
+		if self.var_file.get():
+			#only use the first channel of those that are selected
+			use_channel = [k for k, v in self.vars_channels.items() if v.get()][0]
+			
+			fft_size = int(self.var_fft_size.get())
+			fft_overlap = float(self.var_fft_overlap.get())
+			fL = float(self.var_freq_lower.get())
+			fU = float(self.var_freq_upper.get())
+			print(use_channel,fft_size,fft_overlap,fL,fU)
+			trace_cog(self.var_file.get(), fL=fL, fU=fU, use_channel=use_channel)#, fft_size = fft_size, fft_overlap = fft_overlap)
 			
 	def run_resample(self):
 		if self.var_file.get():
@@ -358,12 +469,24 @@ class Application:
 		ttk.Entry(self.parent, textvariable=self.var_temp_prec).grid(row=5, column=1, sticky='nsew')
 		
 		self.var_dither = StringVar()
-		dithers = ("Random", "Diffused", "None")
-		ttk.Label(self.parent, text="Dither Mode").grid(row=6, column=0, sticky='nsew')
+		dithers = ("Diffused", "Random", "None")
+		ttk.Label(self.parent, text="Dithering Mode").grid(row=6, column=0, sticky='nsew')
 		ttk.OptionMenu(self.parent, self.var_dither, dithers[0], *dithers, command=self.dither_changed).grid(row=6, column=1, sticky='nsew')
+				
+				
+				
 				
 		ttk.Button(self.parent, text="Run Spectrum", command=self.run_spectrum).grid(row=7, column=0, sticky='nsew')
 		ttk.Button(self.parent, text="Run Resample", command=self.run_resample).grid(row=7, column=1, sticky='nsew')
+		
+		self.var_freq_lower = StringVar()
+		ttk.Label(self.parent, text="Lower End (Hz)").grid(row=8, column=0, sticky='nsew')
+		ttk.Entry(self.parent, textvariable=self.var_freq_lower).grid(row=8, column=1, sticky='nsew')
+		self.var_freq_upper = StringVar()
+		ttk.Label(self.parent, text="Upper End (Hz)").grid(row=9, column=0, sticky='nsew')
+		ttk.Entry(self.parent, textvariable=self.var_freq_upper).grid(row=9, column=1, sticky='nsew')
+		
+		ttk.Button(self.parent, text="Trace Adaptive Center of Gravity", command=self.run_cog_trace).grid(row=10, column=0, columnspan=2, sticky='nsew')
 		
 		self.var_fft_size.set("4096")
 		self.var_fft_overlap.set("0.125")
@@ -372,6 +495,8 @@ class Application:
 		self.var_dither.set(dithers[0])
 		self.dither_changed(dithers[0])
 		
+		self.var_freq_lower.set("2260")
+		self.var_freq_upper.set("2320")
 		
 		
 		

@@ -34,7 +34,7 @@ General purpose, but slower. Much faster and more accurate with dithering enable
 General purpose and best quality, but slowest. Ideal resampling, hence no overtones or distortion.
 
 3) Automatic Tracing:
-a) Trace Adaptive Center of Gravity [adapted from Czyzewski et al. (2007)]:
+- Trace Adaptive Center of Gravity [adapted from Czyzewski et al. (2007)]:
 The trace starts in the given frequency band, which should be relatively narrow and not too low.
 
 

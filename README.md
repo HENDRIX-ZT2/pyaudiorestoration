@@ -3,14 +3,13 @@ Remove tape wow and flutter from audio recordings via their spectra. A simple so
 
 -Installation-
 You need to have installed:
-
-python 3
-numpy
-librosa: https://librosa.github.io/
-resampy: http://resampy.readthedocs.io/en/latest/
-pysoundfile: https://pysoundfile.readthedocs.io/
-scipy (some of the others probably depend on it)
-tkinter
+- python 3
+- numpy
+- librosa: https://librosa.github.io/
+- resampy: http://resampy.readthedocs.io/en/latest/
+- pysoundfile: https://pysoundfile.readthedocs.io/
+- scipy (some of the others probably depend on it)
+- tkinter
 
 Best install these with pip (eg. pip install resampy).
 
@@ -20,14 +19,27 @@ python pyrespeeder_gui.py
 
 Otherwise, specify the full paths to python.exe and the script.
 
--Usage-
-Once started, a small GUI appears. Open a file and adjust the settings as you like.
 
-1) identify the wow in the spectrum
-Run the spectrogram and "trace" the sound with CTRL+leftclicks, point by point (linear interpolation!), then close the spectrogram. ALT+Click deletes a point, DELETE+Click deletes all. Your trace is written to a text file.
 
-2) remove the wow
-Then run the resampler. It will use your trace to respeed the track.
+-Modes-
+1) Manual Tracing:
+Run the spectrogram and "trace" the sound with CTRL+leftclicks, point by point (linear interpolation!), then close the spectrogram. ALT+Click deletes a point, DELETE+Click deletes all. Your trace is written to a text file upon closing.
 
-Channels:
--Spectrum uses always the first selected channel, resampling uses all selected channels
+2) Resampling:
+a) Blocks method:
+Good for long-range, gradual wow. Fast, good frequency precision, little temporal precision.
+b) Feaster method [adapted from Feaster, P. (2017)]:
+General purpose, but slower. Much faster and more accurate with dithering enabled.
+
+3) Automatic Tracing:
+a) Trace Adaptive Center of Gravity [adapted from Czyzewski et al. (2007)]:
+The trace starts in the given frequency band, which should be relatively narrow and not too low.
+
+
+-Notes-
+- Manual and automatic tracing always uses the first selected channel, resampling uses all selected channels
+
+
+References:
+- Czyzewski et al. (2007). DSP Techniques for Determining "Wow" Distortion. Journal of the Audio Engineering Society. 55.
+- Feaster, P. (2017). The Wow Factor in Audio Restoration. [https://griffonagedotcom.wordpress.com/2017/02/16/the-wow-factor-in-audio-restoration/]

@@ -8,27 +8,104 @@ import numpy as np
 import librosa
 import librosa.display
 import matplotlib.pyplot as plt
+import time
 
-def sinc_interp(x, s, u):
+	
+def sinc_interp_windowed(y_in, x_in, x_out, ):
+	"""
+	base by Gaute Hope: https://gist.github.com/gauteh/8dea955ddb1ed009b48e
+	Interpolate the signal to the new points using a sinc kernel
+
+	input:
+	x_in		time points x is defined on
+	y_in		 input signal column vector or matrix, with a signal in each row
+	x_out		points to evaluate the new signal on
+
+	output:
+	y		 the interpolated signal at points x_out
+	"""
+
+	mn = y_in.shape
+	if len(mn) == 2:
+		m = mn[0]
+		n = mn[1]
+	elif len(mn) == 1:
+		m = 1
+		n = mn[0]
+	else:
+		raise ValueError ("y_in is greater than 2D")
+
+	nn = len(x_out)
+
+	y = np.zeros((m, nn))
+	
+	#has to be fairly high
+	a = int(max(len(x_in), len(x_out))/10)
+
+	for pi, p in enumerate (x_out):
+		#map the output to the input
+		pi_in = int(round(pi / len(x_out) * len(x_in)))
+		
+		lower = max(0, pi_in-a)
+		upper = pi_in+a
+		si = np.tile(np.sinc (x_in[lower:upper] - p), (m, 1))
+		y[:, pi] = np.sum(si * y_in[lower:upper])
+	return y.squeeze ()
+	
+def sinc_interp(y_in, x_in, x_out):
+  """
+  by Gaute Hope: https://gist.github.com/gauteh/8dea955ddb1ed009b48e
+  Interpolate the signal to the new points using a sinc kernel
+
+  input:
+  y_in     input signal column vector or matrix, with a signal in each row
+  x_in    time points y_in is defined on
+  x_out    points to evaluate the new signal on
+
+  output:
+  y     the interpolated signal at points x_out
+  """
+
+  mn = y_in.shape
+  if len(mn) == 2:
+    m = mn[0]
+    n = mn[1]
+  elif len(mn) == 1:
+    m = 1
+    n = mn[0]
+  else:
+    raise ValueError("y_in is greater than 2D")
+
+  nn = len(x_out)
+
+  y = np.zeros((m, nn))
+
+  for pi, p in enumerate(x_out):
+    si = np.tile(np.sinc(x_in - p), (m, 1))
+    y[:, pi] = np.sum(si * y_in)
+
+  return y.squeeze()
+  
+def sinc_interp2(y_in, x_in, x_out):
 	"""
 	by endolith: https://gist.github.com/endolith/1297227#file-sinc_interp-py
-	Interpolates x, sampled at "s" instants
-	Output y is sampled at "u" instants ("u" for "upsampled")
+	Interpolates y_in, sampled at "x_in" instants
+	Output y is sampled at "x_out" instants
 	
 	from Matlab:
 	http://phaseportrait.blogspot.com/2008/06/sinc-interpolation-in-matlab.html		   
 	"""
-	if len(x) != len(s):
-		raise ValueError('x and s must be the same length')
+	if len(y_in) != len(x_in):
+		raise ValueError('y_in and x_in must be the same length')
 	
 	# Find the period	 
-	T = s[1] - s[0]
+	T = x_in[1] - x_in[0]
 	
-	sincM = np.tile(u, (len(s), 1)) - np.tile(s[:, np.newaxis], (1, len(u)))
-	y = np.dot(x, np.sinc(sincM/T))
+	sincM = np.tile(x_out, (len(x_in), 1)) - np.tile(x_in[:, np.newaxis], (1, len(x_out)))
+	y = np.dot(y_in, np.sinc(sincM/T))
 	return y
 
-def sinc_interpolation(samples, speed):
+def sinc_interpolation(samples, speed, windowed=False):
 	#signal and speed arrays must be mono and have the same length
 	#IDK where this has to be inverted otherwise
 	speed = 1/speed
@@ -41,8 +118,9 @@ def sinc_interpolation(samples, speed):
 	in_positions = np.arange(1, in_length+1)
 	#these are unevenly sampled, but when played back at the correct (original) sampling rate, yield the respeeded result
 	out_positions = np.cumsum(interp_speed )
-	
-	return sinc_interp(samples, in_positions, out_positions)
+	if not windowed:
+		return sinc_interp(samples, in_positions, out_positions)
+	return sinc_interp_windowed(samples, in_positions, out_positions)
 	
 def COG(magnitudes, freqs, NL, NU):
 	#adapted from Czyzewski et al. (2007)
@@ -371,6 +449,11 @@ def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, tar
 					resampled[0] = signal_block[0]
 					resampled[-1] = signal_block[-1]
 				
+				elif resampling_mode == "Windowed Sinc":
+					resampled = sinc_interpolation(signal_block, speed_block, windowed=True)
+					resampled[0] = signal_block[0]
+					resampled[-1] = signal_block[-1]
+					
 				#if patch_ends:
 				#fast attenuation of clicks, not perfect but better than nothing
 				
@@ -422,6 +505,10 @@ class Application:
 			self.var_dither.set("None")
 			self.var_freq_prec.set("0.05")
 			self.var_temp_prec.set("?")
+		elif mode == "Windowed Sinc":
+			self.var_dither.set("None")
+			self.var_freq_prec.set("0.05")
+			self.var_temp_prec.set("?")
 		
 	def open_file(self):
 		file_path = filedialog.askopenfilename(filetypes = [("Audio Files", (".wav", ".flac")), ('All Files', '.*'), ('WAV Files', '.wav'), ('FLAC Files', '.flac')], defaultextension=".wav", initialdir="", parent=self.parent, title="Open Audio File" )
@@ -460,7 +547,9 @@ class Application:
 			freq_prec = float(self.var_freq_prec.get())
 			dither = self.var_dither.get()
 			print(use_channels,mode,freq_prec,dither)
+			starttime = time.clock()
 			work_resample(self.var_file.get(), resampling_mode=mode, frequency_prec=freq_prec, use_channels=use_channels, dither= dither)
+			print('Finished Respeeding in %.2f seconds' %(time.clock()-starttime))
 	
 	def show_channels(self, num_channels):
 		self.vars_channels={}
@@ -502,7 +591,7 @@ class Application:
 		ttk.Entry(self.parent, textvariable=self.var_fft_overlap).grid(row=2, column=1, sticky='nsew')
 		
 		self.var_mode = StringVar()
-		modes = ("Expansion", "Blocks", "Sinc")
+		modes = ("Expansion", "Blocks", "Sinc", "Windowed Sinc")
 		ttk.Label(self.parent, text="Resampling Mode").grid(row=3, column=0, sticky='nsew')
 		ttk.OptionMenu(self.parent, self.var_mode, modes[0], *modes, command=self.mode_changed).grid(row=3, column=1, sticky='nsew')
 		

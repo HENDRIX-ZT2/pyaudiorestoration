@@ -9,6 +9,41 @@ import librosa
 import librosa.display
 import matplotlib.pyplot as plt
 
+def sinc_interp(x, s, u):
+	"""
+	by endolith: https://gist.github.com/endolith/1297227#file-sinc_interp-py
+	Interpolates x, sampled at "s" instants
+	Output y is sampled at "u" instants ("u" for "upsampled")
+	
+	from Matlab:
+	http://phaseportrait.blogspot.com/2008/06/sinc-interpolation-in-matlab.html		   
+	"""
+	if len(x) != len(s):
+		raise ValueError('x and s must be the same length')
+	
+	# Find the period	 
+	T = s[1] - s[0]
+	
+	sincM = np.tile(u, (len(s), 1)) - np.tile(s[:, np.newaxis], (1, len(u)))
+	y = np.dot(x, np.sinc(sincM/T))
+	return y
+
+def sinc_interpolation(samples, speed):
+	#signal and speed arrays must be mono and have the same length
+	#IDK where this has to be inverted otherwise
+	speed = 1/speed
+	in_length = len(speed)
+
+	#create a new speed array that is as long as the output is going to be. the magic is in the output x's step length
+	interp_speed = np.interp(np.arange(0, in_length, np.mean(speed)), np.arange(0, in_length), speed)
+
+	#the times of the input samples these must be evenly sampled, starting at 1
+	in_positions = np.arange(1, in_length+1)
+	#these are unevenly sampled, but when played back at the correct (original) sampling rate, yield the respeeded result
+	out_positions = np.cumsum(interp_speed )
+	
+	return sinc_interp(samples, in_positions, out_positions)
+	
 def COG(magnitudes, freqs, NL, NU):
 	#adapted from Czyzewski et al. (2007)
 	#18
@@ -204,7 +239,7 @@ def draw_spec(filename, fft_size = 8192, fft_overlap = 0.5, use_channel=0):
 	text_file.close()
 	
 
-def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, target_freq = None, use_channels = [0,], dither="Random"):
+def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, target_freq = None, use_channels = [0,], dither="Random", patch_ends=False):
 
 	#read the file
 	soundob = sf.SoundFile(filename)
@@ -220,7 +255,7 @@ def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, tar
 	
 	#here we can use larger blocks without losing frequency precision (?), this speeds it up but be careful with the memory limit
 	#end value is fixed -> hence the more frequency precision, the smaller the block gets
-	if resampling_mode == "Feaster":
+	if resampling_mode == "Expansion":
 		block_size = int(1000000 / resampling_factor)
 	
 	#user/debugging info
@@ -228,7 +263,7 @@ def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, tar
 	if resampling_mode == "Blocks":
 		print("frequency precision:",frequency_prec,"%")
 		print("temporal precision (different speed every X sec)",block_size/sr)
-	if resampling_mode == "Feaster":
+	if resampling_mode == "Expansion":
 		print("frequency precision:",frequency_prec,"%")
 		print("expansion_factor",resampling_factor)
 		print("raw block_size:",block_size)
@@ -266,7 +301,7 @@ def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, tar
 	speed_samples_r = interp(arange(0, len(signal)), times, speeds, left=speeds[0], right=speeds[-1])
 	
 	#do all processing of the speed samples right here to speed up multi channel files - the speed curve can be reused as is!
-	if resampling_mode == "Feaster":
+	if resampling_mode == "Expansion":
 		#multiply each speed sample by the expansion factor
 		speed_samples_r *= resampling_factor
 		if dither == "Random":
@@ -305,11 +340,17 @@ def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, tar
 				speed_block = speed_samples_final[block_start:block_end]
 				
 				#apply the different methods
-				if resampling_mode == "Feaster":
+				if resampling_mode == "Expansion":
 					
 					#repeat each sample by the resampling_factor * the speed factor for that sample
 					upsampled = repeat(signal_block, speed_block)
 					#now divide it by the resampling_factor to return to the original median speed
+					#this is fast and does not cut off high freqs
+					resampled = resampy.resample(upsampled, resampling_factor, 1, filter='sinc_window', num_zeros=4)
+					resampled[0] = signal_block[0]
+					resampled[1] = signal_block[1]
+					resampled[-2] = signal_block[-2]
+					resampled[-1] = signal_block[-1]
 					
 				elif resampling_mode == "Blocks":
 					#take a block of the signal
@@ -318,15 +359,20 @@ def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, tar
 					
 					#here we do not use the specified resampling factor but instead make our own from the average speed of the current block
 					resampling_factor = 1/ mean(speed_block)
+					#this is fast and does not cut off high freqs
+					resampled = resampy.resample(upsampled, resampling_factor, 1, filter='sinc_window', num_zeros=4)
+					resampled[0] = signal_block[0]
+					resampled[1] = signal_block[1]
+					resampled[-2] = signal_block[-2]
+					resampled[-1] = signal_block[-1]
 				
-				#this is fast and does not cut off high freqs
-				resampled = resampy.resample(upsampled, resampling_factor, 1, filter='sinc_window', num_zeros=4)
+				elif resampling_mode == "Sinc":
+					resampled = sinc_interpolation(signal_block, speed_block)
+					resampled[0] = signal_block[0]
+					resampled[-1] = signal_block[-1]
 				
+				#if patch_ends:
 				#fast attenuation of clicks, not perfect but better than nothing
-				resampled[0] = signal_block[0]
-				resampled[1] = signal_block[1]
-				resampled[-2] = signal_block[-2]
-				resampled[-1] = signal_block[-1]
 				
 				#resample write the output block to the audio file
 				outfile.write(resampled)
@@ -334,8 +380,8 @@ def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, tar
 	#TODO:
 	#cover up block cuts, with overlap
 	#for blocks: adaptive resolution according to speed derivation. more derivation = shorter blocks
-
-#Feaster:
+	return
+#Expansion:
 #the more frequency precision (smaller percentage), the longer it takes
 #temporal precision is -theoretically- unaffected
 #but practically, input blocks become shorter for more precision, as output size should remain stable to avoid overflow
@@ -343,12 +389,6 @@ def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, tar
 # #Blocks
 # #classic tradeoff: the more frequency precision, the faster
 # #at the cost of less temporal precision
-# resampling_mode = "Blocks"
-# #resampling_mode = "Feaster"
-
-# #filename = "C:/Users/arnfi/Desktop/10. Lady Madonna.flac"
-# filename = "C:/Users/arnfi/Desktop/test.wav"
-# resample(filename, resampling_mode = resampling_mode, maxchannels = 1, target_freq = None)
 
 try:
     approot = os.path.dirname(os.path.abspath(__file__))
@@ -360,7 +400,7 @@ class Application:
 		
 	def dither_changed(self, dither):
 		#print("dither?",dither)
-		if self.var_mode.get() == "Feaster":
+		if self.var_mode.get() == "Expansion":
 			if dither == "None":
 				#self.var_freq_prec.set(str(float(self.var_freq_prec.get())/10))
 				self.var_freq_prec.set("0.5")
@@ -370,13 +410,18 @@ class Application:
 			
 	def mode_changed(self, mode):
 		#print("new mode",mode)
-		if mode == "Feaster":
+		if mode == "Expansion":
 			self.var_dither.set("Diffused")
 			self.var_freq_prec.set("5.0")
 			self.var_temp_prec.set("?")
 		elif mode == "Blocks":
+			self.var_dither.set("None")
 			self.var_freq_prec.set("0.01")
 			self.var_temp_prec.set("0.226s")
+		elif mode == "Sinc":
+			self.var_dither.set("None")
+			self.var_freq_prec.set("0.05")
+			self.var_temp_prec.set("?")
 		
 	def open_file(self):
 		file_path = filedialog.askopenfilename(filetypes = [("Audio Files", (".wav", ".flac")), ('All Files', '.*'), ('WAV Files', '.wav'), ('FLAC Files', '.flac')], defaultextension=".wav", initialdir="", parent=self.parent, title="Open Audio File" )
@@ -457,7 +502,7 @@ class Application:
 		ttk.Entry(self.parent, textvariable=self.var_fft_overlap).grid(row=2, column=1, sticky='nsew')
 		
 		self.var_mode = StringVar()
-		modes = ("Feaster", "Blocks")
+		modes = ("Expansion", "Blocks", "Sinc")
 		ttk.Label(self.parent, text="Resampling Mode").grid(row=3, column=0, sticky='nsew')
 		ttk.OptionMenu(self.parent, self.var_mode, modes[0], *modes, command=self.mode_changed).grid(row=3, column=1, sticky='nsew')
 		
@@ -470,7 +515,7 @@ class Application:
 		
 		self.var_dither = StringVar()
 		dithers = ("Diffused", "Random", "None")
-		ttk.Label(self.parent, text="Dithering Mode").grid(row=6, column=0, sticky='nsew')
+		ttk.Label(self.parent, text="Expansion Dithering").grid(row=6, column=0, sticky='nsew')
 		ttk.OptionMenu(self.parent, self.var_dither, dithers[0], *dithers, command=self.dither_changed).grid(row=6, column=1, sticky='nsew')
 				
 				

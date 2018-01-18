@@ -1,641 +1,690 @@
-from tkinter import BooleanVar,StringVar,IntVar,Tk,ttk,Menu,filedialog,Checkbutton,Text,messagebox
-import soundfile as sf
-import os
+# -*- coding: utf-8 -*-
+# -----------------------------------------------------------------------------
+# Copyright (c) 2015, Vispy Development Team. All Rights Reserved.
+# Distributed under the (new) BSD License. See LICENSE.txt for more info.
+# -----------------------------------------------------------------------------
+
+
 import sys
-import resampy
-from numpy import asarray, arange, interp, repeat, rint, int64, resize, loadtxt, median, mean, random
 import numpy as np
-import librosa
-import librosa.display
-import matplotlib.pyplot as plt
-import time
+from vispy import scene, gloo, visuals, color, util
+import soundfile as sf
+from PyQt5 import QtGui, QtCore, QtWidgets
 
-	
-def sinc_interp_windowed(y_in, x_in, x_out, ):
+#custom modules
+import vispy_ext
+import fourier
+import resampling
+import wow_detection
+
+#log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)
+norm_luminance = """
+float norm_luminance(vec2 pos) {
+	if( pos.x < 0 || pos.x > 1 || pos.y < 0 || pos.y > 1 ) {
+		return -1.0f;
+	}
+	vec2 uv = vec2(pos.x, pos.y);
+	return (texture2D($texture, uv).r - $vmin)/($vmax - $vmin);
+}
+"""
+
+simple_cmap = """
+vec4 simple_cmap(float x) {
+	return vec4(0, 0, x, 1);
+
+}
+"""
+
+class SpectrumPiece(scene.Image):
 	"""
-	base by Gaute Hope: https://gist.github.com/gauteh/8dea955ddb1ed009b48e
-	Interpolate the signal to the new points using a sinc kernel
-
-	input:
-	x_in		time points x is defined on
-	y_in		 input signal column vector or matrix, with a signal in each row
-	x_out		points to evaluate the new signal on
-
-	output:
-	y		 the interpolated signal at points x_out
+	The visualization of one part of the whole spectrogram.
 	"""
+	def __init__(self, texdata, parent):
+		#flip the shape, then it is much more straightforward for the rest
+		self._shape = (texdata.shape[1], texdata.shape[0])
+		self.get_data = visuals.shaders.Function(norm_luminance)
+		self.get_data['vmin'] = -80
+		self.get_data['vmax'] = -40
+		self.get_data['texture'] = gloo.Texture2D(texdata, format='luminance', internalformat='r32f', interpolation="linear")
 
-	mn = y_in.shape
-	if len(mn) == 2:
-		m = mn[0]
-		n = mn[1]
-	elif len(mn) == 1:
-		m = 1
-		n = mn[0]
-	else:
-		raise ValueError ("y_in is greater than 2D")
-
-	nn = len(x_out)
-
-	y = np.zeros((m, nn))
-	
-	#has to be fairly high
-	a = int(max(len(x_in), len(x_out))/10)
-
-	for pi, p in enumerate (x_out):
-		#map the output to the input
-		pi_in = int(round(pi / len(x_out) * len(x_in)))
+		scene.Image.__init__(self, method='subdivide', grid=(1000,1), parent=parent)
 		
-		lower = max(0, pi_in-a)
-		upper = pi_in+a
-		si = np.tile(np.sinc (x_in[lower:upper] - p), (m, 1))
-		y[:, pi] = np.sum(si * y_in[lower:upper])
-	return y.squeeze ()
+		#maybe to overlay multiple channels? but only makes sense with single colors
+		#self.set_gl_state('additive')#, cull_face=False)
+		
+		#set in the main program
+		self.shared_program.frag['get_data'] = self.get_data
+		
+		#alternative: needs no external color map
+		#self.shared_program.frag['color_transform'] = visuals.shaders.Function(simple_cmap)
+		#self.shared_program.frag['color_transform'] = visuals.shaders.Function(color.get_colormap(colormap).glsl_map)
+		
+	def set_size(self, size):
+		#not sure if update is needed
+		self._shape = size
+		self.update()
 	
-def sinc_interp(y_in, x_in, x_out):
-  """
-  by Gaute Hope: https://gist.github.com/gauteh/8dea955ddb1ed009b48e
-  Interpolate the signal to the new points using a sinc kernel
+	def set_cmap(self, colormap):
+		#update is needed
+		self.shared_program.frag['color_transform'] = visuals.shaders.Function(color.get_colormap(colormap).glsl_map)
+		self.update()
+		
+	def set_clims(self, vmin, vmax):
+		self.get_data['vmin'] = vmin
+		self.get_data['vmax'] = vmax
+		
+	@property
+	def size(self):
+		return self._shape
 
-  input:
-  y_in     input signal column vector or matrix, with a signal in each row
-  x_in    time points y_in is defined on
-  x_out    points to evaluate the new signal on
+	def _prepare_draw(self, view):
+		if self._need_vertex_update:
+			self._build_vertex_data()
 
-  output:
-  y     the interpolated signal at points x_out
-  """
+		if view._need_method_update:
+			self._update_method(view)
 
-  mn = y_in.shape
-  if len(mn) == 2:
-    m = mn[0]
-    n = mn[1]
-  elif len(mn) == 1:
-    m = 1
-    n = mn[0]
-  else:
-    raise ValueError("y_in is greater than 2D")
+def to_mel(val):
+	### just to set the image size correctly	
+	return np.log(val / 700 + 1) * 1127
 
-  nn = len(x_out)
-
-  y = np.zeros((m, nn))
-
-  for pi, p in enumerate(x_out):
-    si = np.tile(np.sinc(x_in - p), (m, 1))
-    y[:, pi] = np.sum(si * y_in)
-
-  return y.squeeze()
-  
-def sinc_interp2(y_in, x_in, x_out):
+class TaskThread(QtCore.QThread):
+	notifyProgress = QtCore.pyqtSignal(int)
+	settings = "foo"
+	def run(self):
+		name, speed_curve, resampling_mode, frequency_prec, use_channels, dither, target_freq = self.settings
+		resampling.run(name, speed_curve= speed_curve, resampling_mode = resampling_mode, frequency_prec=frequency_prec, use_channels=use_channels, dither=dither, target_freq=target_freq, prog_sig=self)
+			
+class ObjectWidget(QtWidgets.QWidget):
 	"""
-	by endolith: https://gist.github.com/endolith/1297227#file-sinc_interp-py
-	Interpolates y_in, sampled at "x_in" instants
-	Output y is sampled at "x_out" instants
-	
-	from Matlab:
-	http://phaseportrait.blogspot.com/2008/06/sinc-interpolation-in-matlab.html		   
+	Widget for editing OBJECT parameters
 	"""
-	if len(y_in) != len(x_in):
-		raise ValueError('y_in and x_in must be the same length')
-	
-	# Find the period	 
-	T = x_in[1] - x_in[0]
-	
-	sincM = np.tile(x_out, (len(x_in), 1)) - np.tile(x_in[:, np.newaxis], (1, len(x_out)))
-	y = np.dot(y_in, np.sinc(sincM/T))
-	return y
+	settings_hard_changed = QtCore.pyqtSignal(name='objectChanged')
+	settings_soft_changed = QtCore.pyqtSignal(name='objectChanged2')
 
-def sinc_interpolation(samples, speed, windowed=False):
-	#signal and speed arrays must be mono and have the same length
-	#IDK where this has to be inverted otherwise
-	speed = 1/speed
-	in_length = len(speed)
-
-	#create a new speed array that is as long as the output is going to be. the magic is in the output x's step length
-	interp_speed = np.interp(np.arange(0, in_length, np.mean(speed)), np.arange(0, in_length), speed)
-
-	#the times of the input samples these must be evenly sampled, starting at 1
-	in_positions = np.arange(1, in_length+1)
-	#these are unevenly sampled, but when played back at the correct (original) sampling rate, yield the respeeded result
-	out_positions = np.cumsum(interp_speed )
-	if not windowed:
-		return sinc_interp(samples, in_positions, out_positions)
-	return sinc_interp_windowed(samples, in_positions, out_positions)
-	
-def COG(magnitudes, freqs, NL, NU):
-	#adapted from Czyzewski et al. (2007)
-	#18
-	#calculate the COG with hanned frequency importance
-	#error in the printed formula: the divisor also has to contain the hann window
-	weighted_magnitudes = np.hanning(NU-NL) * magnitudes[NL:NU]
-	return np.sum(weighted_magnitudes * np.log2(freqs[NL:NU])) / np.sum(weighted_magnitudes)
-	
-# def hann(freqs, fL, fU):
-	#adapted from Czyzewski et al. (2007)
-	# #17
-	# #custom hann window around the frequency band fL, fU for frequencies freqs
-	# return 0.5-0.5*np.cos(2*np.pi*(np.log2(freqs) - np.log2(fL)) / (np.log2(fU) - np.log2(fL)))
-
-def trace_cog(filename, fft_size = 8192, fft_overlap = 1, use_channel=0, fL = 2260, fU = 2320):
-	#adapted from Czyzewski et al. (2007)
-
-	soundob = sf.SoundFile(filename)
-	signal = soundob.read(always_2d=True)
-	sr = soundob.samplerate
-	N = 1 + fft_size
-	
-	hop = int(fft_overlap*fft_size)
-	D = librosa.stft(signal[:,use_channel], n_fft=fft_size, hop_length=hop)
-	#print(D.shape)
-	
-	#bin indices of the starting band
-	NL = int(round(fL / sr * N))
-	NU = int(round(fU / sr * N))
-	
-	print(NL,NU)
-	#the frequencies of the bins
-	freqs = librosa.fft_frequencies(sr=sr, n_fft=fft_size)
-
-	LSCoct = []
-	LfL = []
-	LfU = []
-	times = []
-	
-	#calculate the first COG
-	SCoct0  = COG(np.abs(D[:, 0]), freqs, NL, NU)
-	#16a,b
-	#the limits for the first time frame
-	#constant for all time frames
-	#SCoct[0]: the the first COG
-	dfL = SCoct0 - np.log2(fL)
-	dfU = np.log2(fU) - SCoct0
-	print(dfL,dfU)
-	
-	for i in range(0, D.shape[1]-1):
-		#18
-		#calculate the COG with hanned frequency importance
-		#error in the printed formula: the divisor also has to contain the hann window
-		SCoct = COG(np.abs(D[:, i]), freqs, NL, NU)
+	def __init__(self, parent=None):
+		super(ObjectWidget, self).__init__(parent)
 		
-		#save the data of this frame
-		
-		#19
-		#Hz = 2^COG
-		LSCoct.append(2**SCoct)
-		LfL.append(fL)
-		LfU.append(fU)
-		times.append(i*hop/sr)
-		
-		#15a,b
-		#set the limits for the consecutive frame [i+1]
-		#based on those of the first frame
-		fL = 2**(SCoct-dfL)
-		fU = 2**(SCoct+dfU)
-		NL = int(round(fL / sr * N))
-		NU = int(round(fU / sr * N))
-	
-	# plt.plot(times, LSCoct, label="LSCoct")
-	# plt.plot(times, LfU, label="LfU")
-	# plt.plot(times, LfL, label="LfL")
-	
-	
-	# plt.xlabel('Time (samples)')
-	# plt.ylabel('Freg Hz')
-	# plt.legend(frameon=True, framealpha=0.75)
-	# plt.show()
-	
-	#write the data to the speed file
-	print("Writing speed data")
-	speedfilename = filename.rsplit('.', 1)[0]+".speed"
-	outstr = "\n".join([str(t)+" "+str(f) for t, f in zip(times, LSCoct)])
-	text_file = open(speedfilename, "w")
-	text_file.write(outstr)
-	text_file.close()
-	
-	
-	
-class LineBuilder:
-	def __init__(self, line):
-		self.line = line
-		self.xs = list(line.get_xdata())
-		self.ys = list(line.get_ydata())
-		self.cid = line.figure.canvas.mpl_connect('button_press_event', self)
-
-	def redraw(self):
-		self.line.figure.draw_artist(self.line)
-		self.line.figure.canvas.update()
-		#self.line.figure.canvas.flush_events()
-	
-	def __call__(self, event):
-		#print('click', event)
-		if event.inaxes!=self.line.axes: return
-		if event.key == 'delete':
-			self.xs = []
-			self.ys = []
-			self.line.set_data(self.xs, self.ys)
-			#self.line.figure.canvas.draw()
-			self.redraw()
-		elif event.key == 'alt':
-			#find the nearest point's index, and delete it from the stack
-			if self.xs:
-				pt = (event.xdata, event.ydata)
-				A = np.array([(x,y) for x, y in zip(self.xs, self.ys)])
-				
-				ind = np.array([np.linalg.norm(x+y) for (x,y) in A-pt]).argmin()
-				self.xs.pop(ind)
-				self.ys.pop(ind)
-				self.line.set_data(self.xs, self.ys)
-				#self.line.figure.canvas.draw()
-				self.redraw()
-		elif event.key == 'control':
-		
-			#sort the data and add it inbetween
-			
-			self.xs.append(event.xdata)
-			self.ys.append(event.ydata)
-			
-			x = np.array(self.xs)
-			y = np.array(self.ys)
-			inds = x.argsort()
-			self.xs = list(x[inds])
-			self.ys = list(y[inds])
-
-			self.line.set_data(self.xs, self.ys)
-			#self.line.figure.canvas.draw()
-			self.redraw()
-			
-
-def draw_spec(filename, fft_size = 8192, fft_overlap = 0.5, use_channel=0):
-	soundob = sf.SoundFile(filename)
-	signal = soundob.read(always_2d=True)
-	channels = soundob.channels
-	sr = soundob.samplerate
-
-	times =[]
-	freqs =[]
-	
-	#can we load existing speed data?
-	speedfilename = filename.rsplit('.', 1)[0]+".speed"
-	if os.path.isfile(speedfilename):
-		speeds = loadtxt(speedfilename)
-		if len(speeds):
-			times = speeds[:,0]
-			freqs = speeds[:,1]
-	
-	
-	fig = plt.figure()
-	hop = int(fft_overlap*fft_size)
-	
-	# #working mel scaled spectrum - but the accuracy is not perfect
-	# S = librosa.feature.melspectrogram(signal[:,use_channel], n_fft=fft_size, hop_length=hop, n_mels = int(fft_size/4))
-	# D = librosa.logamplitude(S, ref_power=np.max)
-	# librosa.display.specshow(D, sr=sr, x_axis="time", y_axis='mel', hop_length=hop)#, shading="gouraud")
-	
-	
-	D = librosa.amplitude_to_db(librosa.stft(signal[:,use_channel], n_fft=fft_size, hop_length=hop), ref=np.max)
-	librosa.display.specshow(D, sr=sr, x_axis="time", y_axis='log', hop_length=hop)#, shading="gouraud")
-	plt.colorbar(format='%+2.0f dB')
-	plt.title('Log-frequency power spectrogram')
-
-	ax = fig.add_subplot(111)
-	ax.set_title('CTRL+Click: add marker, ALT+Click: delete closest marker, DEL+Click: delete all markers. Close window to save.')
-	
-	line, = ax.plot(times, freqs)
-	linebuilder = LineBuilder(line)
-	
-	plt.show()
-	
-	if not linebuilder.xs:
-		print("No speed to write!")
-		return
-	#write the data to the speed file
-	print("Writing speed data")
-	speedfilename = filename.rsplit('.', 1)[0]+".speed"
-	outstr = "\n".join([str(t)+" "+str(f) for t, f in zip(linebuilder.xs, linebuilder.ys)])
-	text_file = open(speedfilename, "w")
-	text_file.write(outstr)
-	text_file.close()
-	
-
-def work_resample(filename, resampling_mode = "Blocks", frequency_prec=0.01, target_freq = None, use_channels = [0,], dither="Random", patch_ends=False):
-
-	#read the file
-	soundob = sf.SoundFile(filename)
-	signal = soundob.read(always_2d=True)
-	channels = soundob.channels
-	sr = soundob.samplerate
-	
-	print('Analyzing ' + filename + '...')
-	print('Shape:', signal.shape)
-	
-	block_size = int(100 / frequency_prec)
-	resampling_factor = 100 / frequency_prec
-	
-	#here we can use larger blocks without losing frequency precision (?), this speeds it up but be careful with the memory limit
-	#end value is fixed -> hence the more frequency precision, the smaller the block gets
-	if resampling_mode == "Expansion":
-		block_size = int(1000000 / resampling_factor)
-	
-	#user/debugging info
-	print(resampling_mode)
-	if resampling_mode == "Blocks":
-		print("frequency precision:",frequency_prec,"%")
-		print("temporal precision (different speed every X sec)",block_size/sr)
-	if resampling_mode == "Expansion":
-		print("frequency precision:",frequency_prec,"%")
-		print("expansion_factor",resampling_factor)
-		print("raw block_size:",block_size)
-		print("expanded block_size:",block_size*resampling_factor)
-	
-	overlap = 0
-	blocks = []
-	for n in range(0, len(signal), block_size):
-		blocks.append((n, block_size+n+overlap))
-	print("Num Blocks",len(blocks))
-
-	#these are measured frequencies in Hz and their times (converted to samples on the fly)
-	speedfilename = filename.rsplit('.', 1)[0]+".speed"
-	if not os.path.isfile(speedfilename):
-		print("Speed file does not exist!")
-		return
-	speeds = loadtxt(speedfilename)
-	if not len(speeds):
-		print("No speed data in file!")
-		return
-	
-	times = speeds[:,0]*sr
-	freqs = speeds[:,1]
-
-	#this is the frequency all measured frequencies should have in the end
-	#if not supplied, use mean or median of freqs
-	if not target_freq:
-		target_freq	= median(freqs)
-
-	#divide them to get the speed ratio for sample expansion
-	speeds = freqs/target_freq
-	
-	#lerp the samples to the length of the signal
-	#!this does not handle extrapolation!
-	speed_samples_r = interp(arange(0, len(signal)), times, speeds, left=speeds[0], right=speeds[-1])
-	
-	#do all processing of the speed samples right here to speed up multi channel files - the speed curve can be reused as is!
-	if resampling_mode == "Expansion":
-		#multiply each speed sample by the expansion factor
-		speed_samples_r *= resampling_factor
-		if dither == "Random":
-			#add -.5 to +.5 random noise before quantization to minimizes the global error at the cost of more local error
-			speed_samples_final = rint(random.rand(len(speed_samples_r))-.5 + speed_samples_r).astype(int64)
-		elif dither == "Diffused":
-			# the error of each sample is passed onto the next sample
-			speed_samples_dithered = []
-			err = 0
-			for i in range(0,len(speed_samples_r)):
-				inerr = speed_samples_r[i] + err
-				out = round(inerr)
-				err =  inerr-out
-				speed_samples_dithered.append(out)
-			#already rounded, just downcast to int
-			speed_samples_final = asarray(speed_samples_dithered, dtype = int64)
-		else:
-			#do not dither, just round
-			speed_samples_final = rint(speed_samples_r).astype(int64)
-			
-	else:
-		#do not dither, do not round, just copy
-		speed_samples_final = speed_samples_r
-			
-	
-	#resample on mono channels and export each separately as repeat does not like more dimensions
-	for channel in use_channels:
-		print('Processing channel ',channel)
-		outfilename = filename.rsplit('.', 1)[0]+str(channel)+'.wav'
-		with sf.SoundFile(outfilename, 'w+', sr, 1, subtype='FLOAT') as outfile:
-			for block_start, block_end in blocks:
-				#print("Writing",block_start,"to",block_end)
-				
-				#create a mono array for the current block and channel
-				signal_block = signal[block_start:block_end, channel]
-				speed_block = speed_samples_final[block_start:block_end]
-				
-				#apply the different methods
-				if resampling_mode == "Expansion":
-					
-					#repeat each sample by the resampling_factor * the speed factor for that sample
-					upsampled = repeat(signal_block, speed_block)
-					#now divide it by the resampling_factor to return to the original median speed
-					#this is fast and does not cut off high freqs
-					resampled = resampy.resample(upsampled, resampling_factor, 1, filter='sinc_window', num_zeros=4)
-					resampled[0] = signal_block[0]
-					resampled[1] = signal_block[1]
-					resampled[-2] = signal_block[-2]
-					resampled[-1] = signal_block[-1]
-					
-				elif resampling_mode == "Blocks":
-					#take a block of the signal
-					#tradeoff between frequency and time precision -> good for wow, unusable for flutter
-					upsampled = signal_block
-					
-					#here we do not use the specified resampling factor but instead make our own from the average speed of the current block
-					resampling_factor = 1/ mean(speed_block)
-					#this is fast and does not cut off high freqs
-					resampled = resampy.resample(upsampled, resampling_factor, 1, filter='sinc_window', num_zeros=4)
-					resampled[0] = signal_block[0]
-					resampled[1] = signal_block[1]
-					resampled[-2] = signal_block[-2]
-					resampled[-1] = signal_block[-1]
-				
-				elif resampling_mode == "Sinc":
-					resampled = sinc_interpolation(signal_block, speed_block)
-					resampled[0] = signal_block[0]
-					resampled[-1] = signal_block[-1]
-				
-				elif resampling_mode == "Windowed Sinc":
-					resampled = sinc_interpolation(signal_block, speed_block, windowed=True)
-					resampled[0] = signal_block[0]
-					resampled[-1] = signal_block[-1]
-					
-				#if patch_ends:
-				#fast attenuation of clicks, not perfect but better than nothing
-				
-				#resample write the output block to the audio file
-				outfile.write(resampled)
-	print("Done!\n")	
-	#TODO:
-	#cover up block cuts, with overlap
-	#for blocks: adaptive resolution according to speed derivation. more derivation = shorter blocks
-	return
-#Expansion:
-#the more frequency precision (smaller percentage), the longer it takes
-#temporal precision is -theoretically- unaffected
-#but practically, input blocks become shorter for more precision, as output size should remain stable to avoid overflow
-
-# #Blocks
-# #classic tradeoff: the more frequency precision, the faster
-# #at the cost of less temporal precision
-
-try:
-    approot = os.path.dirname(os.path.abspath(__file__))
-except NameError:  # We are the main py2exe script, not a module
-    import sys
-    approot = os.path.dirname(os.path.abspath(sys.argv[0]))
-
-class Application:
-		
-	def dither_changed(self, dither):
-		#print("dither?",dither)
-		if self.var_mode.get() == "Expansion":
-			if dither == "None":
-				#self.var_freq_prec.set(str(float(self.var_freq_prec.get())/10))
-				self.var_freq_prec.set("0.5")
-			else:
-				#self.var_freq_prec.set(str(float(self.var_freq_prec.get())*10))
-				self.var_freq_prec.set("5.0")
-			
-	def mode_changed(self, mode):
-		#print("new mode",mode)
-		if mode == "Expansion":
-			self.var_dither.set("Diffused")
-			self.var_freq_prec.set("5.0")
-			self.var_temp_prec.set("?")
-		elif mode == "Blocks":
-			self.var_dither.set("None")
-			self.var_freq_prec.set("0.01")
-			self.var_temp_prec.set("0.226s")
-		elif mode == "Sinc":
-			self.var_dither.set("None")
-			self.var_freq_prec.set("0.05")
-			self.var_temp_prec.set("?")
-		elif mode == "Windowed Sinc":
-			self.var_dither.set("None")
-			self.var_freq_prec.set("0.05")
-			self.var_temp_prec.set("?")
-		
-	def open_file(self):
-		file_path = filedialog.askopenfilename(filetypes = [("Audio Files", (".wav", ".flac")), ('All Files', '.*'), ('WAV Files', '.wav'), ('FLAC Files', '.flac')], defaultextension=".wav", initialdir="", parent=self.parent, title="Open Audio File" )
-		if file_path:
-			#read the file
-			soundob = sf.SoundFile(file_path)
-			self.var_file.set(file_path)
-			self.show_channels(soundob.channels)
-			
-	def run_spectrum(self):
-		if self.var_file.get():
-			#only use the first channel of those that are selected
-			use_channel = [k for k, v in self.vars_channels.items() if v.get()][0]
-			
-			fft_size = int(self.var_fft_size.get())
-			fft_overlap = float(self.var_fft_overlap.get())
-			print(use_channel,fft_size,fft_overlap)
-			draw_spec(self.var_file.get(), fft_size = fft_size, fft_overlap = fft_overlap, use_channel=use_channel)
-			
-	def run_cog_trace(self):
-		if self.var_file.get():
-			#only use the first channel of those that are selected
-			use_channel = [k for k, v in self.vars_channels.items() if v.get()][0]
-			
-			fft_size = int(self.var_fft_size.get())
-			fft_overlap = float(self.var_fft_overlap.get())
-			fL = float(self.var_freq_lower.get())
-			fU = float(self.var_freq_upper.get())
-			print(use_channel,fft_size,fft_overlap,fL,fU)
-			trace_cog(self.var_file.get(), fL=fL, fU=fU, use_channel=use_channel)#, fft_size = fft_size, fft_overlap = fft_overlap)
-			
-	def run_resample(self):
-		if self.var_file.get():
-			use_channels = [k for k, v in self.vars_channels.items() if v.get()]
-			mode = self.var_mode.get()
-			freq_prec = float(self.var_freq_prec.get())
-			dither = self.var_dither.get()
-			print(use_channels,mode,freq_prec,dither)
-			starttime = time.clock()
-			work_resample(self.var_file.get(), resampling_mode=mode, frequency_prec=freq_prec, use_channels=use_channels, dither= dither)
-			print('Finished Respeeding in %.2f seconds' %(time.clock()-starttime))
-	
-	def show_channels(self, num_channels):
-		self.vars_channels={}
-		try: self.b_properties.destroy()
-		except: pass
-		
-		self.b_properties = ttk.LabelFrame(self.parent, text="Channels")
-		self.b_properties.grid(row=0, column=3, rowspan=10, sticky='new')
-		
-		#all active by default?
-		active = [0,]
-		
-		for i in range(0, num_channels):
-			self.vars_channels[i] = BooleanVar()
-			ttk.Checkbutton(self.b_properties, text=str(i), variable=self.vars_channels[i]).grid(sticky='nw', column=0, row=i)
-			if i in active:
-				self.vars_channels[i].set(True)
-			else:
-				self.vars_channels[i].set(False)
-	
-	def __init__(self, parent):
-		#basic UI setup
 		self.parent = parent
-		#self.parent.geometry('640x480+100+100')
-		self.parent.option_add("*Font", "Calibri 9")
-		self.parent.title("pyrespeeder")
 		
-		ttk.Button(self.parent, text="Open File", command=self.open_file).grid(row=0, column=0, sticky='nsew')
+		self.filename = ""
 		
-		self.var_file = StringVar()
-		ttk.Entry(self.parent, textvariable=self.var_file).grid(row=0, column=1, sticky='nsew')
+		self.open_b = QtWidgets.QPushButton('Open Audio', self)
+		self.open_b.clicked.connect(self.open_audio)
 		
-		self.var_fft_size = StringVar()
-		ttk.Label(self.parent, text="FFT Size").grid(row=1, column=0, sticky='nsew')
-		ttk.Entry(self.parent, textvariable=self.var_fft_size).grid(row=1, column=1, sticky='nsew')
+		self.save_b = QtWidgets.QPushButton('Save Traces', self)
+		self.save_b.clicked.connect(self.save_traces)
 		
-		self.var_fft_overlap = StringVar()
-		ttk.Label(self.parent, text="FFT Overlap").grid(row=2, column=0, sticky='nsew')
-		ttk.Entry(self.parent, textvariable=self.var_fft_overlap).grid(row=2, column=1, sticky='nsew')
+		fft_l = QtWidgets.QLabel("FFT Size")
+		self.fft_c = QtWidgets.QComboBox(self)
+		self.fft_c.addItems(list(("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768")))
+		self.fft_c.currentIndexChanged.connect(self.update_param_hard)
 		
-		self.var_mode = StringVar()
-		modes = ("Expansion", "Blocks", "Sinc", "Windowed Sinc")
-		ttk.Label(self.parent, text="Resampling Mode").grid(row=3, column=0, sticky='nsew')
-		ttk.OptionMenu(self.parent, self.var_mode, modes[0], *modes, command=self.mode_changed).grid(row=3, column=1, sticky='nsew')
+		overlap_l = QtWidgets.QLabel("FFT Overlap")
+		self.overlap_c = QtWidgets.QComboBox(self)
+		self.overlap_c.addItems(list(("1", "2", "4", "8")))
+		self.overlap_c.currentIndexChanged.connect(self.update_param_hard)
 		
-		self.var_freq_prec = StringVar()
-		ttk.Label(self.parent, text="Frequency Precision").grid(row=4, column=0, sticky='nsew')
-		ttk.Entry(self.parent, textvariable=self.var_freq_prec).grid(row=4, column=1, sticky='nsew')
-		self.var_temp_prec = StringVar()
-		ttk.Label(self.parent, text="Temporal Precision").grid(row=5, column=0, sticky='nsew')
-		ttk.Entry(self.parent, textvariable=self.var_temp_prec).grid(row=5, column=1, sticky='nsew')
+		cmap_l = QtWidgets.QLabel("Colors")
+		self.cmap_c = QtWidgets.QComboBox(self)
+		self.cmap_c.addItems(sorted(color.colormap.get_colormaps().keys()))
+		self.cmap_c.currentIndexChanged.connect(self.update_param_soft)
+
+		self.resample_b = QtWidgets.QPushButton("Resample")
+		self.resample_b.clicked.connect(self.run_resample)
 		
-		self.var_dither = StringVar()
-		dithers = ("Diffused", "Random", "None")
-		ttk.Label(self.parent, text="Expansion Dithering").grid(row=6, column=0, sticky='nsew')
-		ttk.OptionMenu(self.parent, self.var_dither, dithers[0], *dithers, command=self.dither_changed).grid(row=6, column=1, sticky='nsew')
-				
-				
-				
-				
-		ttk.Button(self.parent, text="Run Spectrum", command=self.run_spectrum).grid(row=7, column=0, sticky='nsew')
-		ttk.Button(self.parent, text="Run Resample", command=self.run_resample).grid(row=7, column=1, sticky='nsew')
+		mode_l = QtWidgets.QLabel("Resampling Mode")
+		self.mode_c = QtWidgets.QComboBox(self)
+		self.mode_c.addItems(("Linear", "Expansion", "Sinc", "Windowed Sinc", "Blocks"))
+		self.mode_c.currentIndexChanged.connect(self.update_resampling_presets)
 		
-		self.var_freq_lower = StringVar()
-		ttk.Label(self.parent, text="Lower End (Hz)").grid(row=8, column=0, sticky='nsew')
-		ttk.Entry(self.parent, textvariable=self.var_freq_lower).grid(row=8, column=1, sticky='nsew')
-		self.var_freq_upper = StringVar()
-		ttk.Label(self.parent, text="Upper End (Hz)").grid(row=9, column=0, sticky='nsew')
-		ttk.Entry(self.parent, textvariable=self.var_freq_upper).grid(row=9, column=1, sticky='nsew')
-		
-		ttk.Button(self.parent, text="Trace Adaptive Center of Gravity", command=self.run_cog_trace).grid(row=10, column=0, columnspan=2, sticky='nsew')
-		
-		self.var_fft_size.set("4096")
-		self.var_fft_overlap.set("0.125")
-		self.var_mode.set(modes[0])
-		self.mode_changed(modes[0])
-		self.var_dither.set(dithers[0])
-		self.dither_changed(dithers[0])
-		
-		self.var_freq_lower.set("2260")
-		self.var_freq_upper.set("2320")
+		trace_l = QtWidgets.QLabel("Tracing Mode")
+		self.trace_c = QtWidgets.QComboBox(self)
+		self.trace_c.addItems(("Center of Gravity","Pitchtrack",))
+		#self.trace_c.currentIndexChanged.connect(self.update_param_soft)
 		
 		
+		prec_l = QtWidgets.QLabel("Precision")
+		self.prec_s = QtWidgets.QDoubleSpinBox()
+		self.prec_s.setRange(0.0001, 100.0)
+		self.prec_s.setSingleStep(0.1)
+		self.prec_s.setValue(0.01)
+		
+		self.progressBar = QtWidgets.QProgressBar(self)
+		self.progressBar.setRange(0,100)
+		
+		
+		gbox = QtWidgets.QGridLayout()
+		
+		#column 01
+		gbox.addWidget(self.open_b, 0, 0)
+		gbox.addWidget(self.save_b, 0, 1)
+		
+		gbox.addWidget(fft_l, 1, 0)
+		gbox.addWidget(self.fft_c, 1, 1)
+		
+		gbox.addWidget(overlap_l, 2, 0)
+		gbox.addWidget(self.overlap_c, 2, 1)
+		
+		gbox.addWidget(cmap_l, 3, 0)
+		gbox.addWidget(self.cmap_c, 3, 1)
+		
+		#column 23
+		gbox.addWidget(trace_l, 0, 2)
+		gbox.addWidget(self.trace_c, 0, 3)
+		
+		#column 45
+		gbox.addWidget(self.resample_b, 0, 5)
+		
+		gbox.addWidget(prec_l, 1, 4)
+		gbox.addWidget(self.prec_s, 1, 5)
+		
+		gbox.addWidget(mode_l, 2, 4)
+		gbox.addWidget(self.mode_c, 2, 5)
+		
+		self.myLongTask = TaskThread()
+		self.myLongTask.notifyProgress.connect(self.onProgress)
+		
+		gbox.addWidget(self.progressBar, 3, 4, 1, 2 )
+
+		vbox = QtWidgets.QVBoxLayout()
+		vbox.addLayout(gbox)
+		vbox.addStretch(1.0)
+
+		self.setLayout(vbox)
+	
+	def onProgress(self, i):
+		self.progressBar.setValue(i)
+		
+	def open_audio(self):
+		f = QtWidgets.QFileDialog.getOpenFileName(self, 'Open file', 'c:\\', "Audio files (*.flac *.wav)")
+		if f:
+			#pyqt5 returns a tuple
+			self.filename = f[0]
+			self.settings_hard_changed.emit()
+			data = resampling.read_trace(self.filename)
+			for offset, times, freqs in data:
+				TraceLine(self.parent.canvas, times, freqs, offset=offset)
+	
+	def save_traces(self):
+		#get the data from the traces and save it
+		data = []
+		for line in self.parent.canvas.lines:
+			data.append( (line.offset, line.times, line.freqs) )
+		print("Saved",len(data),"traces")
+		if data:
+			resampling.write_trace(self.filename, data)
+	
+	def run_resample(self):
+		mode = self.mode_c.currentText()
+		prec = self.prec_s.value()
+		#make a copy to prevent unexpected side effects
+		speed_curve = np.array(self.parent.canvas.master_speed.data)
+		print("Resampling",self.filename, mode, prec)
+		self.myLongTask.settings = (self.filename, speed_curve, mode, prec, [0,], "Diffused", None)
+		self.myLongTask.start()
+		#resampling.run(self.filename, speed_curve = speed_curve, resampling_mode=mode, frequency_prec=prec, use_channels=[0,], dither="Diffused", target_freq=None)
+			
+	def update_resampling_presets(self, option):
+		mode = self.mode_c.currentText()
+		if mode == "Expansion":
+			self.prec_s.setValue(5.0)
+		elif mode == "Blocks":
+			self.prec_s.setValue(0.01)
+		elif mode == "Sinc":
+			self.prec_s.setValue(0.05)
+		elif mode == "Windowed Sinc":
+			self.prec_s.setValue(0.05)
+		elif mode == "Linear":
+			self.prec_s.setValue(0.01)
+		
+	def update_param_hard(self, option):
+		self.settings_hard_changed.emit()
+		
+	def update_param_soft(self, option):
+		self.settings_soft_changed.emit()
+
+
+class MainWindow(QtWidgets.QMainWindow):
+
+	def __init__(self):
+		QtWidgets.QMainWindow.__init__(self)
+
+		self.resize(700, 500)
+		self.setWindowTitle('pyrespeeder 2.0')
+
+		splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+
+		self.canvas = Canvas()
+		self.canvas.create_native()
+		self.canvas.native.setParent(self)
+
+		self.props = ObjectWidget(parent=self)
+		splitter.addWidget(self.props)
+		splitter.addWidget(self.canvas.native)
+
+		self.setCentralWidget(splitter)
+		self.props.settings_hard_changed.connect(self.update_settings_hard)
+		self.props.settings_soft_changed.connect(self.update_settings_soft)
+
+	def update_settings_hard(self):
+		self.canvas.set_data_hard(self.props.filename,
+								 fft_size = int(self.props.fft_c.currentText()),
+								 fft_overlap = int(self.props.overlap_c.currentText()))
+		#also force a soft update here
+		self.update_settings_soft()
+		
+	def update_settings_soft(self):
+		self.canvas.set_data_soft(cmap=self.props.cmap_c.currentText())	
+
+class MasterSpeedLine:
+	"""Stores and displays the average, ie. master speed curve."""
+	def __init__(self, vispy_canvas):
+		
+		self.vispy_canvas = vispy_canvas
+		
+		#create the speed curve visualization
+		self.data = np.ones((2, 2), dtype=np.float32)
+		self.data[:, 0] = (0, 999)
+		self.data[:, 1] = (1, 1)
+		self.line_speed = scene.Line(pos=self.data, color=(1, 0, 0, 1), method='gl')
+		self.line_speed.parent = vispy_canvas.speed_view.scene
+		
+	def update(self):
+		num = self.vispy_canvas.num_ffts
+		#get the times at which the average should be sampled
+		times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
+		#create the array for sampling
+		out = np.ones((len(times), len(self.vispy_canvas.lines)), dtype=np.float32)
+		#lerp and sample all lines, use NAN for missing parts
+		for i, line in enumerate(self.vispy_canvas.lines):
+			line_sampled = np.interp(times, line.times, line.speed, left = np.nan, right = np.nan)
+			out[:, i] = line_sampled
+		#take the mean and ignore nans
+		mean_with_nans = np.nanmean(out, axis=1)
+		mean_with_nans[np.isnan(mean_with_nans)]=1
+		#set the output data
+		self.data = np.ones((len(times), 2), dtype=np.float32)
+		self.data[:, 0] = times
+		self.data[:, 1] = mean_with_nans
+		self.line_speed.set_data(pos=self.data)
+
+class TraceLine:
+	"""Stores and visualizes a trace fragment, including its speed offset."""
+	def __init__(self, vispy_canvas, times, freqs, offset=0.0):
+		
+		self.vispy_canvas = vispy_canvas
+		self.vispy_canvas.lines.append(self)
+		
+		self.offset = offset
+		
+		self.times = np.asarray(times)
+		self.freqs = np.asarray(freqs)
+		self.speed = freqs / np.mean(freqs) + offset
+		
+		self.center = np.array( (np.mean(self.times), np.mean(self.speed)) )
+		print(self.center)
+		
+		data = np.ones((len(times), 3), dtype=np.float32)*-2
+		data[:, 0] = times
+		data[:, 1] = freqs
+		
+		#create the spectral visualization
+		self.line_spec = scene.Line(pos=data, color=(1, 1, 1, 1), method='gl')
+		#the data is in Hz, so to visualize correctly, it has to be mel'ed
+		self.line_spec.transform =	vispy_ext.MelTransform()
+		self.line_spec.parent = vispy_canvas.spec_view.scene
+		
+		#create the speed curve visualization
+		self.speed_data = np.ones((len(times), 2), dtype=np.float32)
+		self.speed_data[:, 0] = self.times
+		self.speed_data[:, 1] = self.speed
+		self.line_speed = scene.Line(pos=self.speed_data, color=(1, 1, 1, .5), method='gl')
+		self.line_speed.parent = vispy_canvas.speed_view.scene
+		self.vispy_canvas.master_speed.update()
+		
+	def set_offset(self, offset):
+		print("offset",offset)
+		self.offset += offset
+		self.center[1] += offset
+		self.speed += offset
+		print("new center",self.center)
+		self.speed_data[:, 1] = self.speed
+		self.line_speed.set_data(pos = self.speed_data)
+		self.vispy_canvas.master_speed.update()
+		
+	def remove(self):
+		self.line_speed.parent = None
+		self.line_spec.parent = None
+		#note: this has to search the list
+		self.vispy_canvas.lines.remove(self)
+		self.vispy_canvas.master_speed.update()
 		
 	
+class Canvas(scene.SceneCanvas):
+
+	def __init__(self):
+		
+		#some default dummy values
+		self.filename = "None"
+		cm = "fire"
+		self.vmin = -80
+		self.vmax = -40
+		
+		self.last_click = None
+		self.fft_size = 1024
+		self.hop = 256
+		self.sr = 44100
+		self.num_ffts = 0
+		
+		self.MAX_TEXTURE_SIZE = None
+		
+		scene.SceneCanvas.__init__(self, keys="interactive", size=(1024, 512), bgcolor="grey")
+		
+		self.unfreeze()
+		
+		grid = self.central_widget.add_grid(margin=10)
+		grid.spacing = 0
+
+		#self.header = scene.Label(self.filename, color='white')
+		#self.header.height_max = 30
+		
+		#speed chart
+		self.speed_yaxis = scene.AxisWidget(orientation='left',
+								 axis_label='%',
+								 axis_font_size=8,
+								 axis_label_margin=35,
+								 tick_label_margin=5)
+		self.speed_yaxis.width_max = 55
+		# self.speed_xaxis = scene.AxisWidget(orientation='bottom',
+								 # axis_label='sec',
+								 # axis_font_size=8,
+								 # axis_label_margin=35,
+								 # tick_label_margin=5)
+		# self.speed_xaxis.height_max = 55
+								 
+		
+		#spectrum
+		self.spec_yaxis = scene.AxisWidget(orientation='left',
+								 axis_label='Hz',
+								 axis_font_size=8,
+								 axis_label_margin=35,
+								 tick_label_margin=5)
+		self.spec_yaxis.width_max = 55
+		self.spec_xaxis = scene.AxisWidget(orientation='bottom',
+								 axis_label='sec',
+								 axis_font_size=8,
+								 axis_label_margin=35,
+								 tick_label_margin=5)
+		self.spec_xaxis.height_max = 55
+
+		top_padding = grid.add_widget(row=0)
+		top_padding.height_max = 20
+		
+		right_padding = grid.add_widget(row=1, col=2, row_span=1)
+		right_padding.width_max = 70
+
+		#create the color bar display
+		self.colorbar_display = scene.ColorBarWidget(label="Gain [dB]", clim=(self.vmin, self.vmax),
+										   cmap=cm, orientation="right",
+											border_width=1)
+		self.colorbar_display.label.font_size = 10
+		self.colorbar_display.label.color = "white"
+
+		self.colorbar_display.ticks[0].font_size = 8
+		self.colorbar_display.ticks[1].font_size = 8
+		self.colorbar_display.ticks[0].color = "white"
+		self.colorbar_display.ticks[1].color = "white"
+		
+		#grid.add_widget(self.header, row=0, col=0, col_span=2)
+		grid.add_widget(self.speed_yaxis, row=1, col=0)
+		#grid.add_widget(self.speed_xaxis, row=1, col=1)
+		grid.add_widget(self.spec_yaxis, row=2, col=0)
+		grid.add_widget(self.spec_xaxis, row=3, col=1)
+		self.speed_view = grid.add_view(row=1, col=1, border_color='white')
+		self.spec_view = grid.add_view(row=2, col=1, border_color='white')
+		grid.add_widget(self.colorbar_display, row=2, col=2)
+		self.spec_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0, 10, 10), )
+		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0.95, 10, 1.05), )
+		
+
+
+						
+		#TODO: make sure they are bound when started, not just after scrolling
+		#self.speed_xaxis.link_view(self.speed_view)
+		self.speed_yaxis.link_view(self.speed_view)
+		self.spec_xaxis.link_view(self.spec_view)
+		self.spec_yaxis.link_view(self.spec_view)
+		
+		
+		self.images = []
+		self.lines = []
+		self.fft_storage = {}
+		
+		self.master_speed = MasterSpeedLine(self)
+		
+		self.freeze()
+		
+		
+	#fast stuff that does not require rebuilding everything
+	def set_data_soft(self, cmap="fire"):
+		for image in self.images:
+			image.set_cmap(cmap)
+		self.colorbar_display.cmap = cmap
+	
+		
+	def set_data_hard(self, filename, fft_size = 256, fft_overlap = 1):
+		if filename:
+			
+			#only set this one once, but can't set it in _init_
+			if not self.MAX_TEXTURE_SIZE:
+				self.MAX_TEXTURE_SIZE = gloo.gl.glGetParameter(gloo.gl.GL_MAX_TEXTURE_SIZE)
+				print("self.MAX_TEXTURE_SIZE", self.MAX_TEXTURE_SIZE)
+			
+			#has the file changed?
+			if self.filename != filename:
+				#clear the fft storage!
+				self.fft_storage = {}
+				
+				print("removing old lines")
+				for i in reversed(range(0, len(self.lines))):
+					#self.lines[i].parent = None
+					#self.lines.pop(i)
+					self.lines[i].remove()
+					
+			soundob = sf.SoundFile(filename)
+			sr = soundob.samplerate
+			
+			hop = int(fft_size/fft_overlap)
+			
+			#set this for the tracers etc.
+			self.fft_size = fft_size
+			self.hop = hop
+			self.sr = sr
+			
+			print("fft_size,hop",fft_size,hop)
+			
+			#store the FFTs for fast shuffling around
+			#TODO: analyze the RAM consumption of this
+			#TODO: perform FFT at minimal hop and get shorter hops via stride operation ::x
+			k = (fft_size, hop)
+			if k not in self.fft_storage:
+				print("storing new fft")
+				signal = soundob.read(always_2d=True)[:,0]
+				#this will automatically zero-pad the last fft
+				imdata = fourier.stft(signal, fft_size, hop, "hann")
+				#imdata = util.fourier.stft(signal, fft_size, hop, sr, "hann")
+				#get the magnitude spectrum
+				imdata = np.abs(imdata)
+				#change to dB scale later, for the tracers
+				#imdata = 20 * np.log10(imdata)
+				#clamping the data to 0,1 range happens in the vertex shader
+				
+				#now store this for retrieval later
+				self.fft_storage[k] = imdata.astype('float32')
+			#retrieve the FFT data
+			imdata = self.fft_storage[k]
+			num_bins, num_ffts = imdata.shape
+			self.num_ffts = num_ffts
+
+			#has the file changed?
+			if self.filename != filename:
+				print("file has changed!")
+				self.filename = filename
+				#self.header.text = filename
+				
+				#(re)set the spec_view
+				#only the camera dimension is mel'ed, as the image gets it from its transform
+				self.speed_view.camera.rect = (0, 0, num_ffts * hop / sr, 2)
+				self.spec_view.camera.rect = (0, 0, num_ffts * hop / sr, to_mel(sr//2))
+				#link them, but use custom logic to only link the x view
+				self.spec_view.camera.link(self.speed_view.camera)
+				
+			#TODO: is this as efficient as possible?
+			print("removing old images")
+			for i in reversed(range(0, len(self.images))):
+				self.images[i].parent = None
+				self.images.pop(i)
+				
+			#spectra may only be of a certain size, so split them
+			#to support 2**17 FFT sizes, it would also need to split along the Y axis
+			for i in range(0, num_ffts, self.MAX_TEXTURE_SIZE):
+				imdata_piece = imdata[:,i:i+self.MAX_TEXTURE_SIZE]
+				
+				#do the dB conversion here because the tracers don't like it
+				self.images.append(SpectrumPiece(20 * np.log10(imdata_piece), parent=self.spec_view.scene))
+				
+				self.images[-1].set_clims(self.vmin, self.vmax)
+				self.images[-1].set_size((imdata_piece.shape[1]*hop/sr, sr//2))
+				#add this piece's offset with STT
+				self.images[-1].transform = visuals.transforms.STTransform( translate=(i * hop / sr, 0)) * vispy_ext.MelTransform()
+			
+		
+	def on_mouse_wheel(self, event):
+		#coords of the click on the vispy canvas
+		click = np.array([event.pos[0],event.pos[1],0,1])
+		
+		#colorbar scroll
+		if self.click_on_widget(click, self.colorbar_display):
+			grid_space = self.colorbar_display._colorbar.transform.imap(click)
+			dim = self.colorbar_display.size
+			d = event.delta
+			self.vmin, self.vmax = self.colorbar_display.clim
+			
+			#now split Y in three parts
+			a = dim[1]/3
+			b = a*2
+			if grid_space[1] < a:
+				self.vmax += d[1]
+			elif a < grid_space[1] < b:
+				self.vmin += d[1]
+				self.vmax -= d[1]
+			elif b < grid_space[1]:
+				self.vmin += d[1]
+
+			self.colorbar_display.clim = (int(self.vmin), int(self.vmax))
+			for image in self.images:
+				image.set_clims(self.vmin, self.vmax)
+				
+		#spec & speed X axis scroll
+		if self.click_on_widget(click, self.spec_xaxis):
+			#the center of zoom should be assigned a new x coordinate
+			grid_space = self.spec_view.transform.imap(click)
+			scene_space = self.spec_view.scene.transform.imap(grid_space)
+			c = (scene_space[0], self.spec_view.camera.center[1])
+			self.spec_view.camera.zoom(((1 + self.spec_view.camera.zoom_factor) ** (-event.delta[1] * 30), 1), c)
+
+		#spec Y axis scroll
+		if self.click_on_widget(click, self.spec_yaxis):
+			#the center of zoom should be assigned a new y coordinate
+			grid_space = self.spec_view.transform.imap(click)
+			scene_space = self.spec_view.scene.transform.imap(grid_space)
+			#TODO: do we need MEL space here, but that also needs proper axis ticks first
+			c = (self.spec_view.camera.center[0], scene_space[1])
+			self.spec_view.camera.zoom((1, (1 + self.spec_view.camera.zoom_factor) ** (-event.delta[1] * 30)), c)
+		
+		#speed Y axis scroll
+		if self.click_on_widget(click, self.speed_yaxis):
+			#the center of zoom should be assigned a new y coordinate
+			grid_space = self.speed_view.transform.imap(click)
+			scene_space = self.speed_view.scene.transform.imap(grid_space)
+			c = (self.speed_view.camera.center[0], scene_space[1])
+			self.speed_view.camera.zoom((1, (1 + self.speed_view.camera.zoom_factor) ** (-event.delta[1] * 30)), c)
+
+	def on_mouse_press(self, event):
+		#coords of the click on the vispy canvas
+		click = np.array([event.pos[0],event.pos[1],0,1])
+		if "Control" in event.modifiers:
+			self.last_click = click
+		else:
+			self.last_click = None
+		if "Alt" in event.modifiers:
+			#in speed view?
+			c = self.click_speed_conversion(click)
+			if c is not None:
+				closest_line = self.get_closest_line( (c[0], c[1]) )
+				if closest_line: closest_line.remove()
+		
+	def on_mouse_release(self, event):
+		#coords of the click on the vispy canvas
+		click = np.array([event.pos[0],event.pos[1],0,1])
+		if self.last_click is not None:
+			a = self.click_spec_conversion(self.last_click)
+			b = self.click_spec_conversion(click)
+			#are they in spec_view?
+			if a is not None and b is not None:
+				t0, t1 = sorted((a[0], b[0]))
+				f0, f1 = sorted((a[1], b[1]))
+				
+				fft_key = (self.fft_size, self.hop)
+				times, freqs = wow_detection.trace_cog(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
+				
+				if freqs and np.nan not in freqs:
+					TraceLine(self, times, freqs)
+				return
+			
+			#or in speed view?
+			a = self.click_speed_conversion(self.last_click)
+			b = self.click_speed_conversion(click)
+			if a is not None and b is not None:
+				diff = b[1]-a[1]
+				closest_line = self.get_closest_line( (a[0], a[1]) )
+				if closest_line: closest_line.set_offset(diff)
+				
+				
+	def get_closest_line(self, pt):
+		#returns the line (if any exists) whose center (including any offsets) is closest to pt
+		if self.lines:
+			A = np.array([line.center for line in self.lines])
+			ind = np.array([np.linalg.norm(x+y) for (x,y) in A-pt]).argmin()
+			return self.lines[ind]
+	
+	def click_on_widget(self, click, wid):
+		grid_space = wid.transform.imap(click)
+		dim = wid.size
+		return (0 < grid_space[0] < dim[0]) and (0 < grid_space[1] < dim[1])
+	
+	def click_speed_conversion(self, click):
+		#in the grid on the canvas
+		grid_space = self.speed_view.transform.imap(click)
+		#is the mouse over the spectrum spec_view area?
+		if self.click_on_widget(click, self.speed_view):
+			return self.speed_view.scene.transform.imap(grid_space)
+				
+	def click_spec_conversion(self, click):
+		#in the grid on the canvas
+		grid_space = self.spec_view.transform.imap(click)
+		#is the mouse over the spectrum spec_view area?
+		if self.click_on_widget(click, self.spec_view):
+			scene_space = self.spec_view.scene.transform.imap(grid_space)
+			#careful, we need a spectrum already
+			if self.images[0]:
+				#in fact the simple Y mel transform would be enough in any case
+				#but this would also support other transforms
+				return self.images[0].transform.imap(scene_space)
+# -----------------------------------------------------------------------------
 if __name__ == '__main__':
-	app_root = Tk()
-	app = Application(app_root)
-	app_root.mainloop()
+	appQt = QtWidgets.QApplication(sys.argv)
+	win = MainWindow()
+	win.show()
+	appQt.exec_()

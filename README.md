@@ -23,9 +23,16 @@ python pyrespeeder_gui.py
 
 Otherwise, specify the full paths to python.exe and the script.
 
+-NEW Version - How to use-
+1) Load an audio file
+2) Adjust the spectrogram settings
+3) In the spectrum, trace sounds that should be of constant pitch with CTRL+leftclicks
+4) In the speed chart, move the traces up or down with CTRL+leftclicks/drag so that overlapping pieces match up. Delete bad traces with ALT+leftclick on the speed chart.
+5) Save your traces so you can go back to them later.
+6) Change the resampling settings (see OLD version notes below for more instructions)
+7) Click resample.
 
-
--Modes-
+-OLD Version Modes-
 1) Manual Tracing:
 Run the spectrogram and "trace" the sound with CTRL+leftclicks, point by point (linear interpolation!), then close the spectrogram. ALT+Click deletes a point, DELETE+Click deletes all. Your trace is written to a text file upon closing.
 

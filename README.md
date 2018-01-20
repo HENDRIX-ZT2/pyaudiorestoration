@@ -78,5 +78,5 @@ The trace starts in the given frequency band, which should be relatively narrow 
 
 ### References
 - Czyzewski et al. (2007). DSP Techniques for Determining "Wow" Distortion. Journal of the Audio Engineering Society. 55.
-- endolith (2011). Perfect Sinc Interpolation in Matlab and Python.
-- Feaster, P. (2017). The Wow Factor in Audio Restoration. [https://griffonagedotcom.wordpress.com/2017/02/16/the-wow-factor-in-audio-restoration/]
+- endolith (2011). [Perfect Sinc Interpolation in Matlab and Python.](https://gist.github.com/endolith/1297227)
+- Feaster, P. (2017). [The Wow Factor in Audio Restoration.](https://griffonagedotcom.wordpress.com/2017/02/16/the-wow-factor-in-audio-restoration/)

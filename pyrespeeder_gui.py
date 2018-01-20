@@ -109,10 +109,10 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		self.filename = ""
 		
-		self.open_b = QtWidgets.QPushButton('Open Audio', self)
+		self.open_b = QtWidgets.QPushButton('Open Audio')
 		self.open_b.clicked.connect(self.open_audio)
 		
-		self.save_b = QtWidgets.QPushButton('Save Traces', self)
+		self.save_b = QtWidgets.QPushButton('Save Traces')
 		self.save_b.clicked.connect(self.save_traces)
 		
 		fft_l = QtWidgets.QLabel("FFT Size")
@@ -122,7 +122,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		overlap_l = QtWidgets.QLabel("FFT Overlap")
 		self.overlap_c = QtWidgets.QComboBox(self)
-		self.overlap_c.addItems(list(("1", "2", "4", "8")))
+		self.overlap_c.addItems(list(("1", "2", "4", "8", "16")))
 		self.overlap_c.currentIndexChanged.connect(self.update_param_hard)
 		
 		cmap_l = QtWidgets.QLabel("Colors")
@@ -140,8 +140,17 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		trace_l = QtWidgets.QLabel("Tracing Mode")
 		self.trace_c = QtWidgets.QComboBox(self)
-		self.trace_c.addItems(("Center of Gravity","Pitchtrack",))
-		#self.trace_c.currentIndexChanged.connect(self.update_param_soft)
+		self.trace_c.addItems(("Center of Gravity","Correlation",))
+		self.trace_c.currentIndexChanged.connect(self.update_trace_mode)
+		
+		self.delete_selected_b = QtWidgets.QPushButton('Delete Selected Trace')
+		self.delete_selected_b.clicked.connect(self.delete_selected_tracess)
+		self.delete_all_b = QtWidgets.QPushButton('Delete All Traces')
+		self.delete_all_b.clicked.connect(self.delete_all_traces)
+		
+		self.autoalign_b = QtWidgets.QCheckBox("Auto-Align")
+		self.autoalign_b.setChecked(True)
+		self.autoalign_b.stateChanged.connect(self.update_alignment_mode)
 		
 		
 		prec_l = QtWidgets.QLabel("Precision")
@@ -172,6 +181,9 @@ class ObjectWidget(QtWidgets.QWidget):
 		#column 23
 		gbox.addWidget(trace_l, 0, 2)
 		gbox.addWidget(self.trace_c, 0, 3)
+		gbox.addWidget(self.delete_selected_b, 1, 2)
+		gbox.addWidget(self.delete_all_b, 1, 3)
+		gbox.addWidget(self.autoalign_b, 2, 3)
 		
 		#column 45
 		gbox.addWidget(self.resample_b, 0, 5)
@@ -192,19 +204,20 @@ class ObjectWidget(QtWidgets.QWidget):
 		vbox.addStretch(1.0)
 
 		self.setLayout(vbox)
+		
 	
 	def onProgress(self, i):
 		self.progressBar.setValue(i)
 		
 	def open_audio(self):
-		f = QtWidgets.QFileDialog.getOpenFileName(self, 'Open file', 'c:\\', "Audio files (*.flac *.wav)")
-		if f:
-			#pyqt5 returns a tuple
-			self.filename = f[0]
+		#pyqt5 returns a tuple
+		self.filename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open file', 'c:\\', "Audio files (*.flac *.wav)")[0]
+		if self.filename:
 			self.settings_hard_changed.emit()
 			data = resampling.read_trace(self.filename)
 			for offset, times, freqs in data:
 				TraceLine(self.parent.canvas, times, freqs, offset=offset)
+			self.parent.canvas.master_speed.update()
 	
 	def save_traces(self):
 		#get the data from the traces and save it
@@ -214,7 +227,23 @@ class ObjectWidget(QtWidgets.QWidget):
 		print("Saved",len(data),"traces")
 		if data:
 			resampling.write_trace(self.filename, data)
-	
+			
+	def delete_selected_tracess(self):
+		for trace in reversed(self.parent.canvas.selected_traces):
+			trace.remove()
+		self.parent.canvas.master_speed.update()
+			
+	def delete_all_traces(self):
+		for line in reversed(self.parent.canvas.lines):
+			line.remove()
+		self.parent.canvas.master_speed.update()
+			
+	def update_trace_mode(self):
+		self.parent.canvas.trace_mode = self.trace_c.currentText()
+		
+	def update_alignment_mode(self):
+		self.parent.canvas.auto_align = self.autoalign_b.isChecked()
+		
 	def run_resample(self):
 		mode = self.mode_c.currentText()
 		prec = self.prec_s.value()
@@ -223,7 +252,6 @@ class ObjectWidget(QtWidgets.QWidget):
 		print("Resampling",self.filename, mode, prec)
 		self.myLongTask.settings = (self.filename, speed_curve, mode, prec, [0,], "Diffused", None)
 		self.myLongTask.start()
-		#resampling.run(self.filename, speed_curve = speed_curve, resampling_mode=mode, frequency_prec=prec, use_channels=[0,], dither="Diffused", target_freq=None)
 			
 	def update_resampling_presets(self, option):
 		mode = self.mode_c.currentText()
@@ -287,7 +315,7 @@ class MasterSpeedLine:
 		self.data = np.ones((2, 2), dtype=np.float32)
 		self.data[:, 0] = (0, 999)
 		self.data[:, 1] = (1, 1)
-		self.line_speed = scene.Line(pos=self.data, color=(1, 0, 0, 1), method='gl')
+		self.line_speed = scene.Line(pos=self.data, color=(1, 0, 0, .5), method='gl')
 		self.line_speed.parent = vispy_canvas.speed_view.scene
 		
 	def update(self):
@@ -311,19 +339,41 @@ class MasterSpeedLine:
 
 class TraceLine:
 	"""Stores and visualizes a trace fragment, including its speed offset."""
-	def __init__(self, vispy_canvas, times, freqs, offset=0.0):
+	def __init__(self, vispy_canvas, times, freqs, offset=None):
 		
 		self.vispy_canvas = vispy_canvas
-		self.vispy_canvas.lines.append(self)
-		
-		self.offset = offset
 		
 		self.times = np.asarray(times)
 		self.freqs = np.asarray(freqs)
-		self.speed = freqs / np.mean(freqs) + offset
 		
-		self.center = np.array( (np.mean(self.times), np.mean(self.speed)) )
-		print(self.center)
+		mean_freqs = np.mean(self.freqs)
+		mean_times = np.mean(self.times)
+		
+		self.speed = freqs / mean_freqs# + offset
+		
+		#we don't want to overwrite existing offsets loaded from files
+		if offset is None:
+			if not vispy_canvas.auto_align:
+				print("no align")
+				offset = 0
+			else:
+				print("Setting automatic offset")
+				#create the array for sampling
+				out = np.ones((len(times), len(self.vispy_canvas.lines)), dtype=np.float32)
+				#lerp and sample all lines, use NAN for missing parts
+				for i, line in enumerate(self.vispy_canvas.lines):
+					line_sampled = np.interp(times, line.times, line.speed, left = np.nan, right = np.nan)
+					out[:, i] = line_sampled
+				#take the mean and ignore nans
+				mean_with_nans = np.nanmean(out, axis=1)
+				offset = np.nanmean(mean_with_nans-self.speed)
+				offset = 0 if np.isnan(offset) else offset
+			
+		self.offset = offset
+		self.speed += offset
+		
+		self.spec_center = np.array( (mean_times, mean_freqs) )
+		self.speed_center = np.array( (mean_times, np.mean(self.speed)) )
 		
 		data = np.ones((len(times), 3), dtype=np.float32)*-2
 		data[:, 0] = times
@@ -341,17 +391,37 @@ class TraceLine:
 		self.speed_data[:, 1] = self.speed
 		self.line_speed = scene.Line(pos=self.speed_data, color=(1, 1, 1, .5), method='gl')
 		self.line_speed.parent = vispy_canvas.speed_view.scene
-		self.vispy_canvas.master_speed.update()
+		#self.vispy_canvas.master_speed.update()
+		self.vispy_canvas.lines.append(self)
 		
 	def set_offset(self, offset):
-		print("offset",offset)
+		#print("offset",offset)
 		self.offset += offset
-		self.center[1] += offset
+		self.speed_center[1] += offset
 		self.speed += offset
-		print("new center",self.center)
+		#print("new center",self.center)
 		self.speed_data[:, 1] = self.speed
 		self.line_speed.set_data(pos = self.speed_data)
-		self.vispy_canvas.master_speed.update()
+		#self.vispy_canvas.master_speed.update()
+	
+	
+	def deselect(self):
+		"""Deselect this line, ie. restore its colors to their original state"""
+		self.line_speed.set_data(color = (1, 1, 1, .5))
+		self.line_spec.set_data(color = (1, 1, 1, 1))
+		self.vispy_canvas.selected_traces.remove(self)
+		
+	def select(self, multi=False):
+		"""Toggle this line's selection state"""
+		if not multi:
+			for trace in reversed(self.vispy_canvas.selected_traces):
+				trace.deselect()
+		if self in self.vispy_canvas.selected_traces:
+			self.deselect()
+		else:
+			self.line_speed.set_data(color = (0, 1, 0, 1))
+			self.line_spec.set_data(color = (0, 1, 0, 1))
+			self.vispy_canvas.selected_traces.append(self)
 		
 	def remove(self):
 		self.line_speed.parent = None
@@ -359,7 +429,8 @@ class TraceLine:
 		#note: this has to search the list
 		self.vispy_canvas.lines.remove(self)
 		self.vispy_canvas.master_speed.update()
-		
+		if self in self.vispy_canvas.selected_traces:
+			self.deselect()
 	
 class Canvas(scene.SceneCanvas):
 
@@ -370,6 +441,9 @@ class Canvas(scene.SceneCanvas):
 		cm = "fire"
 		self.vmin = -80
 		self.vmax = -40
+		self.auto_align = True
+		self.trace_mode = "Center of Gravity"
+		self.selected_traces = []
 		
 		self.last_click = None
 		self.fft_size = 1024
@@ -385,9 +459,6 @@ class Canvas(scene.SceneCanvas):
 		
 		grid = self.central_widget.add_grid(margin=10)
 		grid.spacing = 0
-
-		#self.header = scene.Label(self.filename, color='white')
-		#self.header.height_max = 30
 		
 		#speed chart
 		self.speed_yaxis = scene.AxisWidget(orientation='left',
@@ -396,13 +467,6 @@ class Canvas(scene.SceneCanvas):
 								 axis_label_margin=35,
 								 tick_label_margin=5)
 		self.speed_yaxis.width_max = 55
-		# self.speed_xaxis = scene.AxisWidget(orientation='bottom',
-								 # axis_label='sec',
-								 # axis_font_size=8,
-								 # axis_label_margin=35,
-								 # tick_label_margin=5)
-		# self.speed_xaxis.height_max = 55
-								 
 		
 		#spectrum
 		self.spec_yaxis = scene.AxisWidget(orientation='left',
@@ -445,17 +509,14 @@ class Canvas(scene.SceneCanvas):
 		self.spec_view = grid.add_view(row=2, col=1, border_color='white')
 		grid.add_widget(self.colorbar_display, row=2, col=2)
 		self.spec_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0, 10, 10), )
-		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0.95, 10, 1.05), )
+		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0.95, 10, 0.1), )
 		
 
-
-						
 		#TODO: make sure they are bound when started, not just after scrolling
 		#self.speed_xaxis.link_view(self.speed_view)
 		self.speed_yaxis.link_view(self.speed_view)
 		self.spec_xaxis.link_view(self.spec_view)
 		self.spec_yaxis.link_view(self.spec_view)
-		
 		
 		self.images = []
 		self.lines = []
@@ -487,10 +548,8 @@ class Canvas(scene.SceneCanvas):
 				self.fft_storage = {}
 				
 				print("removing old lines")
-				for i in reversed(range(0, len(self.lines))):
-					#self.lines[i].parent = None
-					#self.lines.pop(i)
-					self.lines[i].remove()
+				for line in reversed(self.lines):
+					line.remove()
 					
 			soundob = sf.SoundFile(filename)
 			sr = soundob.samplerate
@@ -535,7 +594,7 @@ class Canvas(scene.SceneCanvas):
 				
 				#(re)set the spec_view
 				#only the camera dimension is mel'ed, as the image gets it from its transform
-				self.speed_view.camera.rect = (0, 0, num_ffts * hop / sr, 2)
+				self.speed_view.camera.rect = (0, 0.95, num_ffts * hop / sr, 0.1)
 				self.spec_view.camera.rect = (0, 0, num_ffts * hop / sr, to_mel(sr//2))
 				#link them, but use custom logic to only link the x view
 				self.spec_view.camera.link(self.speed_view.camera)
@@ -599,7 +658,6 @@ class Canvas(scene.SceneCanvas):
 			#the center of zoom should be assigned a new y coordinate
 			grid_space = self.spec_view.transform.imap(click)
 			scene_space = self.spec_view.scene.transform.imap(grid_space)
-			#TODO: do we need MEL space here, but that also needs proper axis ticks first
 			c = (self.spec_view.camera.center[0], scene_space[1])
 			self.spec_view.camera.zoom((1, (1 + self.spec_view.camera.zoom_factor) ** (-event.delta[1] * 30)), c)
 		
@@ -613,18 +671,28 @@ class Canvas(scene.SceneCanvas):
 
 	def on_mouse_press(self, event):
 		#coords of the click on the vispy canvas
+		self.last_click = None
 		click = np.array([event.pos[0],event.pos[1],0,1])
-		if "Control" in event.modifiers:
-			self.last_click = click
-		else:
-			self.last_click = None
-		if "Alt" in event.modifiers:
-			#in speed view?
-			c = self.click_speed_conversion(click)
-			if c is not None:
-				closest_line = self.get_closest_line( (c[0], c[1]) )
-				if closest_line: closest_line.remove()
-		
+		if event.button == 1:
+			if "Control" in event.modifiers:
+				self.last_click = click
+					
+		#selection, single or multi
+		if event.button == 2:
+			closest_line = self.get_closest_line( click )
+			if closest_line:
+				if "Shift" in event.modifiers:
+					closest_line.select(multi=True)
+					event.handled = True
+				else:
+					closest_line.select()
+					event.handled = True
+	
+	# def on_mouse_move(self, event):
+		# print("move")
+	def on_mouse_drag(self, event):
+		print("drag")
+	
 	def on_mouse_release(self, event):
 		#coords of the click on the vispy canvas
 		click = np.array([event.pos[0],event.pos[1],0,1])
@@ -637,27 +705,45 @@ class Canvas(scene.SceneCanvas):
 				f0, f1 = sorted((a[1], b[1]))
 				
 				fft_key = (self.fft_size, self.hop)
-				times, freqs = wow_detection.trace_cog(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
+				#maybe query it here from the button instead of the other way
+				if self.trace_mode == "Center of Gravity":
+					times, freqs = wow_detection.trace_cog(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
+				elif self.trace_mode == "Correlation":
+					times, freqs = wow_detection.trace_correlation(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, t0 = t0, t1 = t1)
+				else:
+					return
 				
-				if freqs and np.nan not in freqs:
+				if len(freqs) and np.nan not in freqs:
 					TraceLine(self, times, freqs)
+					self.master_speed.update()
 				return
 			
 			#or in speed view?
+			#then we are only interested in the Y difference, so we can move the selected speed trace up or down
 			a = self.click_speed_conversion(self.last_click)
 			b = self.click_speed_conversion(click)
 			if a is not None and b is not None:
 				diff = b[1]-a[1]
-				closest_line = self.get_closest_line( (a[0], a[1]) )
-				if closest_line: closest_line.set_offset(diff)
+				for trace in self.selected_traces:
+					trace.set_offset(diff)
+				self.master_speed.update()
 				
 				
-	def get_closest_line(self, pt):
-		#returns the line (if any exists) whose center (including any offsets) is closest to pt
-		if self.lines:
-			A = np.array([line.center for line in self.lines])
-			ind = np.array([np.linalg.norm(x+y) for (x,y) in A-pt]).argmin()
-			return self.lines[ind]
+	def get_closest_line(self, click, mode="speed"):
+		if click is not None:
+			c = self.click_speed_conversion(click)
+			if c is not None:
+				A = np.array([line.speed_center for line in self.lines])
+			else:
+				c = self.click_spec_conversion(click)
+				A = np.array([line.spec_center for line in self.lines])
+			#no click in the right areas
+			if c is None: return
+			pt = (c[0], c[1])
+			#returns the line (if any exists) whose center (including any offsets) is closest to pt
+			if self.lines:
+				ind = np.array([np.linalg.norm(x+y) for (x,y) in A-pt]).argmin()
+				return self.lines[ind]
 	
 	def click_on_widget(self, click, wid):
 		grid_space = wid.transform.imap(click)

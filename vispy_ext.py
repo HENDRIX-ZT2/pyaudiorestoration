@@ -55,10 +55,6 @@ class PanZoomCameraExt(PanZoomCamera):
 		if event.handled or not self.interactive:
 			return
 
-		# Scrolling
-		#BaseCamera.viewbox_mouse_event(self, event)
-		
-		
 		if event.type == 'mouse_wheel':
 			center = self._scene_transform.imap(event.pos)
 			#stretch Y
@@ -88,15 +84,15 @@ class PanZoomCameraExt(PanZoomCamera):
 				p2s = self._transform.imap(p2)
 				self.pan(p1s-p2s)
 				event.handled = True
-			elif 2 in event.buttons and not modifiers:
-				# Zoom
-				p1c = np.array(event.last_event.pos)[:2]
-				p2c = np.array(event.pos)[:2]
-				scale = ((1 + self.zoom_factor) **
-						 ((p1c-p2c) * np.array([1, -1])))
-				center = self._transform.imap(event.press_event.pos[:2])
-				self.zoom(scale, center)
-				event.handled = True
+			# elif 2 in event.buttons and not modifiers:
+				# # Zoom
+				# p1c = np.array(event.last_event.pos)[:2]
+				# p2c = np.array(event.pos)[:2]
+				# scale = ((1 + self.zoom_factor) **
+						 # ((p1c-p2c) * np.array([1, -1])))
+				# center = self._transform.imap(event.press_event.pos[:2])
+				# self.zoom(scale, center)
+				# event.handled = True
 			else:
 				event.handled = False
 		elif event.type == 'mouse_press':
@@ -106,50 +102,6 @@ class PanZoomCameraExt(PanZoomCamera):
 		else:
 			event.handled = False
 		
-		# #this works
-		# for cam in self._linked_cameras:
-			# r = cam.rect
-			# r.left = self.rect.left
-			# r.right = self.rect.right
-			# cam.rect = Rect(r)
-			# cam.view_changed()
-
-	# def _set_scene_transform(self, tr):
-		# """ Called by subclasses to configure the viewbox scene transform.
-		# """
-		# # todo: check whether transform has changed, connect to
-		# # transform.changed event
-		# pre_tr = self.pre_transform
-		# if pre_tr is None:
-			# self._scene_transform = tr
-		# else:
-			# self._transform_cache.roll()
-			# self._scene_transform = self._transform_cache.get([pre_tr, tr])
-
-		# # Mark the transform dynamic so that it will not be collapsed with
-		# # others 
-		# self._scene_transform.dynamic = True
-		
-		# # Update scene
-		# self._viewbox.scene.transform = self._scene_transform
-		# self._viewbox.update()
-
-		# # Apply same state to linked cameras, but prevent that camera
-		# # to return the favor
-		# for cam in self._linked_cameras:
-			# if cam is self._linked_cameras_no_update:
-				# continue
-			# try:
-				# cam._linked_cameras_no_update = self
-				# r = cam.rect
-				# r.left = self.rect.left
-				# r.right = self.rect.right
-				# #cam.rect = r
-				# #cam.set_state(rect=r)
-				# cam.set_state(self.get_state())
-			# finally:
-				# cam._linked_cameras_no_update = None
-
 	def _set_scene_transform(self, tr):
 		""" Called by subclasses to configure the viewbox scene transform.
 		"""

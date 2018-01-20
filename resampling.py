@@ -371,7 +371,7 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 	#TODO:
 	#cover up block cuts, with overlap
 	#for blocks: adaptive resolution according to speed derivation. more derivation = shorter blocks
-	return
+
 #Expansion:
 #the more frequency precision (smaller percentage), the longer it takes
 #temporal precision is -theoretically- unaffected

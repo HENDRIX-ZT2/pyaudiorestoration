@@ -3,7 +3,7 @@ Remove tape wow and flutter from audio recordings via their spectra. A simple so
 
 ![Imgur](https://i.imgur.com/yUg6TTn.jpg)
 
--Installation-
+### Installation
 You need to have installed:
 - python 3
 - numpy
@@ -32,7 +32,30 @@ Otherwise, specify the full paths to python.exe and the script.
 6) Change the resampling settings (see OLD version notes below for more instructions)
 7) Click resample.
 
--OLD Version Modes-
+
+### Hotkeys:
+
+#### Navigation:
+- LMB-Drag: Move the spectral and speed view.
+
+- Scroll: Zoom in time only.
+
+- Shift + Scroll: Zoom in frequency only.
+
+- CTRL + Scroll: Zoom in time and frequency.
+
+- You can also scroll (but currently not drag) the axes directly.
+
+#### Functions:
+- CTRL + LMB-Drag: In spectral view: runs the current tracing function in the dragged area; In speed view: offsets the currently selected speed curves by the drag
+
+- RMB: Single line selection, deselects all previously selected lines.
+
+- Shift + RMB: Multi line selection, click align again to deselect it.
+
+
+
+### OLD Version Modes:
 1) Manual Tracing:
 Run the spectrogram and "trace" the sound with CTRL+leftclicks, point by point (linear interpolation!), then close the spectrogram. ALT+Click deletes a point, DELETE+Click deletes all. Your trace is written to a text file upon closing.
 
@@ -49,11 +72,11 @@ General purpose and best quality, but slowest. Ideal resampling, hence no overto
 The trace starts in the given frequency band, which should be relatively narrow and not too low.
 
 
--Notes-
+### Further Notes
 - Manual and automatic tracing always uses the first selected channel, resampling uses all selected channels
 - Resampling causes tiny clicks at the segment boundaries
 
-References:
+### References
 - Czyzewski et al. (2007). DSP Techniques for Determining "Wow" Distortion. Journal of the Audio Engineering Society. 55.
 - endolith (2011). Perfect Sinc Interpolation in Matlab and Python.
 - Feaster, P. (2017). The Wow Factor in Audio Restoration. [https://griffonagedotcom.wordpress.com/2017/02/16/the-wow-factor-in-audio-restoration/]

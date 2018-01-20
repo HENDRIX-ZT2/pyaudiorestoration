@@ -19,11 +19,11 @@ Anaconda will have most of these installed by default. Best install the missing 
 
 Assuming you have python as an environment variable and are in the same folder as the script, start it with
 
-python pyrespeeder_gui.py
+`python pyrespeeder_gui.py`
 
-Otherwise, specify the full paths to python.exe and the script.
+Otherwise, specify the full paths to `python.exe` and the script.
 
--NEW Version - How to use-
+### NEW Version - How to use
 1) Load an audio file
 2) Adjust the spectrogram settings
 3) In the spectrum, trace sounds that should be of constant pitch with CTRL+leftclicks

@@ -33,9 +33,9 @@ Otherwise, specify the full paths to `python.exe` and the script.
 7) Click resample.
 
 
-### Hotkeys:
+### Hotkeys
 
-#### Navigation:
+#### Navigation
 - LMB-Drag: Move the spectral and speed view.
 
 - Scroll: Zoom in time only.
@@ -46,7 +46,7 @@ Otherwise, specify the full paths to `python.exe` and the script.
 
 - You can also scroll (but currently not drag) the axes directly.
 
-#### Functions:
+#### Functions
 - CTRL + LMB-Drag: In spectral view: runs the current tracing function in the dragged area; In speed view: offsets the currently selected speed curves by the drag
 
 - RMB: Single line selection, deselects all previously selected lines.
@@ -55,11 +55,11 @@ Otherwise, specify the full paths to `python.exe` and the script.
 
 
 
-### OLD Version Modes:
-1) Manual Tracing:
+### OLD Version Modes
+#### Manual Tracing
 Run the spectrogram and "trace" the sound with CTRL+leftclicks, point by point (linear interpolation!), then close the spectrogram. ALT+Click deletes a point, DELETE+Click deletes all. Your trace is written to a text file upon closing.
 
-2) Resampling:
+#### Resampling
 - Blocks method:
 Good for long-range, gradual wow. Fast, good frequency precision, little temporal precision.
 - Expansion method [adapted from Feaster, P. (2017)]:
@@ -67,7 +67,7 @@ General purpose, but slower. Much faster and more accurate with dithering enable
 - Sinc method [based on endolith (2011)]:
 General purpose and best quality, but slowest. Ideal resampling, hence no overtones or distortion.
 
-3) Automatic Tracing:
+#### Automatic Tracing
 - Trace Adaptive Center of Gravity [adapted from Czyzewski et al. (2007)]:
 The trace starts in the given frequency band, which should be relatively narrow and not too low.
 

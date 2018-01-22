@@ -92,8 +92,8 @@ class TaskThread(QtCore.QThread):
 	notifyProgress = QtCore.pyqtSignal(int)
 	settings = "foo"
 	def run(self):
-		name, speed_curve, resampling_mode, frequency_prec, use_channels, dither, target_freq = self.settings
-		resampling.run(name, speed_curve= speed_curve, resampling_mode = resampling_mode, frequency_prec=frequency_prec, use_channels=use_channels, dither=dither, target_freq=target_freq, prog_sig=self)
+		name, speed_curve, resampling_mode, frequency_prec, use_channels, dither = self.settings
+		resampling.run(name, speed_curve= speed_curve, resampling_mode = resampling_mode, frequency_prec=frequency_prec, use_channels=use_channels, dither=dither, prog_sig=self)
 			
 class ObjectWidget(QtWidgets.QWidget):
 	"""
@@ -135,7 +135,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		mode_l = QtWidgets.QLabel("Resampling Mode")
 		self.mode_c = QtWidgets.QComboBox(self)
-		self.mode_c.addItems(("Linear", "Expansion", "Sinc", "Windowed Sinc", "Blocks"))
+		self.mode_c.addItems(("Linear", "Expansion", "Sinc", "Blocks"))
 		self.mode_c.currentIndexChanged.connect(self.update_resampling_presets)
 		
 		trace_l = QtWidgets.QLabel("Tracing Mode")
@@ -227,6 +227,8 @@ class ObjectWidget(QtWidgets.QWidget):
 		print("Saved",len(data),"traces")
 		if data:
 			resampling.write_trace(self.filename, data)
+			#speed_data = self.parent.canvas.master_speed.get_linspace()
+			#resampling.write_speed(self.filename, speed_data)
 			
 	def delete_selected_tracess(self):
 		for trace in reversed(self.parent.canvas.selected_traces):
@@ -248,9 +250,9 @@ class ObjectWidget(QtWidgets.QWidget):
 		mode = self.mode_c.currentText()
 		prec = self.prec_s.value()
 		#make a copy to prevent unexpected side effects
-		speed_curve = np.array(self.parent.canvas.master_speed.data)
+		speed_curve = self.parent.canvas.master_speed.get_linspace()
 		print("Resampling",self.filename, mode, prec)
-		self.myLongTask.settings = (self.filename, speed_curve, mode, prec, [0,], "Diffused", None)
+		self.myLongTask.settings = (self.filename, speed_curve, mode, prec, [0,], "Diffused")
 		self.myLongTask.start()
 			
 	def update_resampling_presets(self, option):
@@ -260,8 +262,6 @@ class ObjectWidget(QtWidgets.QWidget):
 		elif mode == "Blocks":
 			self.prec_s.setValue(0.01)
 		elif mode == "Sinc":
-			self.prec_s.setValue(0.05)
-		elif mode == "Windowed Sinc":
 			self.prec_s.setValue(0.05)
 		elif mode == "Linear":
 			self.prec_s.setValue(0.01)
@@ -312,9 +312,9 @@ class MasterSpeedLine:
 		self.vispy_canvas = vispy_canvas
 		
 		#create the speed curve visualization
-		self.data = np.ones((2, 2), dtype=np.float32)
+		self.data = np.zeros((2, 2), dtype=np.float32)
 		self.data[:, 0] = (0, 999)
-		self.data[:, 1] = (1, 1)
+		self.data[:, 1] = (0, 0)
 		self.line_speed = scene.Line(pos=self.data, color=(1, 0, 0, .5), method='gl')
 		self.line_speed.parent = vispy_canvas.speed_view.scene
 		
@@ -323,19 +323,29 @@ class MasterSpeedLine:
 		#get the times at which the average should be sampled
 		times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
 		#create the array for sampling
-		out = np.ones((len(times), len(self.vispy_canvas.lines)), dtype=np.float32)
+		out = np.zeros((len(times), len(self.vispy_canvas.lines)), dtype=np.float32)
 		#lerp and sample all lines, use NAN for missing parts
 		for i, line in enumerate(self.vispy_canvas.lines):
 			line_sampled = np.interp(times, line.times, line.speed, left = np.nan, right = np.nan)
 			out[:, i] = line_sampled
 		#take the mean and ignore nans
 		mean_with_nans = np.nanmean(out, axis=1)
-		mean_with_nans[np.isnan(mean_with_nans)]=1
+		mean_with_nans[np.isnan(mean_with_nans)]=0
 		#set the output data
-		self.data = np.ones((len(times), 2), dtype=np.float32)
+		self.data = np.zeros((len(times), 2), dtype=np.float32)
 		self.data[:, 0] = times
 		self.data[:, 1] = mean_with_nans
 		self.line_speed.set_data(pos=self.data)
+		
+	def get_linspace(self):
+		"""Convert the log2 spaced speed curve back into linspace for further processing"""
+	
+		out = np.array(self.data)
+		lin_scale = np.power(2, out[:,1])
+		#print(lin_scale/np.mean(lin_scale))
+		out[:,1] = lin_scale#/np.mean(lin_scale)
+		#print(out[:,1])
+		return out
 
 class TraceLine:
 	"""Stores and visualizes a trace fragment, including its speed offset."""
@@ -349,8 +359,14 @@ class TraceLine:
 		mean_freqs = np.mean(self.freqs)
 		mean_times = np.mean(self.times)
 		
-		self.speed = freqs / mean_freqs# + offset
 		
+		#note: the final, output speed curve output should be linscale and centered on 1
+		
+		#self.speed = freqs /min(self.freqs)# mean_freqs# + offset
+		#self.speed-= np.mean(self.speed)
+		
+		self.speed = np.log2(freqs)# / mean_freqs# + offset
+		self.speed-= np.mean(self.speed)
 		#we don't want to overwrite existing offsets loaded from files
 		if offset is None:
 			if not vispy_canvas.auto_align:
@@ -475,6 +491,7 @@ class Canvas(scene.SceneCanvas):
 								 axis_label_margin=35,
 								 tick_label_margin=5)
 		self.spec_yaxis.width_max = 55
+		
 		self.spec_xaxis = scene.AxisWidget(orientation='bottom',
 								 axis_label='sec',
 								 axis_font_size=8,
@@ -509,9 +526,10 @@ class Canvas(scene.SceneCanvas):
 		self.spec_view = grid.add_view(row=2, col=1, border_color='white')
 		grid.add_widget(self.colorbar_display, row=2, col=2)
 		self.spec_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0, 10, 10), )
-		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0.95, 10, 0.1), )
+		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, -1.0, 10, 2.0), )
 		
-
+		self.speed_view.height_min = 150
+		
 		#TODO: make sure they are bound when started, not just after scrolling
 		#self.speed_xaxis.link_view(self.speed_view)
 		self.speed_yaxis.link_view(self.speed_view)
@@ -594,7 +612,7 @@ class Canvas(scene.SceneCanvas):
 				
 				#(re)set the spec_view
 				#only the camera dimension is mel'ed, as the image gets it from its transform
-				self.speed_view.camera.rect = (0, 0.95, num_ffts * hop / sr, 0.1)
+				self.speed_view.camera.rect = (0, -1.0, num_ffts * hop / sr, 2.0)
 				self.spec_view.camera.rect = (0, 0, num_ffts * hop / sr, to_mel(sr//2))
 				#link them, but use custom logic to only link the x view
 				self.spec_view.camera.link(self.speed_view.camera)
@@ -703,7 +721,7 @@ class Canvas(scene.SceneCanvas):
 			if a is not None and b is not None:
 				t0, t1 = sorted((a[0], b[0]))
 				f0, f1 = sorted((a[1], b[1]))
-				
+				print(t0, t1)
 				fft_key = (self.fft_size, self.hop)
 				#maybe query it here from the button instead of the other way
 				if self.trace_mode == "Center of Gravity":

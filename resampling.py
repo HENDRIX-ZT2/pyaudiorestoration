@@ -3,200 +3,181 @@ import resampy
 import soundfile as sf
 import os
 
-def sinc_interp_windowed(y_in, x_in, x_out, ):
+
+
+# def sinc_interp_windowed_functional_non_generator(y_in, x_in, x_out, ):
+	# """
+	# base by Gaute Hope: https://gist.github.com/gauteh/8dea955ddb1ed009b48e
+	# Interpolate the signal to the new points using a sinc kernel
+	# input:
+	# x_in		time points x is defined on
+	# y_in		 input signal column vector or matrix, with a signal in each row
+	# x_out		points to evaluate the new signal on
+	# output:
+	# y		 the interpolated signal at points x_out
+	# """
+
+	# y = np.zeros(len(x_out))
+	
+	# #has to be fairly high
+	# NT = 300
+	# for pi, p in enumerate (x_out):
+		# #map the output to the input
+		# ind = int(round(p))
+		# #print(ind)
+		# #ok, but we still have a click
+		# lower = max(0, ind-NT)
+		# upper = ind+NT
+		# #this gives ugly breaks
+		# #lower = ind-NT
+		# #upper = ind+NT
+		# si = np.sinc (x_in[lower:upper] - p)
+		# y[pi] = np.sum(si * y_in[lower:upper])
+	# return y
+
+def sinc_interp_windowed(y_in, x_in, x_out, write_after=10000, NT = 100):
 	"""
 	base by Gaute Hope: https://gist.github.com/gauteh/8dea955ddb1ed009b48e
 	Interpolate the signal to the new points using a sinc kernel
-
 	input:
-	x_in		time points x is defined on
-	y_in		 input signal column vector or matrix, with a signal in each row
-	x_out		points to evaluate the new signal on
-
+	x_in			time points x is defined on
+	y_in		 	input signal column vector or matrix, with a signal in each row
+	x_out			points to evaluate the new signal on
+	write_after		yield a block after X output samples
+	NT				samples to take before and after the central sample
 	output:
-	y		 the interpolated signal at points x_out
+	y				 the interpolated signal at points x_out
 	"""
-
-	mn = y_in.shape
-	if len(mn) == 2:
-		m = mn[0]
-		n = mn[1]
-	elif len(mn) == 1:
-		m = 1
-		n = mn[0]
-	else:
-		raise ValueError ("y_in is greater than 2D")
-
-	nn = len(x_out)
-
-	y = np.zeros((m, nn))
+	y = np.zeros(write_after+1)
+	offset = 0
 	
 	#has to be fairly high
-	a = int(max(len(x_in), len(x_out))/10)
-
-	for pi, p in enumerate (x_out):
-		#map the output to the input
-		pi_in = int(round(pi / len(x_out) * len(x_in)))
+	#NT = 100
+	# for i, p in enumerate (x_out):
+		# #map the output to the input
+		# ind = int(round(p))
+		# lower = max(0, ind-NT)
+		# upper = ind+NT
 		
-		lower = max(0, pi_in-a)
-		upper = pi_in+a
-		si = np.tile(np.sinc (x_in[lower:upper] - p), (m, 1))
-		y[:, pi] = np.sum(si * y_in[lower:upper])
-	return y.squeeze ()
+		# si = np.sinc (x_in[lower:upper] - p)
+		# y[i- offset*(write_after+1)] = np.sum(si * y_in[lower:upper])
+		# if i - offset*write_after  == write_after:
+			# offset += 1
+			# yield y
 	
-def sinc_interp(y_in, x_in, x_out):
-  """
-  by Gaute Hope: https://gist.github.com/gauteh/8dea955ddb1ed009b48e
-  Interpolate the signal to the new points using a sinc kernel
+	y = np.zeros(write_after)
+	while offset < len(x_out):
+		print("piece at", offset)
+		outind = 0
+		for i in range(offset, offset+write_after):
+			#now we are at the end and we can yield the rest of the piece
+			if i == len(x_out)-1:
+				print("end",i,outind)
+				print(len(y[0:outind]))
+				yield y[0:outind]
+				offset = len(x_out)
+				break
+			p = x_out[i]
+			#map the output to the input
+			ind = int(round(p))
+			lower = max(0, ind-NT)
+			upper = ind+NT
+			
+			si = np.sinc (x_in[lower:upper] - p)
+			y[outind] = np.sum(si * y_in[lower:upper])
+		
+			outind+=1
+		#we may have to exit here to avoid sending another block
+		if offset == len(x_out):
+			break
+		offset+=write_after
+		
+		yield y
 
-  input:
-  y_in     input signal column vector or matrix, with a signal in each row
-  x_in    time points y_in is defined on
-  x_out    points to evaluate the new signal on
+# def sinc_interp_windowed_gen(y_in, x_in, x_out ):
+	# #https://gist.github.com/nadavb/13030ca99336d4a1eb6390ad03d23c00
+	# NT = 50	 # Change this number to change the accuracy
+	# write_after = 10000
+	# result = np.ones(write_after+1)
+	# T = x_in[1] - x_in[0]  # Find the period	   
+	# fac = T * len(y_in) / len(x_out)
+	# offset = 0
+	# for i in range(0, len(x_out)):
+		# t = i * fac
+		# n = [n for n in range(max(int(-NT + t/T), 0), min(int(NT + t/T), len(y_in)))]
+		# result[i- offset*write_after] = np.sum( y_in[n] * np.sinc((t - n*T)/T) )
+		# if i - offset*write_after == write_after:
+			# offset += 1
+			# yield result
+			# result = np.ones(write_after+1)
+	
+# def sinc_interp(y_in, x_in, x_out):
+	# """
+	# base by Gaute Hope: https://gist.github.com/gauteh/8dea955ddb1ed009b48e
+	# Interpolate the signal to the new points using a sinc kernel
 
-  output:
-  y     the interpolated signal at points x_out
-  """
+	# input:
+	# y_in	   input signal vector
+	# x_in	  time points y_in is defined on
+	# x_out	   points to evaluate the new signal on
 
-  mn = y_in.shape
-  if len(mn) == 2:
-    m = mn[0]
-    n = mn[1]
-  elif len(mn) == 1:
-    m = 1
-    n = mn[0]
-  else:
-    raise ValueError("y_in is greater than 2D")
+	# output:
+	# y		the interpolated signal at points x_out
+	# """
+	# y = np.zeros(len(x_out))
+	# for pi, p in enumerate(x_out):
+		# y[pi] = np.sum(y_in * np.sinc(x_in - p))
+	# return y
+  # #https://stackoverflow.com/questions/25181642/how-set-numpy-floating-point-accuracy
+# def formula_interpolation(samples, speed, mode="Sinc"):
+	# #signal and speed arrays must be mono and have the same length
+	# #IDK where this has to be inverted otherwise
+	# speed = 1/speed
+	# in_length = len(speed)
 
-  nn = len(x_out)
+	# #create a new speed array that is as long as the output is going to be. the magic is in the output x's step length
+	# interp_speed = np.interp(np.arange(0, in_length, np.mean(speed)), np.arange(0, in_length), speed)
 
-  y = np.zeros((m, nn))
+	# #the times of the input samples, these must be evenly sampled, starting at 1
+	# in_positions = np.arange(1, in_length+1)
+	# #these are unevenly sampled, but when played back at the correct (original) sampling rate, yield the respeeded result
+	# out_positions = np.cumsum(interp_speed )
+	# if mode == "Sinc": return sinc_interp(samples, in_positions, out_positions)
+	# elif mode == "Windowed Sinc": return sinc_interp_windowed(samples, in_positions, out_positions)
+	# elif mode == "Linear": return np.interp(out_positions, in_positions, samples)
 
-  for pi, p in enumerate(x_out):
-    si = np.tile(np.sinc(x_in - p), (m, 1))
-    y[:, pi] = np.sum(si * y_in)
 
-  return y.squeeze()
-  
-def sinc_interp2(y_in, x_in, x_out):
+def write_speed(filename, speed_curve):
 	"""
-	by endolith: https://gist.github.com/endolith/1297227#file-sinc_interp-py
-	Interpolates y_in, sampled at "x_in" instants
-	Output y is sampled at "x_out" instants
-	
-	from Matlab:
-	http://phaseportrait.blogspot.com/2008/06/sinc-interpolation-in-matlab.html		   
-	"""
-	if len(y_in) != len(x_in):
-		raise ValueError('y_in and x_in must be the same length')
-	
-	# Find the period	 
-	T = x_in[1] - x_in[0]
-	
-	sincM = np.tile(x_out, (len(x_in), 1)) - np.tile(x_in[:, np.newaxis], (1, len(x_out)))
-	y = np.dot(y_in, np.sinc(sincM/T))
-	return y
-
-def formula_interpolation(samples, speed, mode="Sinc"):
-	#signal and speed arrays must be mono and have the same length
-	#IDK where this has to be inverted otherwise
-	speed = 1/speed
-	in_length = len(speed)
-
-	#create a new speed array that is as long as the output is going to be. the magic is in the output x's step length
-	interp_speed = np.interp(np.arange(0, in_length, np.mean(speed)), np.arange(0, in_length), speed)
-
-	#the times of the input samples these must be evenly sampled, starting at 1
-	in_positions = np.arange(1, in_length+1)
-	#these are unevenly sampled, but when played back at the correct (original) sampling rate, yield the respeeded result
-	out_positions = np.cumsum(interp_speed )
-	if mode == "Sinc": return sinc_interp(samples, in_positions, out_positions)
-	elif mode == "Windowed Sinc": return sinc_interp(samples, in_positions, out_positions)
-	elif mode == "Linear": return np.interp(out_positions, in_positions, samples)
-
-def flatten_trace(data):
-	"""
-	change multi-trace data into one flat continous trace
-	may have jumps
-	TODO: correct jumps by assimilating the median of all parts on log2 scale, then rescale to Hz
-	"""
-	alltimes = []
-	allfreqs = []
-	
-	for t, f in data:
-		alltimes+=t
-		allfreqs+=f
-	times, freqs = zip(*sorted(zip(alltimes, allfreqs)))
-	return np.asarray(times), np.asarray(freqs)
-	
-def trace_to_speed(data, length=None, steps=None, target_freq=None):
-	"""
-	input: multi-channel, possibly overlapping, possibly with gaps
-	output: 1D speed curve (+ time stamps, but unchanged)
+	TODO: rewrite into BIN format
+	filename: the name of the original audio file
+	data:	 a list of (times, frequencies) lists
 	"""
 	
-	# num = self.vispy_canvas.num_ffts
-	# length = num * self.vispy_canvas.hop / self.vispy_canvas.sr
-	# #get the times at which the average should be sampled
-	# times = np.linspace(0, length, num=steps)
-	# #create the array for sampling
-	# out = np.ones((len(times), len(self.vispy_canvas.lines)), dtype=np.float32)
-	# #lerp and sample all lines, use NAN for missing parts
-	# for i, line in enumerate(self.vispy_canvas.lines):
-		# line_sampled = np.interp(times, line.times, line.speed, left = np.nan, right = np.nan)
-		# out[:, i] = line_sampled
-	# #take the mean and ignore nans
-	# mean_with_nans = np.nanmean(out, axis=1)
-	# mean_with_nans[np.isnan(mean_with_nans)]=1
-	# #set the output data
-	# self.master_speed = np.ones((len(times), 2), dtype=np.float32)
-	# self.master_speed[:, 0] = times
-	# self.master_speed[:, 1] = mean_with_nans
-	# self.line_speed.set_data(pos=self.master_speed)
-	#idea:
-	#-generate continous time sample (arange(0,end)
-	#find overlapping regions
-	#-interp every freq curve
-	# extents = []
-	# #the instances on which our curve is sampled
-	# #even though the segments may overlap, the points probably do not match up
-	# #hence, interpolate
-	# alltimes = []
-	# for times, frequencies in data:
-		# extents.append( (times[0], times[-1]) )
-		# alltimes.extend(times)
-	# alltimes = sorted(alltimes)
-	# for i in range(0, extents):
-		# for j in range(0, extents):
-			# #just so we are not comparing the same data set with each other
-			# if i != i:
-				# #t0
-				# #i starts in the middle of j
-				# extents[j][0] < extents[i][0] < extents[j][1]
-				# #i ends in the middle of j
-				# extents[j][0] < extents[i][1] < extents[j][1]
-				
-	times = np.asarray(data[0][0])
-	freqs = np.asarray(data[0][1])
-	#this is the frequency all measured frequencies should have in the end
-	#if not supplied, use mean or median of freqs
-	if not target_freq:
-		target_freq	= np.median(freqs)
+	speedfilename = filename.rsplit('.', 1)[0]+".npy"
+	np.save(speedfilename, speed_curve, allow_pickle=True, fix_imports=True)
 
-	#divide them to get the speed ratio for sample expansion
-	speeds = freqs/target_freq
 	
-	return times, speeds
-
+def read_speed(filename):
+	"""
+	TODO: rewrite into BIN format
+	filename: the name of the original audio file
+	returns:
+	data:	 a list of (times, frequencies) lists
+	"""
+	
+	speedfilename = filename.rsplit('.', 1)[0]+".npy"
+	return np.load(speedfilename)
+	
 def write_trace(filename, data):
 	"""
 	TODO: rewrite into BIN format
 	filename: the name of the original audio file
-	data:    a list of (times, frequencies) lists
+	data:	 a list of (times, frequencies) lists
 	"""
 	
 	#write the data to the speed file
-	print("Writing speed data")
+	print("Writing trace data")
 	speedfilename = filename.rsplit('.', 1)[0]+".speed"
 	outstr = ""
 	for offset, times, frequencies in data:
@@ -210,7 +191,7 @@ def read_trace(filename):
 	TODO: rewrite into BIN format
 	filename: the name of the original audio file
 	returns:
-	data:    a list of (times, frequencies) lists
+	data:	 a list of (times, frequencies) lists
 	"""
 	
 	#write the data to the speed file
@@ -231,7 +212,7 @@ def read_trace(filename):
 						data[-1][2].append(float(s[1]))
 	return data
 	
-def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0.01, target_freq = None, use_channels = [0,], dither="Random", patch_ends=False, prog_sig=None):
+def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0.01, use_channels = [0,], dither="Random", patch_ends=False, prog_sig=None):
 
 	#read the file
 	soundob = sf.SoundFile(filename)
@@ -261,110 +242,123 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 		print("raw block_size:",block_size)
 		print("expanded block_size:",block_size*resampling_factor)
 	
-	overlap = 0
-	blocks = []
-	for n in range(0, len(signal), block_size):
-		blocks.append((n, block_size+n+overlap))
-	print("Num Blocks",len(blocks))
+	
+	times = speed_curve[:,0]
+	#note: this expects a a linscale speed curve centered around 1 (= no speed change)
+	speeds = speed_curve[:,1]
+		
+	if resampling_mode in ("Sinc", "Linear"):
+	
+		in_len = len(signal)
+		out_len = int(in_len*np.mean(speeds))
+		print("Input length:",in_len)
+		print("Output length:",out_len)
+		period = times[1]-times[0]
+		out_times = np.cumsum(period*speeds)
+		samples_in = times*sr
+		samples_in2 = np.interp(np.arange(0, in_len), samples_in, samples_in, left=samples_in[0], right=samples_in[-1])
+		samples_out = out_times*sr
+		samples_out2 = np.interp(np.arange(0, out_len), samples_out, samples_in, left=samples_out[0], right=samples_out[-1])
+		NT=100
+		write_after=100000
+		num_blocks = out_len/write_after
+	else:
+		overlap = 0
+		blocks = []
+		for n in range(0, len(signal), block_size):
+			blocks.append((n, block_size+n+overlap))
+		num_blocks = len(blocks)
+		#convert times to samples
+		#lerp the samples to the length of the signal
+		#!this does not handle extrapolation!
+		speed_samples_r = np.interp(np.arange(0, len(signal)), times*sr, speeds, left=speeds[0], right=speeds[-1])
+			
+		#do all processing of the speed samples right here to speed up multi channel files - the speed curve can be reused as is!
+		if resampling_mode == "Expansion":
+			#multiply each speed sample by the expansion factor
+			speed_samples_r *= resampling_factor
+			if dither == "Random":
+				#add -.5 to +.5 random noise before quantization to minimizes the global error at the cost of more local error
+				speed_samples_final = np.rint(random.rand(len(speed_samples_r))-.5 + speed_samples_r).astype(np.int64)
+			elif dither == "Diffused":
+				# the error of each sample is passed onto the next sample
+				speed_samples_final = np.ones(len(speed_samples_r), dtype = np.int64)
+				err = 0
+				for i in range( len(speed_samples_r) ):
+					inerr = speed_samples_r[i] + err
+					out = round(inerr)
+					err =  inerr-out
+					speed_samples_final[i] = out
+			else:
+				#do not dither, just round
+				speed_samples_final = np.rint(speed_samples_r).astype(np.int64)
+				
+		else:
+			#do not dither, do not round, just copy
+			speed_samples_final = speed_samples_r
 	
 	if prog_sig:
 		prog_sig.notifyProgress.emit(0)
-		prog_fac = 100/ (len(blocks)*len(use_channels))
-	
-	if speed_curve is not None:
-		times = speed_curve[:,0]
-		speeds = speed_curve[:,1]
-	else:
-		#these are measured frequencies in Hz and their times (converted to samples on the fly)
-		speedfilename = filename.rsplit('.', 1)[0]+".speed"
-		if not os.path.isfile(speedfilename):
-			print("Speed file does not exist!")
-			return
-		#read the trace curves
-		data = read_trace(filename)
-		if not len(data):
-			print("No speed data in file!")
-			return
-		#convert the fragmentary frequency trace to continous speed curve
-		times, speeds = trace_to_speed(data, target_freq=target_freq)
-	
-	#convert times to samples
-	times *= sr
-	
-	#lerp the samples to the length of the signal
-	#!this does not handle extrapolation!
-	speed_samples_r = np.interp(np.arange(0, len(signal)), times, speeds, left=speeds[0], right=speeds[-1])
-	
-	#do all processing of the speed samples right here to speed up multi channel files - the speed curve can be reused as is!
-	if resampling_mode == "Expansion":
-		#multiply each speed sample by the expansion factor
-		speed_samples_r *= resampling_factor
-		if dither == "Random":
-			#add -.5 to +.5 random noise before quantization to minimizes the global error at the cost of more local error
-			speed_samples_final = np.rint(random.rand(len(speed_samples_r))-.5 + speed_samples_r).astype(np.int64)
-		elif dither == "Diffused":
-			# the error of each sample is passed onto the next sample
-			speed_samples_final = np.ones(len(speed_samples_r), dtype = np.int64)
-			err = 0
-			for i in range( len(speed_samples_r) ):
-				inerr = speed_samples_r[i] + err
-				out = round(inerr)
-				err =  inerr-out
-				speed_samples_final[i] = out
-		else:
-			#do not dither, just round
-			speed_samples_final = np.rint(speed_samples_r).astype(np.int64)
-			
-	else:
-		#do not dither, do not round, just copy
-		speed_samples_final = speed_samples_r
-			
-	
+	print("Num Blocks",num_blocks)
+	#there are no half blocks...
+	prog_fac = 100 / np.ceil( num_blocks*len(use_channels))
 	progress = 0
 	#resample on mono channels and export each separately as repeat does not like more dimensions
 	for channel in use_channels:
 		print('Processing channel ',channel)
 		outfilename = filename.rsplit('.', 1)[0]+str(channel)+'.wav'
 		with sf.SoundFile(outfilename, 'w+', sr, 1, subtype='FLOAT') as outfile:
-			for block_start, block_end in blocks:
-				if prog_sig:
-					progress += prog_fac
-					prog_sig.notifyProgress.emit(progress)
-				#print("Writing",block_start,"to",block_end)
-				
-				#create a mono array for the current block and channel
-				signal_block = signal[block_start:block_end, channel]
-				speed_block = speed_samples_final[block_start:block_end]
-				
-				#apply the different methods
-				if resampling_mode == "Expansion":
+			if resampling_mode in ("Sinc",):
+				for block in sinc_interp_windowed(signal[:,channel], samples_in2, samples_out2, write_after=write_after, NT=NT):
+					if prog_sig:
+						progress += prog_fac
+						prog_sig.notifyProgress.emit(progress)
+					print("progress",progress)
+					print("len(block)",len(block))
+					outfile.write( block )
+			elif resampling_mode in ("Linear",):
+				block = np.interp(samples_out2, samples_in2, signal[:,channel])
+				outfile.write( block )
+			else:
+				for block_start, block_end in blocks:
+					if prog_sig:
+						progress += prog_fac
+						prog_sig.notifyProgress.emit(progress)
+					#print("Writing",block_start,"to",block_end)
 					
-					#repeat each sample by the resampling_factor * the speed factor for that sample
-					upsampled = np.repeat(signal_block, speed_block)
-					#now divide it by the resampling_factor to return to the original median speed
-					#this is fast and does not cut off high freqs
-					resampled = resampy.resample(upsampled, resampling_factor, 1, filter='sinc_window', num_zeros=4)
+					#create a mono array for the current block and channel
+					signal_block = signal[block_start:block_end, channel]
+					speed_block = speed_samples_final[block_start:block_end]
 					
-				elif resampling_mode == "Blocks":
-					#take a block of the signal
-					#tradeoff between frequency and time precision -> good for wow, unusable for flutter
-					upsampled = signal_block
+					#apply the different methods
+					if resampling_mode == "Expansion":
+						
+						#repeat each sample by the resampling_factor * the speed factor for that sample
+						upsampled = np.repeat(signal_block, speed_block)
+						#now divide it by the resampling_factor to return to the original median speed
+						#this is fast and does not cut off high freqs
+						resampled = resampy.resample(upsampled, resampling_factor, 1, filter='sinc_window', num_zeros=4)
+						
+					elif resampling_mode == "Blocks":
+						#take a block of the signal
+						#tradeoff between frequency and time precision -> good for wow, unusable for flutter
+						upsampled = signal_block
+						
+						#here we do not use the specified resampling factor but instead make our own from the average speed of the current block
+						resampling_factor = 1/ np.mean(speed_block)
+						#this is fast and does not cut off high freqs
+						resampled = resampy.resample(upsampled, resampling_factor, 1, filter='sinc_window', num_zeros=4)
 					
-					#here we do not use the specified resampling factor but instead make our own from the average speed of the current block
-					resampling_factor = 1/ np.mean(speed_block)
-					#this is fast and does not cut off high freqs
-					resampled = resampy.resample(upsampled, resampling_factor, 1, filter='sinc_window', num_zeros=4)
-				
-				elif resampling_mode in ("Sinc", "Windowed Sinc", "Linear"):
-					resampled = formula_interpolation(signal_block, speed_block, mode=resampling_mode)
+					elif resampling_mode in ("Sinc", "Windowed Sinc", "Linear"):
+						resampled = formula_interpolation(signal_block, speed_block, mode=resampling_mode)
+						
+					if patch_ends:
+						resampled[0] = signal_block[0]
+						resampled[-1] = signal_block[-1]
+					#fast attenuation of clicks, not perfect but better than nothing
 					
-				if patch_ends:
-					resampled[0] = signal_block[0]
-					resampled[-1] = signal_block[-1]
-				#fast attenuation of clicks, not perfect but better than nothing
-				
-				#resample write the output block to the audio file
-				outfile.write(resampled)
+					#resample write the output block to the audio file
+					outfile.write(resampled)
 	if prog_sig:
 		prog_sig.notifyProgress.emit(100)
 	print("Done!\n")	

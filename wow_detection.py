@@ -85,6 +85,103 @@ def trace_cog(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t
 	
 	return times, LSCoct#, LfL, LfU
 	
+def trace_sine(fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None):
+	#https://stackoverflow.com/questions/16716302/how-do-i-fit-a-sine-curve-to-my-data-with-pylab-and-numpy
+	meanfreq = (fU+fL)/2
+	amp = (fU-fL ) / 2
+	log2amp = (np.log2(fU)-np.log2(fL))/2
+	print("amp",amp, log2amp)
+	
+	fft_sr = hop/sr
+	times = np.arange(t0, t1, fft_sr)
+	period = 1.7 #seconds
+	#so this is in log2 scale
+	#basic sine curve, amplitude 1
+	sine = np.sin(times* 2*np.pi / period )# / 180. )
+
+	#to get to the desired mean frequency, add the log of that freq
+	#and then take it power 2
+	sine_on_hz = np.power(2, sine * log2amp + np.log2(meanfreq))
+	#sine_on_log = sine * amp + meanfreq
+
+	# #this can be the speed curve
+	# sine_in = sine*log2amp
+	# #this is equivalent
+	# sine_back = np.log2(sine_on_hz)
+	# sine_back = sine_back-np.mean(sine_back)
+
+
+
+	#print("sine")
+	#times = []
+	#freqs = []
+	return times, sine_on_hz#, LfL, LfU
+
+
+
+def fit_sin(tt, yy, assumed_freq=None):
+	'''Fit sin to the input time sequence, and return fitting parameters "amp", "omega", "phase", "offset", "freq", "period" and "fitfunc"'''
+	#by unsym from https://stackoverflow.com/questions/16716302/how-do-i-fit-a-sine-curve-to-my-data-with-pylab-and-np
+	tt = np.array(tt)
+	yy = np.array(yy)
+	#new: only use real input, so rfft
+	ff = np.fft.rfftfreq(len(tt), (tt[1]-tt[0]))	  # assume uniform spacing
+	fft_data = np.fft.rfft(yy)[1:]
+	#new: add an assumed frequency as an optional pre-processing step
+	if assumed_freq:
+		period = tt[1]-tt[0]
+		N = len(yy)+1
+		#find which bin this corresponds to
+		peak_est = int(round(assumed_freq * N * period))
+		#print("peak_est", peak_est)
+		#window the bins accordingly to maximize the expected peak
+		win = np.interp( np.arange(0, len(fft_data)), (0, peak_est, len(fft_data)), (0, 1, 0) )
+		#print("win", win)
+		#does this affect the phase?
+		fft_data *= win
+	peak_bin = np.argmax(np.abs(fft_data))+1
+	print("peak_bin", peak_bin)
+	guess_freq = ff[peak_bin]	# excluding the zero frequency "peak", which is related to offset
+	guess_amp = np.std(yy) * 2.**0.5
+	guess_offset = np.mean(yy)
+	#new: get the phase at the peak
+	guess_phase = np.angle(fft_data[peak_bin])
+	#print("guess_phase",guess_phase)
+	guess = np.array([guess_amp, 2.*np.pi*guess_freq, guess_phase, guess_offset])
+
+	#using cosines does not seem to make it better?
+	def sinfunc(t, A, w, p, c):	 return A * np.sin(w*t + p) + c
+	import scipy.optimize
+	popt, pcov = scipy.optimize.curve_fit(sinfunc, tt, yy, p0=guess)
+	A, w, p, c = popt
+	f = w/(2.*np.pi)
+	fitfunc = lambda t: A * np.sin(w*t + p) + c
+	return {"amp": A, "omega": w, "phase": p, "offset": c, "freq": f, "period": 1./f, "fitfunc": fitfunc, "maxcov": np.max(pcov), "rawres": (guess,popt,pcov)}
+
+	
+def trace_sine_reg(speed_curve, t0, t1, rpm = None):
+	"""Perform a regression on an area of the master speed curve to yield a sine fit"""
+	#the master speed curve
+	times = speed_curve[:,0]
+	speeds = speed_curve[:,1]
+	
+	period = times[1]-times[0]
+	#which part to sample
+	ind_start = int(t0 / period)
+	ind_stop = int(t1 / period)
+	
+	try:
+		#33,3 RPM means the period of wow is = 1,8
+		#hence its frequency 1/1,8 = 0,55
+		assumed_freq = float(rpm) / 60
+		print("Source RPM:",rpm)
+		print("Assumed Wow Frequency:",assumed_freq)
+	except:
+		assumed_freq = None
+
+	res = fit_sin(times[ind_start:ind_stop], speeds[ind_start:ind_stop], assumed_freq=assumed_freq)
+	
+	return res["amp"], res["omega"], res["phase"], res["offset"]
 	
 def parabolic(f, x):
 	"""Helper function to refine a peak position in an array"""

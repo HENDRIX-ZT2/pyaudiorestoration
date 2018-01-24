@@ -140,17 +140,29 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		trace_l = QtWidgets.QLabel("Tracing Mode")
 		self.trace_c = QtWidgets.QComboBox(self)
-		self.trace_c.addItems(("Center of Gravity","Correlation",))
-		self.trace_c.currentIndexChanged.connect(self.update_trace_mode)
+		self.trace_c.addItems(("Center of Gravity","Correlation","Sine Draw", "Sine Regression"))
+		self.trace_c.currentIndexChanged.connect(self.update_other_settings)
 		
 		self.delete_selected_b = QtWidgets.QPushButton('Delete Selected Trace')
 		self.delete_selected_b.clicked.connect(self.delete_selected_tracess)
 		self.delete_all_b = QtWidgets.QPushButton('Delete All Traces')
 		self.delete_all_b.clicked.connect(self.delete_all_traces)
 		
+		rpm_l = QtWidgets.QLabel("Source RPM")
+		rpm_l.setToolTip("This helps avoid bad values in the Sine regression. If you don't know the source, measure the duration of one wow cycle. RPM = 60/cycle length")
+		self.rpm_c = QtWidgets.QComboBox(self)
+		self.rpm_c.setEditable(True)
+		self.rpm_c.addItems(("Unknown","33.333","45","78"))
+		self.rpm_c.currentIndexChanged.connect(self.update_other_settings)
+		
+		show_l = QtWidgets.QLabel("Show Speed for")
+		self.show_c = QtWidgets.QComboBox(self)
+		self.show_c.addItems(("Both","Traces only","Regressions only"))
+		self.show_c.currentIndexChanged.connect(self.update_show_settings)
+		
 		self.autoalign_b = QtWidgets.QCheckBox("Auto-Align")
 		self.autoalign_b.setChecked(True)
-		self.autoalign_b.stateChanged.connect(self.update_alignment_mode)
+		self.autoalign_b.stateChanged.connect(self.update_other_settings)
 		
 		
 		prec_l = QtWidgets.QLabel("Precision")
@@ -183,7 +195,11 @@ class ObjectWidget(QtWidgets.QWidget):
 		gbox.addWidget(self.trace_c, 0, 3)
 		gbox.addWidget(self.delete_selected_b, 1, 2)
 		gbox.addWidget(self.delete_all_b, 1, 3)
-		gbox.addWidget(self.autoalign_b, 2, 3)
+		gbox.addWidget(rpm_l, 2, 2)
+		gbox.addWidget(self.rpm_c, 2, 3)
+		gbox.addWidget(show_l, 3, 2)
+		gbox.addWidget(self.show_c, 3, 3)
+		gbox.addWidget(self.autoalign_b, 4, 3)
 		
 		#column 45
 		gbox.addWidget(self.resample_b, 0, 5)
@@ -218,6 +234,11 @@ class ObjectWidget(QtWidgets.QWidget):
 			for offset, times, freqs in data:
 				TraceLine(self.parent.canvas, times, freqs, offset=offset)
 			self.parent.canvas.master_speed.update()
+			
+			data = resampling.read_regs(self.filename)
+			for t0, t1, amplitude, omega, phase, offset in data:
+				RegLine(self.parent.canvas, t0, t1, amplitude, omega, phase, offset)
+			self.parent.canvas.master_reg_speed.update()
 	
 	def save_traces(self):
 		#get the data from the traces and save it
@@ -230,27 +251,74 @@ class ObjectWidget(QtWidgets.QWidget):
 			#speed_data = self.parent.canvas.master_speed.get_linspace()
 			#resampling.write_speed(self.filename, speed_data)
 			
+		#get the data from the regs and save it
+		data = []
+		for reg in self.parent.canvas.regs:
+			#self.amplitude * np.sin(self.omega * clipped_times + self.phase) + self.offset
+			data.append( (reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) )
+		if data:
+			resampling.write_regs(self.filename, data)
+			
 	def delete_selected_tracess(self):
 		for trace in reversed(self.parent.canvas.selected_traces):
 			trace.remove()
 		self.parent.canvas.master_speed.update()
+		self.parent.canvas.master_reg_speed.update()
 			
 	def delete_all_traces(self):
 		for line in reversed(self.parent.canvas.lines):
 			line.remove()
+		for reg in reversed(self.parent.canvas.regs):
+			reg.remove()
 		self.parent.canvas.master_speed.update()
+		self.parent.canvas.master_reg_speed.update()
 			
-	def update_trace_mode(self):
+	def update_other_settings(self):
 		self.parent.canvas.trace_mode = self.trace_c.currentText()
-		
-	def update_alignment_mode(self):
 		self.parent.canvas.auto_align = self.autoalign_b.isChecked()
-		
+		self.parent.canvas.rpm = self.rpm_c.currentText()
+	
+	def update_show_settings(self):
+		show = self.show_c.currentText()
+		#"Traces only","Regressions only","Both"
+		if show == "Traces only":
+			self.parent.canvas.show_regs = False
+			self.parent.canvas.show_lines = True
+			self.parent.canvas.master_speed.show()
+			for trace in self.parent.canvas.lines:
+				trace.show()
+			self.parent.canvas.master_reg_speed.hide()
+			for reg in self.parent.canvas.regs:
+				reg.hide()
+		elif show == "Regressions only":
+			self.parent.canvas.show_regs = True
+			self.parent.canvas.show_lines = False
+			self.parent.canvas.master_speed.hide()
+			for trace in self.parent.canvas.lines:
+				trace.hide()
+			self.parent.canvas.master_reg_speed.show()
+			for reg in self.parent.canvas.regs:
+				reg.show()
+		elif show == "Both":
+			self.parent.canvas.show_regs = True
+			self.parent.canvas.show_lines = True
+			self.parent.canvas.master_speed.show()
+			for trace in self.parent.canvas.lines:
+				trace.show()
+			self.parent.canvas.master_reg_speed.show()
+			for reg in self.parent.canvas.regs:
+				reg.show()
+				
 	def run_resample(self):
 		mode = self.mode_c.currentText()
 		prec = self.prec_s.value()
 		#make a copy to prevent unexpected side effects
 		speed_curve = self.parent.canvas.master_speed.get_linspace()
+		if self.parent.canvas.regs:
+			speed_curve = self.parent.canvas.master_reg_speed.get_linspace()
+			print("Using regressed speed")
+		else:
+			print("Using measured speed")
 		print("Resampling",self.filename, mode, prec)
 		self.myLongTask.settings = (self.filename, speed_curve, mode, prec, [0,], "Diffused")
 		self.myLongTask.start()
@@ -316,7 +384,13 @@ class MasterSpeedLine:
 		self.data[:, 0] = (0, 999)
 		self.data[:, 1] = (0, 0)
 		self.line_speed = scene.Line(pos=self.data, color=(1, 0, 0, .5), method='gl')
-		self.line_speed.parent = vispy_canvas.speed_view.scene
+		self.line_speed.parent = self.vispy_canvas.speed_view.scene
+		
+	def show(self):
+		self.line_speed.parent = self.vispy_canvas.speed_view.scene
+		
+	def hide(self):
+		self.line_speed.parent = None
 		
 	def update(self):
 		num = self.vispy_canvas.num_ffts
@@ -346,6 +420,163 @@ class MasterSpeedLine:
 		out[:,1] = lin_scale#/np.mean(lin_scale)
 		#print(out[:,1])
 		return out
+
+class MasterRegLine:
+	"""Stores and displays the average, ie. master speed curve."""
+	def __init__(self, vispy_canvas):
+		
+		self.vispy_canvas = vispy_canvas
+		
+		#create the speed curve visualization
+		self.data = np.zeros((2, 2), dtype=np.float32)
+		self.data[:, 0] = (0, 999)
+		self.data[:, 1] = (0, 0)
+		self.line_speed = scene.Line(pos=self.data, color=(0, 0, 1, .5), method='gl')
+		self.line_speed.parent = vispy_canvas.speed_view.scene
+		
+	def update(self):
+		if self.vispy_canvas.regs:
+			#sample all regressions
+			centers = []
+			amplitudes = []
+			omegas = []
+			phases = []
+			offsets = []
+			for reg in self.vispy_canvas.regs:
+				centers.append(reg.t_center)
+				amplitudes.append(reg.amplitude)
+				omegas.append(reg.omega)
+				phases.append(reg.phase)
+				offsets.append(reg.offset)
+				
+			num = self.vispy_canvas.num_ffts
+			#get the times at which the average should be sampled
+			times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
+			
+			#amplitudes_sampled = np.interp(times, centers, amplitudes)
+			amplitudes_sampled = np.mean(amplitudes)
+			omegas_sampled = np.interp(times, centers, omegas)
+			phases_sampled = np.interp(times, centers, phases)
+			#offsets_sampled = np.interp(times, centers, offsets)
+			offsets_sampled = np.mean(offsets)
+			
+			#create the speed curve visualization
+			self.data = np.zeros((len(times), 2), dtype=np.float32)
+			self.data[:, 0] = times
+			#boost it a bit
+			self.data[:, 1] = 1.5 * amplitudes_sampled * np.sin(omegas_sampled * times + phases_sampled) + offsets_sampled
+			
+		else:
+			self.data = np.zeros((2, 2), dtype=np.float32)
+			self.data[:, 0] = (0, 999)
+			self.data[:, 1] = (0, 0)
+		self.line_speed.set_data(pos=self.data)
+
+	def show(self):
+		self.line_speed.parent = self.vispy_canvas.speed_view.scene
+		
+	def hide(self):
+		self.line_speed.parent = None
+		
+	def get_linspace(self):
+		"""Convert the log2 spaced speed curve back into linspace for further processing"""
+		out = np.array(self.data)
+		lin_scale = np.power(2, out[:,1])
+		#print(lin_scale/np.mean(lin_scale))
+		out[:,1] = lin_scale#/np.mean(lin_scale)
+		#print(out[:,1])
+		return out
+		
+class RegLine:
+	"""Stores a single sinc regression's data and displays it"""
+	def __init__(self, vispy_canvas, t0, t1, amplitude, omega, phase, offset):
+	
+		self.vispy_canvas = vispy_canvas
+		
+		#the extents on which this regression operated
+		self.t0 = t0
+		self.t1 = t1
+		#here, the reg values are most accurate
+		self.t_center = (t0+ t1)/2
+		self.speed_center = np.array( (self.t_center, 0) )
+		
+		#the following is more or less duped in the tracer - resolve?
+		speed_curve = vispy_canvas.master_speed.get_linspace()
+		
+		times = speed_curve[:,0]
+		speeds = speed_curve[:,1]
+		
+		#which part to process?
+		period = times[1]-times[0]
+		ind_start = int(self.t0 / period)
+		ind_stop = int(self.t1 / period)
+		clipped_times = times[ind_start:ind_stop]
+		
+		#set the properties
+		self.amplitude = amplitude
+		self.omega = omega
+		self.phase = phase
+		#self.offset = offset
+		#for now
+		self.offset = 0
+		
+		#some conventions are needed
+		#correct the amplitude & phase so we can interpolate properly
+		if self.amplitude < 0:
+			self.amplitude *= -1
+			self.phase += np.pi
+		#phase should be in 0 < x< 2pi
+		#this is not completely guaranteed by this
+		# if self.phase < 0:
+			# self.phase += (2*np.pi)
+		# if self.phase > 2*np.pi:
+			# self.phase -= (2*np.pi)
+		self.phase = self.phase % (2*np.pi)
+		
+		#create the speed curve visualization
+		self.data = np.zeros((len(clipped_times), 2), dtype=np.float32)
+		self.data[:, 0] = clipped_times
+		self.data[:, 1] = self.amplitude * np.sin(self.omega * clipped_times + self.phase) + self.offset
+		#sine_on_hz = np.power(2, sine + np.log2(2000))
+		self.line_speed = scene.Line(pos=self.data, color=(0, 0, 1, .5), method='gl')
+		self.show()
+		#self.line_speed.parent = vispy_canvas.speed_view.scene
+		self.vispy_canvas.regs.append(self)
+		self.vispy_canvas.master_reg_speed.update()
+		
+	def deselect(self):
+		"""Deselect this line, ie. restore its colors to their original state"""
+		self.line_speed.set_data(color = (1, 1, 1, .5))
+		#self.line_spec.set_data(color = (1, 1, 1, 1))
+		self.vispy_canvas.selected_traces.remove(self)
+		
+	def select(self, multi=False):
+		"""Toggle this line's selection state"""
+		if not multi:
+			for trace in reversed(self.vispy_canvas.selected_traces):
+				trace.deselect()
+		if self in self.vispy_canvas.selected_traces:
+			self.deselect()
+		else:
+			self.line_speed.set_data(color = (0, 1, 0, 1))
+			#self.line_spec.set_data(color = (0, 1, 0, 1))
+			self.vispy_canvas.selected_traces.append(self)
+			
+	def show(self):
+		self.line_speed.parent = self.vispy_canvas.speed_view.scene
+		
+	def hide(self):
+		self.line_speed.parent = None
+		
+	def remove(self):
+		self.line_speed.parent = None
+		#self.line_spec.parent = None
+		#note: this has to search the list
+		self.vispy_canvas.regs.remove(self)
+		self.vispy_canvas.master_speed.update()
+		if self in self.vispy_canvas.selected_traces:
+			self.deselect()
+	
 
 class TraceLine:
 	"""Stores and visualizes a trace fragment, including its speed offset."""
@@ -409,6 +640,11 @@ class TraceLine:
 		self.line_speed.parent = vispy_canvas.speed_view.scene
 		#self.vispy_canvas.master_speed.update()
 		self.vispy_canvas.lines.append(self)
+	def show(self):
+		self.line_speed.parent = self.vispy_canvas.speed_view.scene
+		
+	def hide(self):
+		self.line_speed.parent = None
 		
 	def set_offset(self, offset):
 		#print("offset",offset)
@@ -459,7 +695,10 @@ class Canvas(scene.SceneCanvas):
 		self.vmax = -40
 		self.auto_align = True
 		self.trace_mode = "Center of Gravity"
+		self.rpm = "Unknown"
 		self.selected_traces = []
+		self.show_regs = True
+		self.show_lines = True
 		
 		self.last_click = None
 		self.fft_size = 1024
@@ -538,9 +777,11 @@ class Canvas(scene.SceneCanvas):
 		
 		self.images = []
 		self.lines = []
+		self.regs = []
 		self.fft_storage = {}
 		
 		self.master_speed = MasterSpeedLine(self)
+		self.master_reg_speed = MasterRegLine(self)
 		
 		self.freeze()
 		
@@ -721,20 +962,25 @@ class Canvas(scene.SceneCanvas):
 			if a is not None and b is not None:
 				t0, t1 = sorted((a[0], b[0]))
 				f0, f1 = sorted((a[1], b[1]))
-				print(t0, t1)
+				t0 = max(0, t0)
 				fft_key = (self.fft_size, self.hop)
 				#maybe query it here from the button instead of the other way
-				if self.trace_mode == "Center of Gravity":
-					times, freqs = wow_detection.trace_cog(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
-				elif self.trace_mode == "Correlation":
-					times, freqs = wow_detection.trace_correlation(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, t0 = t0, t1 = t1)
-				else:
+				if self.trace_mode == "Sine Regression":
+					amplitude, omega, phase, offset = wow_detection.trace_sine_reg(self.master_speed.get_linspace(), t0, t1, self.rpm)
+					RegLine(self, t0, t1, amplitude, omega, phase, offset)
 					return
-				
-				if len(freqs) and np.nan not in freqs:
-					TraceLine(self, times, freqs)
-					self.master_speed.update()
-				return
+				else:
+					if self.trace_mode == "Center of Gravity":
+						times, freqs = wow_detection.trace_cog(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
+					elif self.trace_mode == "Correlation":
+						times, freqs = wow_detection.trace_correlation(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, t0 = t0, t1 = t1)
+					elif self.trace_mode == "Sine Draw":
+						times, freqs = wow_detection.trace_sine(fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
+					
+					if len(freqs) and np.nan not in freqs:
+						TraceLine(self, times, freqs)
+						self.master_speed.update()
+						return
 			
 			#or in speed view?
 			#then we are only interested in the Y difference, so we can move the selected speed trace up or down
@@ -751,7 +997,12 @@ class Canvas(scene.SceneCanvas):
 		if click is not None:
 			c = self.click_speed_conversion(click)
 			if c is not None:
-				A = np.array([line.speed_center for line in self.lines])
+				if self.show_regs and self.show_lines:
+					A = np.array([line.speed_center for line in self.lines] + [reg.speed_center for reg in self.regs])
+				elif self.show_regs and not self.show_lines:
+					A = np.array([reg.speed_center for reg in self.regs])
+				elif not self.show_regs and self.show_lines:
+					A = np.array([line.speed_center for line in self.lines])
 			else:
 				c = self.click_spec_conversion(click)
 				A = np.array([line.spec_center for line in self.lines])
@@ -761,7 +1012,12 @@ class Canvas(scene.SceneCanvas):
 			#returns the line (if any exists) whose center (including any offsets) is closest to pt
 			if self.lines:
 				ind = np.array([np.linalg.norm(x+y) for (x,y) in A-pt]).argmin()
-				return self.lines[ind]
+				if self.show_regs and self.show_lines:
+					return (self.lines+self.regs)[ind]
+				elif self.show_regs and not self.show_lines:
+					return self.regs[ind]
+				elif not self.show_regs and self.show_lines:
+					return self.lines[ind]
 	
 	def click_on_widget(self, click, wid):
 		grid_space = wid.transform.imap(click)

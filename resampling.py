@@ -148,24 +148,12 @@ def sinc_interp_windowed(y_in, x_in, x_out, write_after=10000, NT = 100):
 
 
 def write_speed(filename, speed_curve):
-	"""
-	TODO: rewrite into BIN format
-	filename: the name of the original audio file
-	data:	 a list of (times, frequencies) lists
-	"""
-	
+	#only for testing
 	speedfilename = filename.rsplit('.', 1)[0]+".npy"
 	np.save(speedfilename, speed_curve, allow_pickle=True, fix_imports=True)
 
-	
 def read_speed(filename):
-	"""
-	TODO: rewrite into BIN format
-	filename: the name of the original audio file
-	returns:
-	data:	 a list of (times, frequencies) lists
-	"""
-	
+	#only for testing
 	speedfilename = filename.rsplit('.', 1)[0]+".npy"
 	return np.load(speedfilename)
 	
@@ -212,6 +200,41 @@ def read_trace(filename):
 						data[-1][2].append(float(s[1]))
 	return data
 	
+def write_regs(filename, data):
+	"""
+	TODO: rewrite into BIN format
+	filename: the name of the original audio file
+	data:	 a list of sine parameters
+	"""
+	
+	#write the data to the speed file
+	print("Writing regression data")
+	speedfilename = filename.rsplit('.', 1)[0]+".sin"
+	outstr = "\n".join([" ".join([str(v) for v in values]) for values in data])
+	text_file = open(speedfilename, "w")
+	text_file.write(outstr)
+	text_file.close()
+	
+def read_regs(filename):
+	"""
+	TODO: rewrite into BIN format
+	filename: the name of the original audio file
+	returns:
+	data:	 a list of sine parameters
+	"""
+	
+	#write the data to the speed file
+	print("Reading regression data")
+	speedfilename = filename.rsplit('.', 1)[0]+".sin"
+	data = []
+	if os.path.isfile(speedfilename):
+		with open(speedfilename, "r") as text_file:
+			for l in text_file:
+				#just for completeness
+				if l:
+					data.append( [float(v) for v in l.split(" ")])
+	return data
+
 def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0.01, use_channels = [0,], dither="Random", patch_ends=False, prog_sig=None):
 
 	#read the file
@@ -256,7 +279,7 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 		period = times[1]-times[0]
 		out_times = np.cumsum(period*speeds)
 		samples_in = times*sr
-		samples_in2 = np.interp(np.arange(0, in_len), samples_in, samples_in, left=samples_in[0], right=samples_in[-1])
+		samples_in2 = np.arange(0, in_len)
 		samples_out = out_times*sr
 		samples_out2 = np.interp(np.arange(0, out_len), samples_out, samples_in, left=samples_out[0], right=samples_out[-1])
 		NT=100

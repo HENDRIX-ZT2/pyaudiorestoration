@@ -32,6 +32,8 @@ Otherwise, specify the full paths to `python.exe` and the script.
 6) Adjust the resampling settings to your liking (see OLD version notes below for more instructions)
 7) Click resample.
 
+Example of cyclic wow removal:
+![Imgur](https://i.imgur.com/tc3RDyo.gif)
 
 ### Hotkeys
 

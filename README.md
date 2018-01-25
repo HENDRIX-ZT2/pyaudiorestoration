@@ -5,7 +5,7 @@ Remove tape wow and flutter from audio recordings via their spectra. A simple so
 
 ### Installation
 You need to have installed:
-- python 3
+- python 3.6
 - numpy
 - [resampy](http://resampy.readthedocs.io/en/latest/)
 - [pysoundfile](https://pysoundfile.readthedocs.io/)
@@ -15,9 +15,9 @@ You need to have installed:
 - pyQt5 (NEW GUI)
 - [vispy](vispy.org) (NEW GUI)
 
-Anaconda will have most of these installed by default. Best install the missing ones with pip (eg. pip install resampy).
+The bundled python platform [Anaconda](https://www.anaconda.com/download/) will have most of these dependencies installed by default. Best install the missing ones with `pip` (eg. in the Windows commandline, type `pip install vispy`).
 
-Assuming you have python as an environment variable and are in the same folder as the script, start it with
+Click the `Clone or Download` button at the right, then `Download ZIP`. Unzip to a folder of your choice. Assuming you have python configured as an environment variable and your commandline is in the same folder as the script, start it with
 
 `python pyrespeeder_gui.py`
 

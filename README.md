@@ -28,7 +28,7 @@ Otherwise, specify the full paths to `python.exe` and the script.
 2) Adjust the spectrogram settings, choose a tracing algorithm
 3) In the spectrum, trace sounds that should be of constant pitch with CTRL+LMB/drag
 4) In the speed chart, move the traces up or down with CTRL+LMB/drag so that overlapping pieces match up. Delete bad traces.
-5) If you are dealing with cyclic wow, you can use sine regression to get more accurate quickly. Only sample parts with the tracing methods, then select your suspected source medium and perform sine regression.
+5) If you are dealing with cyclic wow, you can use sine regression to get more accurate results quickly. Only sample parts of the file (like start and end) with the tracing methods, then select your suspected source medium and perform sine regression over your sampled areas.
 6) Save your traces so you can go back to them later.
 7) Adjust the resampling settings to your liking (see OLD version notes below for more instructions)
 8) Click resample.

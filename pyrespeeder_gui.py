@@ -140,7 +140,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		trace_l = QtWidgets.QLabel("Tracing Mode")
 		self.trace_c = QtWidgets.QComboBox(self)
-		self.trace_c.addItems(("Center of Gravity","Correlation","Sine Draw", "Sine Regression"))
+		self.trace_c.addItems(("Center of Gravity","Correlation","Freehand Draw", "Sine Draw", "Sine Regression"))
 		self.trace_c.currentIndexChanged.connect(self.update_other_settings)
 		
 		self.delete_selected_b = QtWidgets.QPushButton('Delete Selected Trace')
@@ -482,35 +482,39 @@ class MasterRegLine:
 			#sample all regressions
 			reg_data = []
 			offsets_sampled = 0
-			amplitudes_sampled = 0
+			#amplitudes_sampled = 0
 			for reg in self.vispy_canvas.regs:
 				reg_data.append((reg.t_center, reg.amplitude, reg.omega, reg.phase % (2*np.pi), reg.offset))
-				amplitudes_sampled+=reg.amplitude
-			amplitudes_sampled/=len(self.vispy_canvas.regs)
+				#amplitudes_sampled+=reg.amplitude
+			#amplitudes_sampled/=len(self.vispy_canvas.regs)
 			#interp needs x keys to be sorted
 			reg_data.sort(key=lambda tup: tup[0])
 			
 			#create lists
 			phi_centers = []
 			t_centers = []
+			amp_centers = []
 			
-			#t = 0
 			t_center, amplitude, omega, phase, offset = reg_data[0]
 			phi_centers.append(omega * times[0] + phase)
 			t_centers.append(times[0])
+			amp_centers.append(amplitude)
 			
 			for t_center, amplitude, omega, phase, offset in reg_data:
 				phi_centers.append(omega * t_center + phase)
 				t_centers.append(t_center)
+				amp_centers.append(amplitude)
 				
 			#do the last one
 			t_center, amplitude, omega, phase, offset = reg_data[-1]
 			phi_centers.append(omega * times[-1] + phase)
 			t_centers.append(times[-1])
+			amp_centers.append(amplitude)
 			
 			
 			#phi = omegas_sampled * times + phases_sampled
 			phi = np.interp(times, t_centers, phi_centers)
+			amplitudes_sampled = np.interp(times, t_centers, amp_centers)
 			
 			#create the speed curve visualization
 			self.data = np.zeros((len(times), 2), dtype=np.float32)
@@ -595,6 +599,12 @@ class RegLine:
 		#self.line_speed.parent = vispy_canvas.speed_view.scene
 		self.vispy_canvas.regs.append(self)
 		self.vispy_canvas.master_reg_speed.update()
+		
+	def set_offset(self, a, b):
+		#print(a,b,b/a)
+		self.amplitude *= (b/a)
+		self.data[:, 1]*= (b/a)
+		self.line_speed.set_data(pos=self.data)
 		
 	def deselect(self):
 		"""Deselect this line, ie. restore its colors to their original state"""
@@ -692,13 +702,15 @@ class TraceLine:
 		self.line_speed.parent = vispy_canvas.speed_view.scene
 		#self.vispy_canvas.master_speed.update()
 		self.vispy_canvas.lines.append(self)
+		
 	def show(self):
 		self.line_speed.parent = self.vispy_canvas.speed_view.scene
 		
 	def hide(self):
 		self.line_speed.parent = None
 		
-	def set_offset(self, offset):
+	def set_offset(self, a, b):
+		offset = b-a
 		#print("offset",offset)
 		self.offset += offset
 		self.speed_center[1] += offset
@@ -999,14 +1011,9 @@ class Canvas(scene.SceneCanvas):
 					closest_line.select()
 					event.handled = True
 	
-	# def on_mouse_move(self, event):
-		# print("move")
-	def on_mouse_drag(self, event):
-		print("drag")
-	
 	def on_mouse_release(self, event):
 		#coords of the click on the vispy canvas
-		click = np.array([event.pos[0],event.pos[1],0,1])
+		click = event.pos
 		if self.last_click is not None:
 			a = self.click_spec_conversion(self.last_click)
 			b = self.click_spec_conversion(click)
@@ -1028,7 +1035,13 @@ class Canvas(scene.SceneCanvas):
 						times, freqs = wow_detection.trace_correlation(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, t0 = t0, t1 = t1)
 					elif self.trace_mode == "Sine Draw":
 						times, freqs = wow_detection.trace_sine(fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
-					
+					elif self.trace_mode == "Freehand Draw":
+						#TODO: vectorize this: a[a[:,0].argsort()]
+						#TODO: reduce resolution with np.interp at speed curve sample rate
+						data = [self.click_spec_conversion(click) for click in event.trail()]
+						data.sort(key=lambda tup: tup[0])
+						times = [d[0] for d in data]
+						freqs = [d[1] for d in data]
 					if len(freqs) and np.nan not in freqs:
 						TraceLine(self, times, freqs)
 						self.master_speed.update()
@@ -1039,14 +1052,16 @@ class Canvas(scene.SceneCanvas):
 			a = self.click_speed_conversion(self.last_click)
 			b = self.click_speed_conversion(click)
 			if a is not None and b is not None:
-				diff = b[1]-a[1]
+				#diff = b[1]-a[1]
 				for trace in self.selected_traces:
-					trace.set_offset(diff)
+					trace.set_offset(a[1], b[1])
 				self.master_speed.update()
+				self.master_reg_speed.update()
 				
 				
-	def get_closest_line(self, click, mode="speed"):
+	def get_closest_line(self, click):
 		if click is not None:
+			#first, check in speed view
 			c = self.click_speed_conversion(click)
 			if c is not None:
 				if self.show_regs and self.show_lines:
@@ -1056,14 +1071,13 @@ class Canvas(scene.SceneCanvas):
 				elif not self.show_regs and self.show_lines:
 					A = np.array([line.speed_center for line in self.lines])
 			else:
-				c = self.click_spec_conversion(click)
-				A = np.array([line.spec_center for line in self.lines])
-			#no click in the right areas
-			if c is None: return
-			pt = (c[0], c[1])
+				#then, check in spectral view, and only true lines, no regs here
+				if self.show_lines:
+					c = self.click_spec_conversion(click)
+					A = np.array([line.spec_center for line in self.lines])
 			#returns the line (if any exists) whose center (including any offsets) is closest to pt
-			if self.lines:
-				ind = np.array([np.linalg.norm(x+y) for (x,y) in A-pt]).argmin()
+			if c is not None and len(A):
+				ind = np.array([np.linalg.norm(x+y) for (x,y) in A-(c[0], c[1])]).argmin()
 				if self.show_regs and self.show_lines:
 					return (self.lines+self.regs)[ind]
 				elif self.show_regs and not self.show_lines:
@@ -1090,7 +1104,7 @@ class Canvas(scene.SceneCanvas):
 		if self.click_on_widget(click, self.spec_view):
 			scene_space = self.spec_view.scene.transform.imap(grid_space)
 			#careful, we need a spectrum already
-			if self.images[0]:
+			if self.images:
 				#in fact the simple Y mel transform would be enough in any case
 				#but this would also support other transforms
 				return self.images[0].transform.imap(scene_space)

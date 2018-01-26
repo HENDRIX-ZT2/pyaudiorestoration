@@ -237,6 +237,9 @@ def read_regs(filename):
 
 def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0.01, use_channels = [0,], dither="Random", patch_ends=False, prog_sig=None):
 
+	if prog_sig:
+		prog_sig.notifyProgress.emit(0)
+		
 	#read the file
 	soundob = sf.SoundFile(filename)
 	signal = soundob.read(always_2d=True)
@@ -244,7 +247,7 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 	sr = soundob.samplerate
 	
 	print('Analyzing ' + filename + '...')
-	print('Shape:', signal.shape)
+	#print('Shape:', signal.shape)
 	
 	block_size = int(100 / frequency_prec)
 	resampling_factor = 100 / frequency_prec
@@ -265,7 +268,6 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 		print("raw block_size:",block_size)
 		print("expanded block_size:",block_size*resampling_factor)
 	
-	
 	times = speed_curve[:,0]
 	#note: this expects a a linscale speed curve centered around 1 (= no speed change)
 	speeds = speed_curve[:,1]
@@ -274,17 +276,35 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 	
 		in_len = len(signal)
 		out_len = int(in_len*np.mean(speeds))
-		print("Input length:",in_len)
-		print("Output length:",out_len)
 		period = times[1]-times[0]
-		out_times = np.cumsum(period*speeds)
+		print("Input length:",in_len,"samples")
+		print("Output length:",out_len,"samples")
+		print("Curve period:",period,"sec = ",period*sr,"samples")
+		print("Be ware that a densely sampled speed curve causes inaccuracies with the current implementation")
+		#most likely, the issue is in the cumsum, because the error increases towards the end
+		#if the periods are long, say 4096, a 5min file does not show issues, and is -very- close to dithered expansion quality
+		#if the periods are short, 64 samples, you get heavy issues at the ends > you have more periods and the error accumulates
+		#dithering in the sinc interpolator does NOT improve it
+		samples_out = np.cumsum(period*sr*speeds)
 		samples_in = times*sr
 		samples_in2 = np.arange(0, in_len)
-		samples_out = out_times*sr
-		samples_out2 = np.interp(np.arange(0, out_len), samples_out, samples_in, left=samples_out[0], right=samples_out[-1])
+		#here we create an array that maps every single sample of the output to a sub-sample time on the input
+		samples_out2 = np.interp(np.arange(0, out_len), samples_out, samples_in)
 		NT=100
 		write_after=100000
-		num_blocks = out_len/write_after
+		#blocks are integers
+		num_blocks = np.ceil( out_len/write_after )
+		
+		# #recode again?
+		# #1) Firstly, each element f[b] of the vector f is associated to the central sample of its respective block;
+		# #f_centers = times*sr
+		# #2)  Secondly, the number of samples which will be reconstructed between each pair of consecutive central samples of f[b] and f[b + 1] is calculated, so the transition between these central samples be smooth.
+		# f_sr = sr*speeds
+		# for i in range(len(f_sr))
+		# num_samples_per_second = (f_sr[i]+f_sr[i+1])/2*period
+		# print(num_samples_per_second)
+		# #how many samples in each segment?
+		# return
 	else:
 		overlap = 0
 		blocks = []
@@ -294,7 +314,7 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 		#convert times to samples
 		#lerp the samples to the length of the signal
 		#!this does not handle extrapolation!
-		speed_samples_r = np.interp(np.arange(0, len(signal)), times*sr, speeds, left=speeds[0], right=speeds[-1])
+		speed_samples_r = np.interp(np.arange(0, len(signal)), times*sr, speeds)
 			
 		#do all processing of the speed samples right here to speed up multi channel files - the speed curve can be reused as is!
 		if resampling_mode == "Expansion":
@@ -320,11 +340,9 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 			#do not dither, do not round, just copy
 			speed_samples_final = speed_samples_r
 	
-	if prog_sig:
-		prog_sig.notifyProgress.emit(0)
 	print("Num Blocks",num_blocks)
 	#there are no half blocks...
-	prog_fac = 100 / np.ceil( num_blocks*len(use_channels))
+	prog_fac = 100 / num_blocks*len(use_channels)
 	progress = 0
 	#resample on mono channels and export each separately as repeat does not like more dimensions
 	for channel in use_channels:
@@ -342,6 +360,10 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 			elif resampling_mode in ("Linear",):
 				block = np.interp(samples_out2, samples_in2, signal[:,channel])
 				outfile.write( block )
+				#we don't split here (yet)
+				if prog_sig:
+					progress += (100 / len(use_channels))
+					prog_sig.notifyProgress.emit(progress)
 			else:
 				for block_start, block_end in blocks:
 					if prog_sig:

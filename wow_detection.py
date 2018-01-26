@@ -1,6 +1,14 @@
 import numpy as np
 import fourier
 	
+#https://github.com/librosa/librosa/blob/86275a8949fb4aef3fb16aa88b0e24862c24998f/librosa/core/pitch.py#L165
+#librosa piptrack
+
+#todo
+# M. Lagrange, S. Marchand, and J. B. Rault, “Using linear prediction to enhance the tracking of partials,” in IEEE International Conference on Acoustics, Speech, and Signal Processing (ICASSP’04) , May 2004, vol. 4, pp. 241–244.
+
+#2003 enhanced partial tracking - good!
+	
 def COG(magnitudes, freqs, NL, NU):
 	#adapted from Czyzewski et al. (2007)
 	#18

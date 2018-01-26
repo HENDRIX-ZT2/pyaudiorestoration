@@ -173,52 +173,60 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		self.progressBar = QtWidgets.QProgressBar(self)
 		self.progressBar.setRange(0,100)
+		self.progressBar.setAlignment(QtCore.Qt.AlignCenter)
 		
+		channel_l = QtWidgets.QLabel("No Channels")
 		
-		gbox = QtWidgets.QGridLayout()
-		
+		self.qgrid = QtWidgets.QGridLayout()
+		self.qgrid.setHorizontalSpacing(3)
+		self.qgrid.setVerticalSpacing(0)
 		#column 01
-		gbox.addWidget(self.open_b, 0, 0)
-		gbox.addWidget(self.save_b, 0, 1)
+		self.qgrid.addWidget(self.open_b, 0, 0)
+		self.qgrid.addWidget(self.save_b, 0, 1)
 		
-		gbox.addWidget(fft_l, 1, 0)
-		gbox.addWidget(self.fft_c, 1, 1)
+		self.qgrid.addWidget(fft_l, 1, 0)
+		self.qgrid.addWidget(self.fft_c, 1, 1)
 		
-		gbox.addWidget(overlap_l, 2, 0)
-		gbox.addWidget(self.overlap_c, 2, 1)
+		self.qgrid.addWidget(overlap_l, 2, 0)
+		self.qgrid.addWidget(self.overlap_c, 2, 1)
 		
-		gbox.addWidget(cmap_l, 3, 0)
-		gbox.addWidget(self.cmap_c, 3, 1)
+		self.qgrid.addWidget(cmap_l, 3, 0)
+		self.qgrid.addWidget(self.cmap_c, 3, 1)
 		
 		#column 23
-		gbox.addWidget(trace_l, 0, 2)
-		gbox.addWidget(self.trace_c, 0, 3)
-		gbox.addWidget(self.delete_selected_b, 1, 2)
-		gbox.addWidget(self.delete_all_b, 1, 3)
-		gbox.addWidget(rpm_l, 2, 2)
-		gbox.addWidget(self.rpm_c, 2, 3)
-		gbox.addWidget(show_l, 3, 2)
-		gbox.addWidget(self.show_c, 3, 3)
-		gbox.addWidget(self.autoalign_b, 4, 3)
+		self.qgrid.addWidget(trace_l, 0, 2)
+		self.qgrid.addWidget(self.trace_c, 0, 3)
+		self.qgrid.addWidget(self.delete_selected_b, 1, 2)
+		self.qgrid.addWidget(self.delete_all_b, 1, 3)
+		self.qgrid.addWidget(rpm_l, 2, 2)
+		self.qgrid.addWidget(self.rpm_c, 2, 3)
+		self.qgrid.addWidget(show_l, 3, 2)
+		self.qgrid.addWidget(self.show_c, 3, 3)
 		
 		#column 45
-		gbox.addWidget(self.resample_b, 0, 5)
+		self.qgrid.addWidget(self.autoalign_b, 0, 4)
+		self.qgrid.addWidget(self.resample_b, 0, 5)
 		
-		gbox.addWidget(prec_l, 1, 4)
-		gbox.addWidget(self.prec_s, 1, 5)
+		self.qgrid.addWidget(prec_l, 1, 4)
+		self.qgrid.addWidget(self.prec_s, 1, 5)
 		
-		gbox.addWidget(mode_l, 2, 4)
-		gbox.addWidget(self.mode_c, 2, 5)
+		self.qgrid.addWidget(mode_l, 2, 4)
+		self.qgrid.addWidget(self.mode_c, 2, 5)
+		
+		#column 6 - channels
+		self.qgrid.addWidget(channel_l, 0, 6)
 		
 		self.myLongTask = TaskThread()
 		self.myLongTask.notifyProgress.connect(self.onProgress)
 		
-		gbox.addWidget(self.progressBar, 3, 4, 1, 2 )
+		self.qgrid.addWidget(self.progressBar, 3, 4, 1, 2 )
 
 		vbox = QtWidgets.QVBoxLayout()
-		vbox.addLayout(gbox)
+		vbox.addLayout(self.qgrid)
 		vbox.addStretch(1.0)
 
+		self.channel_bs = [channel_l, ]
+		
 		self.setLayout(vbox)
 		
 	
@@ -239,7 +247,29 @@ class ObjectWidget(QtWidgets.QWidget):
 			for t0, t1, amplitude, omega, phase, offset in data:
 				RegLine(self.parent.canvas, t0, t1, amplitude, omega, phase, offset)
 			self.parent.canvas.master_reg_speed.update()
+			num_channels = 4
 	
+			soundob = sf.SoundFile(self.filename)
+			num_channels = soundob.channels
+			
+			#delete all previous channel widgets
+			for channel in self.channel_bs:
+				self.qgrid.removeWidget(channel)
+				channel.deleteLater()
+			self.channel_bs = []
+			channel_names = ("Front Left", "Front Right", "Center", "LFE", "Back Left", "Back Right")
+			#all active by default?
+			active = [0,]
+			for i in range(0, num_channels):
+				name = channel_names[i] if i < 6 else str(i)
+				self.channel_bs.append(QtWidgets.QCheckBox(name))
+				if i in active:
+					self.channel_bs[-1].setChecked(True)
+				else:
+					self.channel_bs[-1].setChecked(False)
+				self.channel_bs[-1].stateChanged.connect(self.update_other_settings)
+				self.qgrid.addWidget(self.channel_bs[-1], i, 6)
+			
 	def save_traces(self):
 		#get the data from the traces and save it
 		data = []
@@ -248,8 +278,8 @@ class ObjectWidget(QtWidgets.QWidget):
 		print("Saved",len(data),"traces")
 		if data:
 			resampling.write_trace(self.filename, data)
-			#speed_data = self.parent.canvas.master_speed.get_linspace()
-			#resampling.write_speed(self.filename, speed_data)
+			# speed_data = self.parent.canvas.master_speed.get_linspace()
+			# resampling.write_speed(self.filename, speed_data)
 			
 		#get the data from the regs and save it
 		data = []
@@ -258,6 +288,8 @@ class ObjectWidget(QtWidgets.QWidget):
 			data.append( (reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) )
 		if data:
 			resampling.write_regs(self.filename, data)
+			#speed_data = self.parent.canvas.master_reg_speed.get_linspace()
+			#resampling.write_speed(self.filename, speed_data)
 			
 	def delete_selected_tracess(self):
 		for trace in reversed(self.parent.canvas.selected_traces):
@@ -313,6 +345,8 @@ class ObjectWidget(QtWidgets.QWidget):
 		mode = self.mode_c.currentText()
 		prec = self.prec_s.value()
 		#make a copy to prevent unexpected side effects
+		channels = [i for i in range(len(self.channel_bs)) if self.channel_bs[i].isChecked()]
+		print(channels)
 		speed_curve = self.parent.canvas.master_speed.get_linspace()
 		if self.parent.canvas.regs:
 			speed_curve = self.parent.canvas.master_reg_speed.get_linspace()
@@ -320,7 +354,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		else:
 			print("Using measured speed")
 		print("Resampling",self.filename, mode, prec)
-		self.myLongTask.settings = (self.filename, speed_curve, mode, prec, [0,], "Diffused")
+		self.myLongTask.settings = (self.filename, speed_curve, mode, prec, channels, "Diffused")
 		self.myLongTask.start()
 			
 	def update_resampling_presets(self, option):
@@ -436,35 +470,53 @@ class MasterRegLine:
 		
 	def update(self):
 		if self.vispy_canvas.regs:
-			#sample all regressions
-			centers = []
-			amplitudes = []
-			omegas = []
-			phases = []
-			offsets = []
-			for reg in self.vispy_canvas.regs:
-				centers.append(reg.t_center)
-				amplitudes.append(reg.amplitude)
-				omegas.append(reg.omega)
-				phases.append(reg.phase)
-				offsets.append(reg.offset)
-				
+			
+			#here we want to interpolate smoothly between the regressed sines around their centers
+			#https://stackoverflow.com/questions/11199509/sine-wave-that-slowly-ramps-up-frequency-from-f1-to-f2-for-a-given-time
+			#https://stackoverflow.com/questions/19771328/sine-wave-that-exponentialy-changes-between-frequencies-f1-and-f2-at-given-time
+			
 			num = self.vispy_canvas.num_ffts
 			#get the times at which the average should be sampled
 			times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
 			
-			#amplitudes_sampled = np.interp(times, centers, amplitudes)
-			amplitudes_sampled = np.mean(amplitudes)
-			omegas_sampled = np.interp(times, centers, omegas)
-			phases_sampled = np.interp(times, centers, phases)
-			#offsets_sampled = np.interp(times, centers, offsets)
-			offsets_sampled = np.mean(offsets)
+			#sample all regressions
+			reg_data = []
+			offsets_sampled = 0
+			amplitudes_sampled = 0
+			for reg in self.vispy_canvas.regs:
+				reg_data.append((reg.t_center, reg.amplitude, reg.omega, reg.phase % (2*np.pi), reg.offset))
+				amplitudes_sampled+=reg.amplitude
+			amplitudes_sampled/=len(self.vispy_canvas.regs)
+			#interp needs x keys to be sorted
+			reg_data.sort(key=lambda tup: tup[0])
+			
+			#create lists
+			phi_centers = []
+			t_centers = []
+			
+			#t = 0
+			t_center, amplitude, omega, phase, offset = reg_data[0]
+			phi_centers.append(omega * times[0] + phase)
+			t_centers.append(times[0])
+			
+			for t_center, amplitude, omega, phase, offset in reg_data:
+				phi_centers.append(omega * t_center + phase)
+				t_centers.append(t_center)
+				
+			#do the last one
+			t_center, amplitude, omega, phase, offset = reg_data[-1]
+			phi_centers.append(omega * times[-1] + phase)
+			t_centers.append(times[-1])
+			
+			
+			#phi = omegas_sampled * times + phases_sampled
+			phi = np.interp(times, t_centers, phi_centers)
 			
 			#create the speed curve visualization
 			self.data = np.zeros((len(times), 2), dtype=np.float32)
 			self.data[:, 0] = times
 			#boost it a bit
-			self.data[:, 1] = 1.5 * amplitudes_sampled * np.sin(omegas_sampled * times + phases_sampled) + offsets_sampled
+			self.data[:, 1] = 1.5 * amplitudes_sampled * np.sin(phi) + offsets_sampled
 			
 		else:
 			self.data = np.zeros((2, 2), dtype=np.float32)
@@ -531,7 +583,7 @@ class RegLine:
 			# self.phase += (2*np.pi)
 		# if self.phase > 2*np.pi:
 			# self.phase -= (2*np.pi)
-		self.phase = self.phase % (2*np.pi)
+		#self.phase = self.phase % (2*np.pi)
 		
 		#create the speed curve visualization
 		self.data = np.zeros((len(clipped_times), 2), dtype=np.float32)

@@ -50,7 +50,7 @@ Example of cyclic wow removal:
 - You can also scroll (but currently not drag) the axes directly.
 
 #### Functions
-- CTRL + LMB-Drag: In spectral view: runs the current tracing function in the dragged area; In speed view: offsets the currently selected speed curves by the drag
+- CTRL + LMB-Drag: In spectral view: runs the current tracing function in the dragged area; In speed view: offsets the currently selected speed curves and changes the amplification of selected sine regression curves.
 
 - RMB: Single line selection, deselects all previously selected lines.
 
@@ -65,7 +65,7 @@ Example of cyclic wow removal:
 ### Resampling Modes
 - Linear: Fastest, but causes some overtone artifacts.
 - Expansion: Excellent precision in time and frequency, but induces clicks. Repeats each input sample (N * speed + dithering) times and then downsamples everything by N. [based on Feaster, P. (2017)]
-- Sinc: Slowest, but most accurate. No clicks. Accurate because of digital sampling theory. [based on endolith (2011) and Hope (2015]
+- Sinc: Slowest, but most accurate. No clicks. Accurate because of digital sampling theory. [based on endolith (2011) and Hope (2015)]
 - Blocks: Fast, but inaccurate in time, induces clicks. Resamples segements according to their mean speed.
 - Note that Linear & Sinc resampling currently require a relatively sparsely sampled speed curve (like FFT size = 4096, Overlap = 1) to work accurately. This may be fixed in the future.
 

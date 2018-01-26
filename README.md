@@ -56,30 +56,21 @@ Example of cyclic wow removal:
 
 - Shift + RMB: Multi line selection, click align again to deselect it.
 
+### Tracing Modes
+- Adaptive Center of Gravity [adapted from Czyzewski et al. (2007)]: The trace starts in the given frequency band, which should be relatively narrow and not too low.
+- Correlation: Tries to correlate the whole spectrum sequentially. Only works well for big FFT sizes.
+- Sine Draw: Not really useful
+- Sine Regression: Sample the master speed curve in some points to get the parameters of cyclic wow in these areas, which are then used to extrapolate the sine over the whole duration.
 
-
-### OLD Version Modes
-#### Manual Tracing
-Run the spectrogram and "trace" the sound with CTRL+leftclicks, point by point (linear interpolation!), then close the spectrogram. ALT+Click deletes a point, DELETE+Click deletes all. Your trace is written to a text file upon closing.
-
-#### Resampling
-- Blocks method:
-Good for long-range, gradual wow. Fast, good frequency precision, little temporal precision.
-- Expansion method [adapted from Feaster, P. (2017)]:
-General purpose, but slower. Much faster and more accurate with dithering enabled.
-- Sinc method [based on endolith (2011)]:
-General purpose and best quality, but slowest. Ideal resampling, hence no overtones or distortion.
-
-#### Automatic Tracing
-- Trace Adaptive Center of Gravity [adapted from Czyzewski et al. (2007)]:
-The trace starts in the given frequency band, which should be relatively narrow and not too low.
-
-
-### Further Notes
-- Manual and automatic tracing always uses the first selected channel, resampling uses all selected channels
-- Resampling causes tiny clicks at the segment boundaries
+### Resampling Modes
+- Linear: Fastest, but causes some overtone artifacts.
+- Expansion: Excellent precision in time and frequency, but induces clicks. Repeats each input sample (N * speed + dithering) times and then downsamples everything by N. [based on Feaster, P. (2017)]
+- Sinc: Slowest, but most accurate. No clicks. Accurate because of digital sampling theory. [based on endolith (2011) and Hope (2015]
+- Blocks: Fast, but inaccurate in time, induces clicks. Resamples segements according to their mean speed.
+- Note that Linear & Sinc resampling currently require a relatively sparsely sampled speed curve (like FFT size = 4096, Overlap = 1) to work accurately. This may be fixed in the future.
 
 ### References
 - Czyzewski et al. (2007). DSP Techniques for Determining "Wow" Distortion. Journal of the Audio Engineering Society. 55.
 - endolith (2011). [Perfect Sinc Interpolation in Matlab and Python.](https://gist.github.com/endolith/1297227)
 - Feaster, P. (2017). [The Wow Factor in Audio Restoration.](https://griffonagedotcom.wordpress.com/2017/02/16/the-wow-factor-in-audio-restoration/)
+- Hope, G. (2015). [Sinc Interpolation of Signal using Numpy / Python.](https://gist.github.com/gauteh/8dea955ddb1ed009b48e)

@@ -3,149 +3,55 @@ import resampy
 import soundfile as sf
 import os
 
-
-
-# def sinc_interp_windowed_functional_non_generator(y_in, x_in, x_out, ):
-	# """
-	# base by Gaute Hope: https://gist.github.com/gauteh/8dea955ddb1ed009b48e
-	# Interpolate the signal to the new points using a sinc kernel
-	# input:
-	# x_in		time points x is defined on
-	# y_in		 input signal column vector or matrix, with a signal in each row
-	# x_out		points to evaluate the new signal on
-	# output:
-	# y		 the interpolated signal at points x_out
-	# """
-
-	# y = np.zeros(len(x_out))
-	
-	# #has to be fairly high
-	# NT = 300
-	# for pi, p in enumerate (x_out):
-		# #map the output to the input
-		# ind = int(round(p))
-		# #print(ind)
-		# #ok, but we still have a click
-		# lower = max(0, ind-NT)
-		# upper = ind+NT
-		# #this gives ugly breaks
-		# #lower = ind-NT
-		# #upper = ind+NT
-		# si = np.sinc (x_in[lower:upper] - p)
-		# y[pi] = np.sum(si * y_in[lower:upper])
-	# return y
-
 def sinc_interp_windowed(y_in, x_in, x_out, write_after=10000, NT = 100):
 	"""
 	base by Gaute Hope: https://gist.github.com/gauteh/8dea955ddb1ed009b48e
-	Interpolate the signal to the new points using a sinc kernel
-	input:
+	Interpolate the signal to the new points using a hann-windowed sinc kernel
+	>input:
 	x_in			time points x is defined on
 	y_in		 	input signal column vector or matrix, with a signal in each row
 	x_out			points to evaluate the new signal on
 	write_after		yield a block after X output samples
 	NT				samples to take before and after the central sample
-	output:
+	>output:
 	y				 the interpolated signal at points x_out
 	"""
 	y = np.zeros(write_after+1)
 	offset = 0
-	
-	#has to be fairly high
-	#NT = 100
-	# for i, p in enumerate (x_out):
-		# #map the output to the input
-		# ind = int(round(p))
-		# lower = max(0, ind-NT)
-		# upper = ind+NT
-		
-		# si = np.sinc (x_in[lower:upper] - p)
-		# y[i- offset*(write_after+1)] = np.sum(si * y_in[lower:upper])
-		# if i - offset*write_after  == write_after:
-			# offset += 1
-			# yield y
-	
+	win_func = np.hanning(2*NT)
+	in_len = len(x_in)
+	out_len = len(x_out)
 	y = np.zeros(write_after)
-	while offset < len(x_out):
-		print("piece at", offset)
+	while offset < out_len:
+		#print("piece at", offset)
 		outind = 0
 		for i in range(offset, offset+write_after):
 			#now we are at the end and we can yield the rest of the piece
-			if i == len(x_out)-1:
-				print("end",i,outind)
-				print(len(y[0:outind]))
+			if i == out_len-1:
+				#print("end",i,outind)
+				#print(len(y[0:outind]))
 				yield y[0:outind]
-				offset = len(x_out)
+				offset = out_len
 				break
 			p = x_out[i]
 			#map the output to the input
+			#error diffusion here makes no significant difference
 			ind = int(round(p))
 			lower = max(0, ind-NT)
-			upper = ind+NT
+			upper = min(ind+NT, in_len)
+			length = upper - lower
 			
+			#use Hann window to reduce the prominent sinc ringing of a rectangular window
+			#(http://www-cs.engr.ccny.cuny.edu/~wolberg/pub/crc04.pdf, p. 11ff)
 			si = np.sinc (x_in[lower:upper] - p)
-			y[outind] = np.sum(si * y_in[lower:upper])
+			y[outind] = np.sum(si * y_in[lower:upper] * win_func[0:length])
 		
 			outind+=1
 		#we may have to exit here to avoid sending another block
-		if offset == len(x_out):
+		if offset == out_len:
 			break
 		offset+=write_after
-		
 		yield y
-
-# def sinc_interp_windowed_gen(y_in, x_in, x_out ):
-	# #https://gist.github.com/nadavb/13030ca99336d4a1eb6390ad03d23c00
-	# NT = 50	 # Change this number to change the accuracy
-	# write_after = 10000
-	# result = np.ones(write_after+1)
-	# T = x_in[1] - x_in[0]  # Find the period	   
-	# fac = T * len(y_in) / len(x_out)
-	# offset = 0
-	# for i in range(0, len(x_out)):
-		# t = i * fac
-		# n = [n for n in range(max(int(-NT + t/T), 0), min(int(NT + t/T), len(y_in)))]
-		# result[i- offset*write_after] = np.sum( y_in[n] * np.sinc((t - n*T)/T) )
-		# if i - offset*write_after == write_after:
-			# offset += 1
-			# yield result
-			# result = np.ones(write_after+1)
-	
-# def sinc_interp(y_in, x_in, x_out):
-	# """
-	# base by Gaute Hope: https://gist.github.com/gauteh/8dea955ddb1ed009b48e
-	# Interpolate the signal to the new points using a sinc kernel
-
-	# input:
-	# y_in	   input signal vector
-	# x_in	  time points y_in is defined on
-	# x_out	   points to evaluate the new signal on
-
-	# output:
-	# y		the interpolated signal at points x_out
-	# """
-	# y = np.zeros(len(x_out))
-	# for pi, p in enumerate(x_out):
-		# y[pi] = np.sum(y_in * np.sinc(x_in - p))
-	# return y
-  # #https://stackoverflow.com/questions/25181642/how-set-numpy-floating-point-accuracy
-# def formula_interpolation(samples, speed, mode="Sinc"):
-	# #signal and speed arrays must be mono and have the same length
-	# #IDK where this has to be inverted otherwise
-	# speed = 1/speed
-	# in_length = len(speed)
-
-	# #create a new speed array that is as long as the output is going to be. the magic is in the output x's step length
-	# interp_speed = np.interp(np.arange(0, in_length, np.mean(speed)), np.arange(0, in_length), speed)
-
-	# #the times of the input samples, these must be evenly sampled, starting at 1
-	# in_positions = np.arange(1, in_length+1)
-	# #these are unevenly sampled, but when played back at the correct (original) sampling rate, yield the respeeded result
-	# out_positions = np.cumsum(interp_speed )
-	# if mode == "Sinc": return sinc_interp(samples, in_positions, out_positions)
-	# elif mode == "Windowed Sinc": return sinc_interp_windowed(samples, in_positions, out_positions)
-	# elif mode == "Linear": return np.interp(out_positions, in_positions, samples)
-
 
 def write_speed(filename, speed_curve):
 	#only for testing
@@ -290,7 +196,7 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 		samples_in2 = np.arange(0, in_len)
 		#here we create an array that maps every single sample of the output to a sub-sample time on the input
 		samples_out2 = np.interp(np.arange(0, out_len), samples_out, samples_in)
-		NT=100
+		NT = 100
 		write_after=100000
 		#blocks are integers
 		num_blocks = np.ceil( out_len/write_after )

@@ -22,6 +22,7 @@ def sinc_interp_windowed(y_in, x_in, x_out, write_after=10000, NT = 100):
 	in_len = len(x_in)
 	out_len = len(x_out)
 	y = np.zeros(write_after)
+	period_from = x_in[1]-x_in[0]
 	while offset < out_len:
 		#print("piece at", offset)
 		outind = 0
@@ -41,9 +42,17 @@ def sinc_interp_windowed(y_in, x_in, x_out, write_after=10000, NT = 100):
 			upper = min(ind+NT, in_len)
 			length = upper - lower
 			
+			#fc is the cutoff frequency expressed as a fraction of the nyquist freq
+			#we need anti-aliasing when sampling rate is bigger than before, ie. exceeding the nyquist frequency
+			#could skip this calculation and get it from the speed curve instead?
+			period_to = x_out[i+1]-p
+			fc = min(period_from/period_to, 1)
+			
 			#use Hann window to reduce the prominent sinc ringing of a rectangular window
 			#(http://www-cs.engr.ccny.cuny.edu/~wolberg/pub/crc04.pdf, p. 11ff)
-			si = np.sinc (x_in[lower:upper] - p)
+			#http://www.analog.com/media/en/technical-documentation/dsp-book/dsp_book_Ch16.pdf
+			#claims that only hamming and blackman are worth using? my experiments look best with hann window
+			si = np.sinc ((x_in[lower:upper] - p) * fc) * fc
 			y[outind] = np.sum(si * y_in[lower:upper] * win_func[0:length])
 		
 			outind+=1

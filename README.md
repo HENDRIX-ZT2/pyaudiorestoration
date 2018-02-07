@@ -14,6 +14,7 @@ You need to have installed:
 - tkinter (OLD GUI)
 - pyQt5 (NEW GUI)
 - [vispy](vispy.org) (NEW GUI)
+- [pyFFTW](https://github.com/pyFFTW/pyFFTW) (NEW GUI - optional speedup)
 
 The bundled python platform [Anaconda](https://www.anaconda.com/download/) will have most of these dependencies installed by default. Best install the missing ones with `pip` (eg. in the Windows commandline, type `pip install vispy`).
 

@@ -128,6 +128,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		cmap_l = QtWidgets.QLabel("Colors")
 		self.cmap_c = QtWidgets.QComboBox(self)
 		self.cmap_c.addItems(sorted(color.colormap.get_colormaps().keys()))
+		self.cmap_c.setCurrentText("viridis")
 		self.cmap_c.currentIndexChanged.connect(self.update_param_soft)
 
 		self.resample_b = QtWidgets.QPushButton("Resample")
@@ -175,7 +176,14 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.progressBar.setRange(0,100)
 		self.progressBar.setAlignment(QtCore.Qt.AlignCenter)
 		
-		channel_l = QtWidgets.QLabel("No Channels")
+		#channel_l = QtWidgets.QLabel("No Channels")
+		self.mygroupbox = QtWidgets.QGroupBox('Channels')
+		self.channel_layout = QtWidgets.QVBoxLayout()
+		self.channel_layout.setSpacing(0)
+		self.mygroupbox.setLayout(self.channel_layout)
+		self.scroll = QtWidgets.QScrollArea()
+		self.scroll.setWidget(self.mygroupbox)
+		self.scroll.setWidgetResizable(True)
 		
 		self.qgrid = QtWidgets.QGridLayout()
 		self.qgrid.setHorizontalSpacing(3)
@@ -214,7 +222,8 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.qgrid.addWidget(self.mode_c, 2, 5)
 		
 		#column 6 - channels
-		self.qgrid.addWidget(channel_l, 0, 6)
+		self.qgrid.addWidget(self.scroll, 0, 6, 4, 1)
+		
 		
 		self.myLongTask = TaskThread()
 		self.myLongTask.notifyProgress.connect(self.onProgress)
@@ -225,7 +234,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		vbox.addLayout(self.qgrid)
 		vbox.addStretch(1.0)
 
-		self.channel_bs = [channel_l, ]
+		self.channel_bs = [ ]
 		
 		self.setLayout(vbox)
 		
@@ -254,8 +263,9 @@ class ObjectWidget(QtWidgets.QWidget):
 			
 			#delete all previous channel widgets
 			for channel in self.channel_bs:
-				self.qgrid.removeWidget(channel)
+				self.channel_layout.removeWidget(channel)
 				channel.deleteLater()
+			
 			self.channel_bs = []
 			channel_names = ("Front Left", "Front Right", "Center", "LFE", "Back Left", "Back Right")
 			#all active by default?
@@ -268,7 +278,7 @@ class ObjectWidget(QtWidgets.QWidget):
 				else:
 					self.channel_bs[-1].setChecked(False)
 				self.channel_bs[-1].stateChanged.connect(self.update_other_settings)
-				self.qgrid.addWidget(self.channel_bs[-1], i, 6)
+				self.channel_layout.addWidget( self.channel_bs[-1] )
 			
 	def save_traces(self):
 		#get the data from the traces and save it
@@ -342,20 +352,21 @@ class ObjectWidget(QtWidgets.QWidget):
 				reg.show()
 				
 	def run_resample(self):
-		mode = self.mode_c.currentText()
-		prec = self.prec_s.value()
-		#make a copy to prevent unexpected side effects
-		channels = [i for i in range(len(self.channel_bs)) if self.channel_bs[i].isChecked()]
-		print(channels)
-		speed_curve = self.parent.canvas.master_speed.get_linspace()
-		if self.parent.canvas.regs:
-			speed_curve = self.parent.canvas.master_reg_speed.get_linspace()
-			print("Using regressed speed")
-		else:
-			print("Using measured speed")
-		print("Resampling",self.filename, mode, prec)
-		self.myLongTask.settings = (self.filename, speed_curve, mode, prec, channels, "Diffused")
-		self.myLongTask.start()
+		if self.filename:
+			mode = self.mode_c.currentText()
+			prec = self.prec_s.value()
+			#make a copy to prevent unexpected side effects
+			channels = [i for i in range(len(self.channel_bs)) if self.channel_bs[i].isChecked()]
+			print(channels)
+			speed_curve = self.parent.canvas.master_speed.get_linspace()
+			if self.parent.canvas.regs:
+				speed_curve = self.parent.canvas.master_reg_speed.get_linspace()
+				print("Using regressed speed")
+			else:
+				print("Using measured speed")
+			print("Resampling",self.filename, mode, prec)
+			self.myLongTask.settings = (self.filename, speed_curve, mode, prec, channels, "Diffused")
+			self.myLongTask.start()
 			
 	def update_resampling_presets(self, option):
 		mode = self.mode_c.currentText()
@@ -654,19 +665,15 @@ class TraceLine:
 		
 		
 		#note: the final, output speed curve output should be linscale and centered on 1
-		
-		#self.speed = freqs /min(self.freqs)# mean_freqs# + offset
-		#self.speed-= np.mean(self.speed)
-		
-		self.speed = np.log2(freqs)# / mean_freqs# + offset
+		self.speed = np.log2(freqs)
 		self.speed-= np.mean(self.speed)
 		#we don't want to overwrite existing offsets loaded from files
 		if offset is None:
 			if not vispy_canvas.auto_align:
-				print("no align")
+				#print("no align")
 				offset = 0
 			else:
-				print("Setting automatic offset")
+				#print("Setting automatic offset")
 				#create the array for sampling
 				out = np.ones((len(times), len(self.vispy_canvas.lines)), dtype=np.float32)
 				#lerp and sample all lines, use NAN for missing parts
@@ -781,7 +788,7 @@ class Canvas(scene.SceneCanvas):
 		
 		#speed chart
 		self.speed_yaxis = scene.AxisWidget(orientation='left',
-								 axis_label='%',
+								 axis_label='Octaves',
 								 axis_font_size=8,
 								 axis_label_margin=35,
 								 tick_label_margin=5)
@@ -894,10 +901,9 @@ class Canvas(scene.SceneCanvas):
 				print("storing new fft")
 				signal = soundob.read(always_2d=True)[:,0]
 				#this will automatically zero-pad the last fft
-				imdata = fourier.stft(signal, fft_size, hop, "hann")
-				#imdata = util.fourier.stft(signal, fft_size, hop, sr, "hann")
 				#get the magnitude spectrum
-				imdata = np.abs(imdata)
+				#avoid divide by 0 error in log10
+				imdata = np.abs(fourier.stft(signal, fft_size, hop, "hann")+.0000001)
 				#change to dB scale later, for the tracers
 				#imdata = 20 * np.log10(imdata)
 				#clamping the data to 0,1 range happens in the vertex shader
@@ -940,7 +946,8 @@ class Canvas(scene.SceneCanvas):
 				self.images[-1].set_size((imdata_piece.shape[1]*hop/sr, sr//2))
 				#add this piece's offset with STT
 				self.images[-1].transform = visuals.transforms.STTransform( translate=(i * hop / sr, 0)) * vispy_ext.MelTransform()
-			
+			self.master_speed.update()
+			self.master_reg_speed.update()
 		
 	def on_mouse_wheel(self, event):
 		#coords of the click on the vispy canvas

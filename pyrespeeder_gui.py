@@ -90,7 +90,6 @@ def to_mel(val):
 
 class TaskThread(QtCore.QThread):
 	notifyProgress = QtCore.pyqtSignal(int)
-	settings = "foo"
 	def run(self):
 		name, speed_curve, resampling_mode, frequency_prec, use_channels, dither = self.settings
 		resampling.run(name, speed_curve= speed_curve, resampling_mode = resampling_mode, frequency_prec=frequency_prec, use_channels=use_channels, dither=dither, prog_sig=self)
@@ -145,7 +144,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.trace_c.currentIndexChanged.connect(self.update_other_settings)
 		
 		self.delete_selected_b = QtWidgets.QPushButton('Delete Selected Trace')
-		self.delete_selected_b.clicked.connect(self.delete_selected_tracess)
+		self.delete_selected_b.clicked.connect(self.delete_selected_traces)
 		self.delete_all_b = QtWidgets.QPushButton('Delete All Traces')
 		self.delete_all_b.clicked.connect(self.delete_all_traces)
 		
@@ -243,9 +242,22 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.progressBar.setValue(i)
 		
 	def open_audio(self):
+		#just a wrapper around load_audio so we can access that via drag & drop and button
 		#pyqt5 returns a tuple
 		self.filename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open file', 'c:\\', "Audio files (*.flac *.wav)")[0]
+		self.load_audio()
+			
+	def load_audio(self):
+	#called whenever a potential audio file is set as self.filename - via drag& drop or open_audio
 		if self.filename:
+			# todo: maybe store the soundob until a new one is loaded, and use the same everywhere? (also consider threading!)
+			# is the (dropped) file an audio file, ie. can it be read by pysoundfile?
+			try:
+				soundob = sf.SoundFile(self.filename)
+			except:
+				print(self.filename+" could not be read, is it a valid audio file?")
+				return
+			num_channels = soundob.channels
 			self.settings_hard_changed.emit()
 			data = resampling.read_trace(self.filename)
 			for offset, times, freqs in data:
@@ -256,10 +268,6 @@ class ObjectWidget(QtWidgets.QWidget):
 			for t0, t1, amplitude, omega, phase, offset in data:
 				RegLine(self.parent.canvas, t0, t1, amplitude, omega, phase, offset)
 			self.parent.canvas.master_reg_speed.update()
-			num_channels = 4
-	
-			soundob = sf.SoundFile(self.filename)
-			num_channels = soundob.channels
 			
 			#delete all previous channel widgets
 			for channel in self.channel_bs:
@@ -268,7 +276,7 @@ class ObjectWidget(QtWidgets.QWidget):
 			
 			self.channel_bs = []
 			channel_names = ("Front Left", "Front Right", "Center", "LFE", "Back Left", "Back Right")
-			#all active by default?
+			# set the startup option to just resample channel 0
 			active = [0,]
 			for i in range(0, num_channels):
 				name = channel_names[i] if i < 6 else str(i)
@@ -282,26 +290,17 @@ class ObjectWidget(QtWidgets.QWidget):
 			
 	def save_traces(self):
 		#get the data from the traces and save it
-		data = []
-		for line in self.parent.canvas.lines:
-			data.append( (line.offset, line.times, line.freqs) )
-		print("Saved",len(data),"traces")
+		data = [ (line.offset, line.times, line.freqs) for line in self.parent.canvas.lines ]
 		if data:
+			print("Saved",len(data),"traces")
 			resampling.write_trace(self.filename, data)
-			# speed_data = self.parent.canvas.master_speed.get_linspace()
-			# resampling.write_speed(self.filename, speed_data)
-			
-		#get the data from the regs and save it
-		data = []
-		for reg in self.parent.canvas.regs:
-			#self.amplitude * np.sin(self.omega * clipped_times + self.phase) + self.offset
-			data.append( (reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) )
+		#get the data from the regressions and save it
+		data = [ (reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.parent.canvas.regs ]
 		if data:
+			print("Saved",len(data),"regressions")
 			resampling.write_regs(self.filename, data)
-			#speed_data = self.parent.canvas.master_reg_speed.get_linspace()
-			#resampling.write_speed(self.filename, speed_data)
 			
-	def delete_selected_tracess(self):
+	def delete_selected_traces(self):
 		for trace in reversed(self.parent.canvas.selected_traces):
 			trace.remove()
 		self.parent.canvas.master_speed.update()
@@ -322,7 +321,6 @@ class ObjectWidget(QtWidgets.QWidget):
 	
 	def update_show_settings(self):
 		show = self.show_c.currentText()
-		#"Traces only","Regressions only","Both"
 		if show == "Traces only":
 			self.parent.canvas.show_regs = False
 			self.parent.canvas.show_lines = True
@@ -394,6 +392,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.resize(700, 500)
 		self.setWindowTitle('pyrespeeder 2.0')
 
+		self.setAcceptDrops(True)
 		splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
 
 		self.canvas = Canvas()
@@ -415,6 +414,31 @@ class MainWindow(QtWidgets.QMainWindow):
 		#also force a soft update here
 		self.update_settings_soft()
 		
+	def dragEnterEvent(self, event):
+		if event.mimeData().hasUrls:
+			event.accept()
+		else:
+			event.ignore()
+
+	def dragMoveEvent(self, event):
+		if event.mimeData().hasUrls:
+			event.setDropAction(QtCore.Qt.CopyAction)
+			event.accept()
+		else:
+			event.ignore()
+
+	def dropEvent(self, event):
+		if event.mimeData().hasUrls:
+			event.setDropAction(QtCore.Qt.CopyAction)
+			event.accept()
+			for url in event.mimeData().urls():
+				url_name = str(url.toLocalFile())
+				self.props.filename = url_name
+				self.props.load_audio()
+				return
+		else:
+			event.ignore()
+
 	def update_settings_soft(self):
 		self.canvas.set_data_soft(cmap=self.props.cmap_c.currentText())	
 
@@ -863,17 +887,22 @@ class Canvas(scene.SceneCanvas):
 			image.set_cmap(cmap)
 		self.colorbar_display.cmap = cmap
 	
-		
+	#called if either  the file or FFT settings have changed
 	def set_data_hard(self, filename, fft_size = 256, fft_overlap = 1):
 		if filename:
-			
 			#only set this one once, but can't set it in _init_
 			if not self.MAX_TEXTURE_SIZE:
 				self.MAX_TEXTURE_SIZE = gloo.gl.glGetParameter(gloo.gl.GL_MAX_TEXTURE_SIZE)
 				print("self.MAX_TEXTURE_SIZE", self.MAX_TEXTURE_SIZE)
 			
+			soundob = sf.SoundFile(filename)
+				
 			#has the file changed?
 			if self.filename != filename:
+				
+				# TODO: ask - do you really want to load a new file?
+				# save changes to the old file?
+			
 				#clear the fft storage!
 				self.fft_storage = {}
 				
@@ -881,7 +910,6 @@ class Canvas(scene.SceneCanvas):
 				for line in reversed(self.lines):
 					line.remove()
 					
-			soundob = sf.SoundFile(filename)
 			sr = soundob.samplerate
 			
 			hop = int(fft_size/fft_overlap)
@@ -929,6 +957,8 @@ class Canvas(scene.SceneCanvas):
 				self.spec_view.camera.link(self.speed_view.camera)
 				
 			#TODO: is this as efficient as possible?
+			#TODO: move the multi-resolution handling into the spec class
+			#only delete / add visuals when required due to changing data, not always
 			print("removing old images")
 			for i in reversed(range(0, len(self.images))):
 				self.images[i].parent = None
@@ -1084,7 +1114,9 @@ class Canvas(scene.SceneCanvas):
 					A = np.array([line.spec_center for line in self.lines])
 			#returns the line (if any exists) whose center (including any offsets) is closest to pt
 			if c is not None and len(A):
-				ind = np.array([np.linalg.norm(x+y) for (x,y) in A-(c[0], c[1])]).argmin()
+				#actually, we don't need the euclidean distance here, just a relative distance metric, so we can avoid the sqrt and just take the squared distance
+				#ind = np.linalg.norm(A-(c[0], c[1]), axis = 1).argmin()
+				ind = np.sum((A-c[0:2])**2, axis = 1).argmin()
 				if self.show_regs and self.show_lines:
 					return (self.lines+self.regs)[ind]
 				elif self.show_regs and not self.show_lines:

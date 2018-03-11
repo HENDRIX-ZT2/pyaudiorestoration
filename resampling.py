@@ -209,7 +209,7 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 	
 	print("Num Blocks",num_blocks)
 	#there are no half blocks...
-	prog_fac = 100 / num_blocks*len(use_channels)
+	prog_fac = 100 / num_blocks / len(use_channels)
 	progress = 0
 	#resample on mono channels and export each separately as repeat does not like more dimensions
 	for channel in use_channels:
@@ -219,6 +219,7 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 			if resampling_mode in ("Sinc",):
 				win_func = np.hanning(2*NT)
 				for offset, positions in offsets_speeds:
+					#can this be made to use a fixed len and/ or always dump into the same array?
 					block_len = int(len(positions))
 					block = np.zeros( block_len)
 					for i in range( block_len):
@@ -227,6 +228,13 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 						#map the output to the input
 						#error diffusion here makes no significant difference
 						ind = int(round(p))+int(offset)
+						
+						#can we end it here already?
+						#then cut the block and break out of this loop
+						if ind == in_len:
+							block = block[0:i]
+							break
+							
 						#print(ind)
 						lower = max(0, ind-NT)
 						upper = min(ind+NT, in_len)
@@ -245,7 +253,9 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 						#claims that only hamming and blackman are worth using? my experiments look best with hann window
 						
 						si = np.sinc ((samples_in2[lower:upper]-int(offset) - p) * fc) * fc
-						block[i] = np.sum(si * signal[lower:upper,channel] * win_func[0:length])
+						#note that in some end cases, len may be 0 but win_func gets another len so it would break
+						#TODO: this is probably obsolete and could get its indices like the other two, because the end is cut off already
+						block[i] = np.sum(si * signal[lower:upper,channel] * win_func[0:len(si)])
 					
 					outfile.write( block )
 					if prog_sig:

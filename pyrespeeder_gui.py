@@ -7,7 +7,7 @@
 
 import sys
 import numpy as np
-from vispy import scene, gloo, visuals, color, util
+from vispy import scene, gloo, visuals, color, util, io
 import soundfile as sf
 from PyQt5 import QtGui, QtCore, QtWidgets
 
@@ -819,11 +819,12 @@ class Canvas(scene.SceneCanvas):
 		self.speed_yaxis.width_max = 55
 		
 		#spectrum
-		self.spec_yaxis = scene.AxisWidget(orientation='left',
+		self.spec_yaxis = vispy_ext.ExtAxisWidget(orientation='left',
 								 axis_label='Hz',
 								 axis_font_size=8,
 								 axis_label_margin=35,
-								 tick_label_margin=5)
+								 tick_label_margin=5,
+								 scale_type="logarithmic")
 		self.spec_yaxis.width_max = 55
 		
 		self.spec_xaxis = scene.AxisWidget(orientation='bottom',
@@ -877,6 +878,11 @@ class Canvas(scene.SceneCanvas):
 		
 		self.master_speed = MasterSpeedLine(self)
 		self.master_reg_speed = MasterRegLine(self)
+		
+		img_data = io.read_png('brush.png')
+		interpolation = 'nearest'
+		image = scene.visuals.Image(img_data, interpolation=interpolation, parent=self.spec_view.scene, method='subdivide')
+		
 		
 		self.freeze()
 		
@@ -1033,6 +1039,8 @@ class Canvas(scene.SceneCanvas):
 		#coords of the click on the vispy canvas
 		self.last_click = None
 		click = np.array([event.pos[0],event.pos[1],0,1])
+		#ok, so left matches up with the axis! this means we need to transform mel's imap function
+		#print((np.exp(self.spec_view.scene.transform.imap(self.spec_view.transform.imap(click)) / 1127) - 1) * 700, self.spec_view.scene.transform.imap(self.spec_view.transform.imap(click)), self.click_spec_conversion(click))
 		if event.button == 1:
 			if "Control" in event.modifiers:
 				self.last_click = click

@@ -879,10 +879,10 @@ class Canvas(scene.SceneCanvas):
 		self.master_speed = MasterSpeedLine(self)
 		self.master_reg_speed = MasterRegLine(self)
 		
-		img_data = io.read_png('brush.png')
-		interpolation = 'nearest'
-		image = scene.visuals.Image(img_data, interpolation=interpolation, parent=self.spec_view.scene, method='subdivide')
-		
+		# test for a brush overlay
+		# img_data = io.read_png('brush.png')
+		# interpolation = 'nearest'
+		# image = scene.visuals.Image(img_data, interpolation=interpolation, parent=self.spec_view.scene, method='subdivide')
 		
 		self.freeze()
 		

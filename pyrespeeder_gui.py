@@ -140,7 +140,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		trace_l = QtWidgets.QLabel("Tracing Mode")
 		self.trace_c = QtWidgets.QComboBox(self)
-		self.trace_c.addItems(("Center of Gravity","Correlation","Freehand Draw", "Sine Draw", "Sine Regression"))
+		self.trace_c.addItems(("Center of Gravity","Peak","Correlation","Freehand Draw", "Sine Draw", "Sine Regression"))
 		self.trace_c.currentIndexChanged.connect(self.update_other_settings)
 		
 		self.delete_selected_b = QtWidgets.QPushButton('Delete Selected Trace')
@@ -1076,6 +1076,8 @@ class Canvas(scene.SceneCanvas):
 				else:
 					if self.trace_mode == "Center of Gravity":
 						times, freqs = wow_detection.trace_cog(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
+					elif self.trace_mode == "Peak":
+						times, freqs = wow_detection.trace_peak(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
 					elif self.trace_mode == "Correlation":
 						times, freqs = wow_detection.trace_correlation(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, t0 = t0, t1 = t1)
 					elif self.trace_mode == "Sine Draw":

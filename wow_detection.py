@@ -125,8 +125,50 @@ def trace_sine(fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 
 	#freqs = []
 	return times, sine_on_hz#, LfL, LfU
 
-
-
+def trace_peak(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None):
+	
+	#start and stop reading the FFT data here, unless...
+	first_fft_i = 0
+	num_bins, last_fft_i = D.shape
+	#we have specified start and stop times, which is the usual case
+	if t0:
+		#make sure we force start and stop at the ends!
+		first_fft_i = max(first_fft_i, int(t0*sr/hop)) 
+		last_fft_i = min(last_fft_i, int(t1*sr/hop))
+	
+	#bin indices of the starting band
+	#N = 1 + fft_size
+	N = fft_size
+	#clamp to valid frequency range
+	fL = max(1.0, fL)
+	fU = min(sr/2, fU)
+	#make sure it doesn't escape the frequency limits
+	NL = max(1, min(num_bins-3, int(round(fL * N / sr))) )
+	NU = min(num_bins-2, max(1, int(round(fU * N / sr))) )
+	
+	if first_fft_i == last_fft_i:
+		print("No point in tracing just one FFT")
+		return [],[]
+	if NL == NU:
+		print("Can not trace one bin only")
+		return [],[]
+		
+	freqs = []
+	times = []
+	
+	for i in range(first_fft_i, last_fft_i):
+		# * np.hanning(NU-NL) does not really make it better
+		# instead adapt the NL, NU borders consecutively
+		i_raw = np.argmax( D[NL:NU, i] )+NL
+		i_interp = (D[i_raw-1, i] - D[i_raw+1, i]) / (D[i_raw-1, i] - 2 * D[i_raw, i] + D[i_raw+1, i]) / 2 + i_raw
+		freq = sr * i_interp / N
+		freqs.append(freq)
+		#save the data of this frame
+		t = i*hop/sr
+		times.append(t)
+	return times, freqs
+	
+	
 def fit_sin(tt, yy, assumed_freq=None):
 	'''Fit sin to the input time sequence, and return fitting parameters "amp", "omega", "phase", "offset", "freq", "period" and "fitfunc"'''
 	#by unsym from https://stackoverflow.com/questions/16716302/how-do-i-fit-a-sine-curve-to-my-data-with-pylab-and-np

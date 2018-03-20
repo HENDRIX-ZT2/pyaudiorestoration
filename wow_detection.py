@@ -125,7 +125,10 @@ def trace_sine(fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 
 	#freqs = []
 	return times, sine_on_hz#, LfL, LfU
 
-def trace_peak(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None):
+def trace_peak(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None, X = 1):
+	"""
+	X: tolerance above and below, in semitones (1/12th of an octave)
+	"""
 	
 	#start and stop reading the FFT data here, unless...
 	first_fft_i = 0
@@ -142,26 +145,48 @@ def trace_peak(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, 
 	#clamp to valid frequency range
 	fL = max(1.0, fL)
 	fU = min(sr/2, fU)
-	#make sure it doesn't escape the frequency limits
-	NL = max(1, min(num_bins-3, int(round(fL * N / sr))) )
-	NU = min(num_bins-2, max(1, int(round(fU * N / sr))) )
+	# #make sure it doesn't escape the frequency limits
+	# NL = max(1, min(num_bins-3, int(round(fL * N / sr))) )
+	# NU = min(num_bins-2, max(1, int(round(fU * N / sr))) )
 	
 	if first_fft_i == last_fft_i:
 		print("No point in tracing just one FFT")
 		return [],[]
-	if NL == NU:
-		print("Can not trace one bin only")
-		return [],[]
+	# if NL == NU:
+		# print("Can not trace one bin only")
+		# return [],[]
 		
 	freqs = []
 	times = []
 	
+	#let's say we take the lower as the starting point
+	#define the tolerance in semitones
+	#on log2 scale, one semitone is 1/12
+	#so take our start value, log2 it, +- 1/12
+	#and take power of two for both
+	freq = (fL+fU)/2 
+	logfreq = np.log2( freq )
+	fL = np.power(2, (logfreq-X/12))
+	fU = np.power(2, (logfreq+X/12))
+	NL = max(1, min(num_bins-3, int(round(fL * N / sr))) )
+	NU = min(num_bins-2, max(1, int(round(fU * N / sr))) )
+	#print(fL, freq, fU)
+	
 	for i in range(first_fft_i, last_fft_i):
-		# * np.hanning(NU-NL) does not really make it better
-		# instead adapt the NL, NU borders consecutively
-		i_raw = np.argmax( D[NL:NU, i] )+NL
+		fft_data = D[NL:NU, i]
+		#just hann it if there is enough "ambiguity" for the outer bins
+		#if NU-NL > 5:
+		#	fft_data *= np.hanning(NU-NL)
+		i_raw = np.argmax( fft_data )+NL
 		i_interp = (D[i_raw-1, i] - D[i_raw+1, i]) / (D[i_raw-1, i] - 2 * D[i_raw, i] + D[i_raw+1, i]) / 2 + i_raw
 		freq = sr * i_interp / N
+		logfreq = np.log2( freq )
+		fL = np.power(2, (logfreq-X/12))
+		fU = np.power(2, (logfreq+X/12))
+		#print(fL, freq, fU)
+		#print(NL,NU)
+		NL = max(1, min(num_bins-3, int(round(fL * N / sr))) )
+		NU = min(num_bins-2, max(1, int(round(fU * N / sr))) )
 		freqs.append(freq)
 		#save the data of this frame
 		t = i*hop/sr

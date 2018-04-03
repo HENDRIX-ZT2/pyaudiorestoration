@@ -6,16 +6,6 @@ import fourier
 import wow_detection
 import resampling
 
-def save(filename, data, piece=None):
-	print("Writing trace data")
-	piece_str  = ""
-	if piece is not None:
-		piece_str = "_"+str(piece)
-	speedfilename = filename.rsplit('.', 1)[0]+piece_str+".spd"
-	text_file = open(speedfilename, "wb")
-	text_file.write(data.tobytes())
-	text_file.close()
-
 def write_speed(filename, speed_curve, piece=None):
 	piece_str  = ""
 	if piece is not None:
@@ -23,11 +13,6 @@ def write_speed(filename, speed_curve, piece=None):
 	#only for testing
 	speedfilename = filename.rsplit('.', 1)[0]+piece_str+".npy"
 	np.save(speedfilename, speed_curve, allow_pickle=True, fix_imports=True)
-
-def read_speed(filename):
-	#only for testing
-	speedfilename = filename.rsplit('.', 1)[0]+".npy"
-	return np.load(speedfilename)
 
 def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 16.7):
 	start_time = time()
@@ -125,15 +110,15 @@ def show_all(speedname, hi=1020, lo=948):
 	plt.show()
 	
 	
-def resample_all(speedname, filename, blocksize, overlap, hop):
+def resample_all(speedname, filename, blocksize, overlap, hop, resampling_mode = "Linear"):
 	dir = os.path.dirname(speedname)
 	name = os.path.basename(speedname).rsplit('.', 1)[0]
 	files = [os.path.join(dir,file) for file in os.listdir(dir) if name in file and file.endswith(".npy")]
-	batch_res(filename, blocksize, overlap, speed_curve_names=files, resampling_mode = "Linear")
+	batch_res(filename, blocksize, overlap, files, resampling_mode)
 	
 	
 
-def batch_res(filename, blocksize, overlap, speed_curve_names=None, resampling_mode = "Linear"):
+def batch_res(filename, blocksize, overlap, speed_curve_names, resampling_mode):
 	print('Analyzing ' + filename + '...')
 	start_time = time()
 	write_after=400000
@@ -151,60 +136,23 @@ def batch_res(filename, blocksize, overlap, speed_curve_names=None, resampling_m
 	with sf.SoundFile(outfilename, 'w', sr, 1, subtype='FLOAT') as outfile:
 		in_len = 0
 		for i, in_block in enumerate(soundob.blocks( blocksize=blocksize*hop, overlap=overlap*hop)):
-			#if i not in (0, 1,2,3):
-			#	continue
+			# if i not in (0, 1,2,3):
+				# continue
 			print(i, len(in_block))
 			speed_curve = np.load(speed_curve_names[i])
 			times = speed_curve[:,0]
 			print("times:",times[0],times[len(times)-1])
 			#note: this expects a a linscale speed curve centered around 1 (= no speed change)
 			speeds = speed_curve[:,1]/1000
-			periods = np.diff(times)*sr
-			print("speeds",len(speeds))
 			
-			#just overwrite if needed
-			#if in_len != len(in_block):
-			in_len = len(in_block)
-			samples_in2 = np.arange(0, in_len)
-				
-			offsets_speeds = []
-			#offset = 0
-			offset = int(times[0]*sr)
-			err = 0
-			temp_offset = 0
-			temp_pos = []
-			for i2 in range(0, len(speeds)-1):
-				#save a new block for interpolation
-				if len(temp_pos)* periods[i2] > write_after:
-					offsets_speeds.append( ( offset, np.concatenate(temp_pos) ) )
-					offset += temp_offset
-					temp_offset = 0
-					temp_pos = []
-				#we want to know how many samples there are in this section, so get the period (should be the same for all sections)
-				mean_speed = ( (speeds[i2]+speeds[i2+1])/ 2 )
-				#the desired number of samples in this block - this is clearly correct
-				n = periods[i2]*mean_speed
-				
-				inerr = n + err
-				n = round(inerr)
-				err =  inerr-n
-				
-				#4.1 s for interp(arange)
-				#4.5 s for interp(generator)
-				#5.6 s for np.linspace(speeds[i], speeds[i+1], n)
-				#6.5 s for intrp(linspace)
-				#block_speeds = np.interp([i for i in range(0,int(n)+1)], (0, n),(speeds[i], speeds[i+1])  )
-				block_speeds = np.interp(np.arange(n), (0, n-1), (speeds[i2], speeds[i2+1]) )
-				positions = np.cumsum(1/block_speeds)
-				
-				temp_pos.append( positions +  temp_offset)
-				temp_offset+=positions[-1]
-
-			if temp_pos: offsets_speeds.append( (offset, np.concatenate(temp_pos) ) )
-			num_blocks = len(offsets_speeds)
-
-			for offset, positions in offsets_speeds:
-				outfile.write( np.interp(positions, samples_in2-int(offset), in_block) )
+			offsets_speeds, samples_in2 = resampling.prepare_linear_or_sinc(in_block, times*sr, speeds)
+			#these must be called as generators...
+			if resampling_mode in ("Sinc",):
+				for i in resampling.sinc_kernel(outfile, offsets_speeds, in_block, samples_in2, NT = 50):
+					pass
+			elif resampling_mode in ("Linear",):
+				for i in resampling.linear_kernel(outfile, offsets_speeds, in_block, samples_in2):
+					pass
 
 	dur = time() - start_time
 	print("duration",dur)
@@ -217,6 +165,6 @@ overlap=100
 blocksize=100000
 speedname = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH1.wav"
 filename = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH2.wav"
-trace_all(speedname, blocksize, overlap, fft_size, fft_overlap, hop, start= 16.7)
+#trace_all(speedname, blocksize, overlap, fft_size, fft_overlap, hop, start= 16.7)
 #show_all(speedname, hi=1020, lo=948)
-#resample_all(speedname, filename, blocksize, overlap, hop)
+resample_all(speedname, filename, blocksize, overlap, hop, resampling_mode = "Linear")

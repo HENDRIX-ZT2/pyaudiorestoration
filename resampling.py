@@ -99,7 +99,6 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 	#read the file
 	soundob = sf.SoundFile(filename)
 	signal = soundob.read(always_2d=True)
-	channels = soundob.channels
 	sr = soundob.samplerate
 	
 	print('Analyzing ' + filename + '...')
@@ -235,7 +234,6 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 							block = block[0:i]
 							break
 							
-						#print(ind)
 						lower = max(0, ind-NT)
 						upper = min(ind+NT, in_len)
 						length = upper - lower

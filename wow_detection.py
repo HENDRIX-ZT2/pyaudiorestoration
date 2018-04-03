@@ -8,6 +8,10 @@ import fourier
 # M. Lagrange, S. Marchand, and J. B. Rault, “Using linear prediction to enhance the tracking of partials,” in IEEE International Conference on Acoustics, Speech, and Signal Processing (ICASSP’04) , May 2004, vol. 4, pp. 241–244.
 
 #2003 enhanced partial tracking - good!
+
+
+#todo: create a hann window in log space?
+# or just lerp 0, 1, 0 for NL, i, NU
 	
 def COG(magnitudes, freqs, NL, NU):
 	#adapted from Czyzewski et al. (2007)
@@ -17,7 +21,57 @@ def COG(magnitudes, freqs, NL, NU):
 	weighted_magnitudes = np.hanning(NU-NL) * magnitudes[NL:NU]
 	return np.sum(weighted_magnitudes * np.log2(freqs[NL:NU])) / np.sum(weighted_magnitudes)
 
-def trace_cog(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None):
+def adapt_band(freqs, num_bins, freq_2_bin, tolerance, adaptation_mode, i):
+	"""
+	The goal of this function is, given the last frequency peaks, to return suitable boundaries for the next frequency detection
+	
+	freqs: the input frequency list
+	num_bins: the amount of bins, for limiting
+	freq_2_bin: the factor a freq has to be multiplied with to get the corresponding bin
+	tolerance: tolerance above and below peak, in semitones (1/12th of an octave)
+	adaptation_mode: how should the "prediction" happen?
+	
+	maxrise: tolerance for absolute rise between a frame, in semitones (redundant? - could be a fraction of tolerance), should this be done here or in postpro?
+	"""
+	logfreq = np.log2( freqs[i] )
+	if adaptation_mode == "None":
+		#keep the initial limits
+		#implement this elsewhere?
+		pass
+	elif adaptation_mode == "Constant":
+		#do nothing to the freq
+		pass
+	elif adaptation_mode == "Linear":
+		# repeat the trend and predict the freq of the next bin to get the boundaries accordingly
+		#this should be done in logspace
+		if len(freqs) > 1:
+			delta = logfreq - np.log2( freqs[i-2] )
+			logfreq += delta
+	elif adaptation_mode == "Average":
+		#take the average of n deltas,
+		#and use the preceding freqs as the starting point to avoid outliers?
+		logfreqs = np.log2( freqs[max(0,i-3):i+1] )
+		deltas = np.diff( logfreqs )
+		logfreq = logfreqs[0]
+		if len(deltas): logfreq += np.mean(deltas)*len(logfreqs)
+		#print(deltas,logfreq)
+		
+	fL = np.power(2, (logfreq-tolerance/12))
+	fU = np.power(2, (logfreq+tolerance/12))
+	NL = max(1, min(num_bins-3, int(round(fL * freq_2_bin))) )
+	NU = min(num_bins-2, max(1, int(round(fU * freq_2_bin))) )
+	
+	if NU-NL > 5:
+		window = np.interp(np.arange(NL, NU), (NL, np.power(2, logfreq)*freq_2_bin, NU-1), (0,1,0))
+		#print(len(window),window)
+	else:
+		window = np.ones(NU-NL)
+	return NL, NU, window, logfreq
+
+
+def trace_cog(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None, adaptation_mode="Linear"):
+	#Todo: calculate tolerance from fL, fU
+
 	#adapted from Czyzewski et al. (2007)
 	#note that the input D must NOT be in dB scale, just abs(FFT) and nothing more
 	
@@ -93,43 +147,21 @@ def trace_cog(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t
 	
 	return times, LSCoct#, LfL, LfU
 	
-def trace_sine(fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None):
-	#https://stackoverflow.com/questions/16716302/how-do-i-fit-a-sine-curve-to-my-data-with-pylab-and-numpy
-	meanfreq = (fU+fL)/2
-	amp = (fU-fL ) / 2
-	log2amp = (np.log2(fU)-np.log2(fL))/2
-	print("amp",amp, log2amp)
+def get_peak(D, i, NL, NU, window, freq_2_bin):
+	fft_data = D[NL:NU, i] * window
+	i_raw = np.argmax( fft_data )+NL
+	i_interp = (D[i_raw-1, i] - D[i_raw+1, i]) / (D[i_raw-1, i] - 2 * D[i_raw, i] + D[i_raw+1, i]) / 2 + i_raw
+	#sometimes the interpolation fails bad, then just use the raw index
+	if i_interp < 1:
+		i_interp = i_raw
+	return i_interp / freq_2_bin, np.mean(20*np.log10(fft_data+.0000001))
 	
-	fft_sr = hop/sr
-	times = np.arange(t0, t1, fft_sr)
-	period = 1.7 #seconds
-	#so this is in log2 scale
-	#basic sine curve, amplitude 1
-	sine = np.sin(times* 2*np.pi / period )# / 180. )
-
-	#to get to the desired mean frequency, add the log of that freq
-	#and then take it power 2
-	sine_on_hz = np.power(2, sine * log2amp + np.log2(meanfreq))
-	#sine_on_log = sine * amp + meanfreq
-
-	# #this can be the speed curve
-	# sine_in = sine*log2amp
-	# #this is equivalent
-	# sine_back = np.log2(sine_on_hz)
-	# sine_back = sine_back-np.mean(sine_back)
-
-
-
-	#print("sine")
-	#times = []
-	#freqs = []
-	return times, sine_on_hz#, LfL, LfU
-
-def trace_peak(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None, X = 1):
+def trace_peak(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None, tolerance = 1, adaptation_mode="Linear", dB_cutoff=-75):
 	"""
-	X: tolerance above and below, in semitones (1/12th of an octave)
+	tolerance: tolerance above and below, in semitones (1/12th of an octave)
 	"""
 	
+	#print("adaptation_mode",adaptation_mode)
 	#start and stop reading the FFT data here, unless...
 	first_fft_i = 0
 	num_bins, last_fft_i = D.shape
@@ -137,6 +169,7 @@ def trace_peak(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, 
 	if t0:
 		#make sure we force start and stop at the ends!
 		first_fft_i = max(first_fft_i, int(t0*sr/hop)) 
+	if t1:
 		last_fft_i = min(last_fft_i, int(t1*sr/hop))
 	
 	#bin indices of the starting band
@@ -152,119 +185,79 @@ def trace_peak(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, 
 	if first_fft_i == last_fft_i:
 		print("No point in tracing just one FFT")
 		return [],[]
-	# if NL == NU:
-		# print("Can not trace one bin only")
-		# return [],[]
 		
-	freqs = []
-	times = []
+	freqs = np.ones(last_fft_i-first_fft_i)
+	times = np.ones(last_fft_i-first_fft_i)
 	
 	#let's say we take the lower as the starting point
 	#define the tolerance in semitones
 	#on log2 scale, one semitone is 1/12
 	#so take our start value, log2 it, +- 1/12
 	#and take power of two for both
-	freq = (fL+fU)/2 
+	freq = (fL+fU)/2
 	logfreq = np.log2( freq )
-	fL = np.power(2, (logfreq-X/12))
-	fU = np.power(2, (logfreq+X/12))
+	log_prediction = logfreq
+	fL = np.power(2, (logfreq-tolerance/12))
+	fU = np.power(2, (logfreq+tolerance/12))
 	NL = max(1, min(num_bins-3, int(round(fL * N / sr))) )
 	NU = min(num_bins-2, max(1, int(round(fU * N / sr))) )
-	#print(fL, freq, fU)
+	window = np.ones(NU-NL)
+	gap_len=0
 	
-	for i in range(first_fft_i, last_fft_i):
-		fft_data = D[NL:NU, i]
-		#just hann it if there is enough "ambiguity" for the outer bins
-		#if NU-NL > 5:
-		#	fft_data *= np.hanning(NU-NL)
-		i_raw = np.argmax( fft_data )+NL
-		i_interp = (D[i_raw-1, i] - D[i_raw+1, i]) / (D[i_raw-1, i] - 2 * D[i_raw, i] + D[i_raw+1, i]) / 2 + i_raw
-		freq = sr * i_interp / N
-		logfreq = np.log2( freq )
-		fL = np.power(2, (logfreq-X/12))
-		fU = np.power(2, (logfreq+X/12))
-		#print(fL, freq, fU)
-		#print(NL,NU)
-		NL = max(1, min(num_bins-3, int(round(fL * N / sr))) )
-		NU = min(num_bins-2, max(1, int(round(fU * N / sr))) )
-		freqs.append(freq)
-		#save the data of this frame
-		t = i*hop/sr
-		times.append(t)
-	return times, freqs
-	
-	
-def fit_sin(tt, yy, assumed_freq=None):
-	'''Fit sin to the input time sequence, and return fitting parameters "amp", "omega", "phase", "offset", "freq", "period" and "fitfunc"'''
-	#by unsym from https://stackoverflow.com/questions/16716302/how-do-i-fit-a-sine-curve-to-my-data-with-pylab-and-np
-	tt = np.array(tt)
-	yy = np.array(yy)
-	#new: only use real input, so rfft
-	ff = np.fft.rfftfreq(len(tt), (tt[1]-tt[0]))	  # assume uniform spacing
-	fft_data = np.fft.rfft(yy)[1:]
-	#new: add an assumed frequency as an optional pre-processing step
-	if assumed_freq:
-		period = tt[1]-tt[0]
-		N = len(yy)+1
-		#find which bin this corresponds to
-		peak_est = int(round(assumed_freq * N * period))
-		#print("peak_est", peak_est)
-		#window the bins accordingly to maximize the expected peak
-		win = np.interp( np.arange(0, len(fft_data)), (0, peak_est, len(fft_data)), (0, 1, 0) )
-		#print("win", win)
-		#does this affect the phase?
-		fft_data *= win
-	peak_bin = np.argmax(np.abs(fft_data))+1
-	print("peak_bin", peak_bin)
-	guess_freq = ff[peak_bin]	# excluding the zero frequency "peak", which is related to offset
-	guess_amp = np.std(yy) * 2.**0.5
-	guess_offset = np.mean(yy)
-	#new: get the phase at the peak
-	guess_phase = np.angle(fft_data[peak_bin])
-	#print("guess_phase",guess_phase)
-	guess = np.array([guess_amp, 2.*np.pi*guess_freq, guess_phase, guess_offset])
+	freq_2_bin = N / sr
+	#dbs = []
+	#how many octaves may the pitch rise between consecutive FFTs?
+	#note that this is of course influenced by overlap and FFT size
+	#maxraise = .2/12
+	maxraise = 1/12
+	max_delta = 0.02
+	stable=True
+	dif = 0
+	for out_i, i in enumerate(range(first_fft_i, last_fft_i)):
+		freq, dB = get_peak(D, i, NL, NU, window, freq_2_bin)
+		frametime =  i*hop/sr
+		
+		#print(freq)
+		#discard this frame if
+		#the signal level is too low
+		#or the pitch slope is too steep
+		if out_i > 1: dif = np.log2(freq) - np.log2( freqs[out_i-1] )
+		#is it loud enough?
+		if dB < dB_cutoff:
+			#no? then mark it as unstable
+			if stable:
+				print("gap start at ",frametime)
+				stable=False
+		#ok, there is enough dB
+		#but is the pitch stable?
+		else:
+			if dif > max_delta:
+				if stable:
+					print("big rise at",frametime,freq)
+					stable=False
+			elif dif < -max_delta:
+				if stable:
+					print("big fall at",frametime,freq)
+					stable=False
+			else:
+				#go back to normal mode
+				if not stable:
+					print("normal at",frametime)
+					stable=True
+					#now trace back to where it all began
+		#then correct the peak
+		if not stable:
+			freq = np.mean(freqs[max(0,out_i-80):out_i-1])
+			
+		#todo:
+		#store start of last dropout /difference to last dropout / duration of dropout
+		#then backtrack until start of dropout when signal is back in reach
 
-	#using cosines does not seem to make it better?
-	def sinfunc(t, A, w, p, c):	 return A * np.sin(w*t + p) + c
-	import scipy.optimize
-	popt, pcov = scipy.optimize.curve_fit(sinfunc, tt, yy, p0=guess)
-	A, w, p, c = popt
-	f = w/(2.*np.pi)
-	fitfunc = lambda t: A * np.sin(w*t + p) + c
-	return {"amp": A, "omega": w, "phase": p, "offset": c, "freq": f, "period": 1./f, "fitfunc": fitfunc, "maxcov": np.max(pcov), "rawres": (guess,popt,pcov)}
-
+		freqs[out_i] = freq
+		times[out_i] = frametime
+		NL, NU, window, log_prediction = adapt_band(freqs, num_bins, freq_2_bin, tolerance, adaptation_mode, out_i)
+	return times, freqs#, dbs
 	
-def trace_sine_reg(speed_curve, t0, t1, rpm = None):
-	"""Perform a regression on an area of the master speed curve to yield a sine fit"""
-	#the master speed curve
-	times = speed_curve[:,0]
-	speeds = speed_curve[:,1]
-	
-	period = times[1]-times[0]
-	#which part to sample
-	ind_start = int(t0 / period)
-	ind_stop = int(t1 / period)
-	
-	try:
-		#33,3 RPM means the period of wow is = 1,8
-		#hence its frequency 1/1,8 = 0,55
-		assumed_freq = float(rpm) / 60
-		print("Source RPM:",rpm)
-		print("Assumed Wow Frequency:",assumed_freq)
-	except:
-		assumed_freq = None
-
-	res = fit_sin(times[ind_start:ind_stop], speeds[ind_start:ind_stop], assumed_freq=assumed_freq)
-	
-	return res["amp"], res["omega"], res["phase"], res["offset"]
-	
-def parabolic(f, x):
-	"""Helper function to refine a peak position in an array"""
-	xv = 1/2. * (f[x-1] - f[x+1]) / (f[x-1] - 2 * f[x] + f[x+1]) + x
-	yv = f[x] - 1/4. * (f[x-1] - f[x+1]) * (xv - x)
-	return (xv, yv)
-	
-
 def trace_correlation(D, fft_size = 8192, hop = 256, sr = 44100, t0 = None, t1 = None):
 
 	#start and stop reading the FFT data here, unless...
@@ -325,3 +318,74 @@ def trace_correlation(D, fft_size = 8192, hop = 256, sr = 44100, t0 = None, t1 =
 	#convert to scale and from log2 scale
 	freqs = np.power(2, (9.9+ speed))
 	return times[1:], freqs
+	
+	
+def fit_sin(tt, yy, assumed_freq=None):
+	'''Fit sin to the input time sequence, and return fitting parameters "amp", "omega", "phase", "offset", "freq", "period" and "fitfunc"'''
+	#by unsym from https://stackoverflow.com/questions/16716302/how-do-i-fit-a-sine-curve-to-my-data-with-pylab-and-np
+	tt = np.array(tt)
+	yy = np.array(yy)
+	#new: only use real input, so rfft
+	ff = np.fft.rfftfreq(len(tt), (tt[1]-tt[0]))	  # assume uniform spacing
+	fft_data = np.fft.rfft(yy)[1:]
+	#new: add an assumed frequency as an optional pre-processing step
+	if assumed_freq:
+		period = tt[1]-tt[0]
+		N = len(yy)+1
+		#find which bin this corresponds to
+		peak_est = int(round(assumed_freq * N * period))
+		#print("peak_est", peak_est)
+		#window the bins accordingly to maximize the expected peak
+		win = np.interp( np.arange(0, len(fft_data)), (0, peak_est, len(fft_data)), (0, 1, 0) )
+		#print("win", win)
+		#does this affect the phase?
+		fft_data *= win
+	peak_bin = np.argmax(np.abs(fft_data))+1
+	print("peak_bin", peak_bin)
+	guess_freq = ff[peak_bin]	# excluding the zero frequency "peak", which is related to offset
+	guess_amp = np.std(yy) * 2.**0.5
+	guess_offset = np.mean(yy)
+	#new: get the phase at the peak
+	guess_phase = np.angle(fft_data[peak_bin])
+	#print("guess_phase",guess_phase)
+	guess = np.array([guess_amp, 2.*np.pi*guess_freq, guess_phase, guess_offset])
+
+	#using cosines does not seem to make it better?
+	def sinfunc(t, A, w, p, c):	 return A * np.sin(w*t + p) + c
+	import scipy.optimize
+	popt, pcov = scipy.optimize.curve_fit(sinfunc, tt, yy, p0=guess)
+	A, w, p, c = popt
+	f = w/(2.*np.pi)
+	fitfunc = lambda t: A * np.sin(w*t + p) + c
+	return {"amp": A, "omega": w, "phase": p, "offset": c, "freq": f, "period": 1./f, "fitfunc": fitfunc, "maxcov": np.max(pcov), "rawres": (guess,popt,pcov)}
+
+def trace_sine_reg(speed_curve, t0, t1, rpm = None):
+	"""Perform a regression on an area of the master speed curve to yield a sine fit"""
+	#the master speed curve
+	times = speed_curve[:,0]
+	speeds = speed_curve[:,1]
+	
+	period = times[1]-times[0]
+	#which part to sample
+	ind_start = int(t0 / period)
+	ind_stop = int(t1 / period)
+	
+	try:
+		#33,3 RPM means the period of wow is = 1,8
+		#hence its frequency 1/1,8 = 0,55
+		assumed_freq = float(rpm) / 60
+		print("Source RPM:",rpm)
+		print("Assumed Wow Frequency:",assumed_freq)
+	except:
+		assumed_freq = None
+
+	res = fit_sin(times[ind_start:ind_stop], speeds[ind_start:ind_stop], assumed_freq=assumed_freq)
+	
+	return res["amp"], res["omega"], res["phase"], res["offset"]
+	
+def parabolic(f, x):
+	"""Helper function to refine a peak position in an array"""
+	xv = 1/2. * (f[x-1] - f[x+1]) / (f[x-1] - 2 * f[x] + f[x+1]) + x
+	yv = f[x] - 1/4. * (f[x-1] - f[x+1]) * (xv - x)
+	return (xv, yv)
+	

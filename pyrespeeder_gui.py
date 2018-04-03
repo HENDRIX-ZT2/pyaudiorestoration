@@ -114,14 +114,16 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.save_b = QtWidgets.QPushButton('Save Traces')
 		self.save_b.clicked.connect(self.save_traces)
 		
-		fft_l = QtWidgets.QLabel("FFT Size")
+		#fft_l = QtWidgets.QLabel("FFT Size")
 		self.fft_c = QtWidgets.QComboBox(self)
 		self.fft_c.addItems(list(("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768")))
+		self.fft_c.setToolTip("FFT Size. This determines the frequency resolution.")
 		self.fft_c.currentIndexChanged.connect(self.update_param_hard)
 		
-		overlap_l = QtWidgets.QLabel("FFT Overlap")
+		#overlap_l = QtWidgets.QLabel("FFT Overlap")
 		self.overlap_c = QtWidgets.QComboBox(self)
 		self.overlap_c.addItems(list(("1", "2", "4", "8", "16")))
+		self.overlap_c.setToolTip("FFT Overlap. Increase to improve temporal resolution.")
 		self.overlap_c.currentIndexChanged.connect(self.update_param_hard)
 		
 		cmap_l = QtWidgets.QLabel("Colors")
@@ -140,8 +142,14 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		trace_l = QtWidgets.QLabel("Tracing Mode")
 		self.trace_c = QtWidgets.QComboBox(self)
-		self.trace_c.addItems(("Center of Gravity","Peak","Correlation","Freehand Draw", "Sine Draw", "Sine Regression"))
+		self.trace_c.addItems(("Center of Gravity","Peak","Correlation","Freehand Draw", "Sine Regression"))
 		self.trace_c.currentIndexChanged.connect(self.update_other_settings)
+		
+		adapt_l = QtWidgets.QLabel("Adaptation")
+		self.adapt_c = QtWidgets.QComboBox(self)
+		self.adapt_c.addItems(("Average", "Linear", "Constant", "None"))
+		self.adapt_c.setToolTip("Used to predict the next frequencies when tracing.")
+		self.adapt_c.currentIndexChanged.connect(self.update_other_settings)
 		
 		self.delete_selected_b = QtWidgets.QPushButton('Delete Selected Trace')
 		self.delete_selected_b.clicked.connect(self.delete_selected_traces)
@@ -191,24 +199,26 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.qgrid.addWidget(self.open_b, 0, 0)
 		self.qgrid.addWidget(self.save_b, 0, 1)
 		
-		self.qgrid.addWidget(fft_l, 1, 0)
-		self.qgrid.addWidget(self.fft_c, 1, 1)
+		self.qgrid.addWidget(self.fft_c, 1, 0)
+		self.qgrid.addWidget(self.overlap_c, 1, 1)
 		
-		self.qgrid.addWidget(overlap_l, 2, 0)
-		self.qgrid.addWidget(self.overlap_c, 2, 1)
+		self.qgrid.addWidget(show_l, 2, 0)
+		self.qgrid.addWidget(self.show_c, 2, 1)
 		
 		self.qgrid.addWidget(cmap_l, 3, 0)
 		self.qgrid.addWidget(self.cmap_c, 3, 1)
 		
 		#column 23
-		self.qgrid.addWidget(trace_l, 0, 2)
-		self.qgrid.addWidget(self.trace_c, 0, 3)
-		self.qgrid.addWidget(self.delete_selected_b, 1, 2)
-		self.qgrid.addWidget(self.delete_all_b, 1, 3)
-		self.qgrid.addWidget(rpm_l, 2, 2)
-		self.qgrid.addWidget(self.rpm_c, 2, 3)
-		self.qgrid.addWidget(show_l, 3, 2)
-		self.qgrid.addWidget(self.show_c, 3, 3)
+		self.qgrid.addWidget(self.delete_selected_b, 0, 2)
+		self.qgrid.addWidget(self.delete_all_b, 0, 3)
+		self.qgrid.addWidget(trace_l, 1, 2)
+		self.qgrid.addWidget(self.trace_c, 1, 3)
+		self.qgrid.addWidget(adapt_l, 2, 2)
+		self.qgrid.addWidget(self.adapt_c, 2, 3)
+		self.qgrid.addWidget(rpm_l, 3, 2)
+		self.qgrid.addWidget(self.rpm_c, 3, 3)
+		# self.qgrid.addWidget(show_l, 3, 2)
+		# self.qgrid.addWidget(self.show_c, 3, 3)
 		
 		#column 45
 		self.qgrid.addWidget(self.autoalign_b, 0, 4)
@@ -229,6 +239,13 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		self.qgrid.addWidget(self.progressBar, 3, 4, 1, 2 )
 
+		self.qgrid.setColumnStretch(0, 1)
+		self.qgrid.setColumnStretch(1, 1)
+		self.qgrid.setColumnStretch(2, 1)
+		self.qgrid.setColumnStretch(3, 1)
+		self.qgrid.setColumnStretch(4, 1)
+		self.qgrid.setColumnStretch(5, 1)
+		self.qgrid.setColumnStretch(6, 1)
 		vbox = QtWidgets.QVBoxLayout()
 		vbox.addLayout(self.qgrid)
 		vbox.addStretch(1.0)
@@ -316,6 +333,7 @@ class ObjectWidget(QtWidgets.QWidget):
 			
 	def update_other_settings(self):
 		self.parent.canvas.trace_mode = self.trace_c.currentText()
+		self.parent.canvas.adapt_mode = self.adapt_c.currentText()
 		self.parent.canvas.auto_align = self.autoalign_b.isChecked()
 		self.parent.canvas.rpm = self.rpm_c.currentText()
 	
@@ -356,11 +374,11 @@ class ObjectWidget(QtWidgets.QWidget):
 			#make a copy to prevent unexpected side effects
 			channels = [i for i in range(len(self.channel_bs)) if self.channel_bs[i].isChecked()]
 			print(channels)
-			speed_curve = self.parent.canvas.master_speed.get_linspace()
 			if self.parent.canvas.regs:
 				speed_curve = self.parent.canvas.master_reg_speed.get_linspace()
 				print("Using regressed speed")
 			else:
+				speed_curve = self.parent.canvas.master_speed.get_linspace()
 				print("Using measured speed")
 			print("Resampling",self.filename, mode, prec)
 			self.myLongTask.settings = (self.filename, speed_curve, mode, prec, channels, "Diffused")
@@ -481,13 +499,10 @@ class MasterSpeedLine:
 		self.line_speed.set_data(pos=self.data)
 		
 	def get_linspace(self):
-		"""Convert the log2 spaced speed curve back into linspace for further processing"""
-	
+		"""Convert the log2 spaced speed curve back into linspace for direct use in resampling"""
 		out = np.array(self.data)
 		lin_scale = np.power(2, out[:,1])
-		#print(lin_scale/np.mean(lin_scale))
-		out[:,1] = lin_scale#/np.mean(lin_scale)
-		#print(out[:,1])
+		out[:,1] = lin_scale
 		return out
 
 class MasterRegLine:
@@ -573,9 +588,7 @@ class MasterRegLine:
 		"""Convert the log2 spaced speed curve back into linspace for further processing"""
 		out = np.array(self.data)
 		lin_scale = np.power(2, out[:,1])
-		#print(lin_scale/np.mean(lin_scale))
-		out[:,1] = lin_scale#/np.mean(lin_scale)
-		#print(out[:,1])
+		out[:,1] = lin_scale
 		return out
 		
 class RegLine:
@@ -790,6 +803,7 @@ class Canvas(scene.SceneCanvas):
 		self.vmax = -40
 		self.auto_align = True
 		self.trace_mode = "Center of Gravity"
+		self.adapt_mode = "Linear"
 		self.rpm = "Unknown"
 		self.selected_traces = []
 		self.show_regs = True
@@ -1077,11 +1091,9 @@ class Canvas(scene.SceneCanvas):
 					if self.trace_mode == "Center of Gravity":
 						times, freqs = wow_detection.trace_cog(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
 					elif self.trace_mode == "Peak":
-						times, freqs = wow_detection.trace_peak(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
+						times, freqs = wow_detection.trace_peak(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1, adaptation_mode = self.adapt_mode)
 					elif self.trace_mode == "Correlation":
 						times, freqs = wow_detection.trace_correlation(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, t0 = t0, t1 = t1)
-					elif self.trace_mode == "Sine Draw":
-						times, freqs = wow_detection.trace_sine(fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
 					elif self.trace_mode == "Freehand Draw":
 						#TODO: vectorize this: a[a[:,0].argsort()]
 						#TODO: reduce resolution with np.interp at speed curve sample rate

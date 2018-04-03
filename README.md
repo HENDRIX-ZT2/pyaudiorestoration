@@ -14,7 +14,7 @@ You need to have installed:
 - tkinter (OLD GUI)
 - pyQt5 (NEW GUI)
 - [vispy](vispy.org) (NEW GUI)
-- [pyFFTW](https://github.com/pyFFTW/pyFFTW) (NEW GUI - optional speedup)
+- [pyFFTW](https://github.com/pyFFTW/pyFFTW) (NEW GUI - optional speedup) Note for python 3.6 users on windows - to install pyFFTW, download the correct .whl file from [ ![Download](https://api.bintray.com/packages/hgomersall/generic/PyFFTW-development-builds/images/download.svg) ](https://bintray.com/hgomersall/generic/PyFFTW-development-builds/_latestVersion#files)  (scroll down!) and install it with `pip install PATH_TO_FILE.whl`.
 
 The bundled python platform [Anaconda](https://www.anaconda.com/download/) will have most of these dependencies installed by default. Best install the missing ones with `pip` (eg. in the Windows commandline, type `pip install vispy`).
 

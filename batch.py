@@ -1,12 +1,7 @@
-#stable results for
-#"Peak", "Average", 512, 16
-
-
 import soundfile as sf
 import numpy as np
 from time import time
 import os
-
 import fourier
 import wow_detection
 import resampling
@@ -34,7 +29,7 @@ def read_speed(filename):
 	speedfilename = filename.rsplit('.', 1)[0]+".npy"
 	return np.load(speedfilename)
 
-def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop):
+def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 16.7):
 	start_time = time()
 	#how many frames do we want?
 	half = overlap//2
@@ -55,7 +50,7 @@ def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop):
 		#we can't do the start automatically
 		#note: this is already accorded for in trace_peak
 		if i == 0:
-			t0 = 16.7
+			t0 = start
 			lag = 0
 		else:
 			#we only start at a good FFT, not influenced by cut artifacts
@@ -63,8 +58,6 @@ def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop):
 			lag = fft_size//2 //hop
 		print("start at",t0)
 		times, freqs = wow_detection.trace_peak(imdata, fft_size, hop, sr, fL = 900, fU = 1100, t0 = t0, t1 = None, tolerance = 1, adaptation_mode="Average")
-		#times += block_start
-		#freqs /= 1000
 		if i == 0:
 			times = times[:-half]
 			freqs = freqs[:-half]
@@ -93,50 +86,54 @@ def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop):
 	# plt.legend(frameon=True, framealpha=0.75)
 	# plt.show()
 
-def read_and_show(speedname, filename, blocksize, overlap, hop):
+def show_all(speedname, hi=1020, lo=948):
 	dir = os.path.dirname(speedname)
 	name = os.path.basename(speedname).rsplit('.', 1)[0]
 	files = [os.path.join(dir,file) for file in os.listdir(dir) if name in file and file.endswith(".npy")]
 
-	# mins=[]
-	# maxs=[]
+	mins=[]
+	maxs=[]
 	
-	# speedcurves = []
-	# for file in files:
-		# speedcurve = np.load(file)
-		# speedcurves.append(speedcurve)
-		# #print(np.min(speedcurve[:,0]), np.max(speedcurve[:,0]))
+	speedcurves = []
+	for file in files:
+		speedcurve = np.load(file)
+		speedcurves.append(speedcurve)
+		#print(np.min(speedcurve[:,0]), np.max(speedcurve[:,0]))
 		
-		# ma = np.max(speedcurve[:,1])
-		# mi = np.min(speedcurve[:,1])
-		# mins.append( mi)
-		# maxs.append(ma)
-		# if mi < 948:
-			# print("too low", file)
-		# if ma > 1020:
-			# print("too high", file)
-		#print(file, np.min(speedcurve[:,1]), np.max(speedcurve[:,1]))
-	# import matplotlib.pyplot as plt
-	# plt.figure()
-	# #plt.plot(mins, label="0", alpha=0.5)
-	# #plt.plot(maxs, label="1", alpha=0.5)
+		ma = np.max(speedcurve[:,1])
+		mi = np.min(speedcurve[:,1])
+		mins.append( mi)
+		maxs.append(ma)
+		if mi < lo:
+			print("too low", file)
+		if ma > hi:
+			print("too high", file)
+	import matplotlib.pyplot as plt
+	plt.figure()
+	plt.plot(mins, label="0", alpha=0.5)
+	plt.plot(maxs, label="1", alpha=0.5)
 	
-	# #maybe: set dropout freq to mean(freqs)
-	# plt.plot(speedcurves[142][:,1], label="1", alpha=0.5)
-	# #plt.plot(times, dbs, label="0", alpha=0.5)
-	# # plt.plot(alltimes[1], allspeeds[1], label="1", alpha=0.5)
-	# # plt.plot(alltimes[2], allspeeds[2], label="2", alpha=0.5)
-	# # plt.plot(alltimes[3], allspeeds[3], label="3", alpha=0.5)
-	# plt.xlabel('Speed')
-	# plt.ylabel('Freg Hz')
-	# plt.legend(frameon=True, framealpha=0.75)
-	# plt.show()
+	#maybe: set dropout freq to mean(freqs)
+	#plt.plot(speedcurves[142][:,1], label="1", alpha=0.5)
+	#plt.plot(times, dbs, label="0", alpha=0.5)
+	# plt.plot(alltimes[1], allspeeds[1], label="1", alpha=0.5)
+	# plt.plot(alltimes[2], allspeeds[2], label="2", alpha=0.5)
+	# plt.plot(alltimes[3], allspeeds[3], label="3", alpha=0.5)
+	plt.xlabel('Speed')
+	plt.ylabel('Freg Hz')
+	plt.legend(frameon=True, framealpha=0.75)
+	plt.show()
 	
-	batch_res(filename, blocksize, overlap, speed_curve_names=files, resampling_mode = "Linear", frequency_prec=0.01, use_channels = [0,], dither="Random", patch_ends=False, prog_sig=None)
+	
+def resample_all(speedname, filename, blocksize, overlap, hop):
+	dir = os.path.dirname(speedname)
+	name = os.path.basename(speedname).rsplit('.', 1)[0]
+	files = [os.path.join(dir,file) for file in os.listdir(dir) if name in file and file.endswith(".npy")]
+	batch_res(filename, blocksize, overlap, speed_curve_names=files, resampling_mode = "Linear")
 	
 	
 
-def batch_res(filename, blocksize, overlap, speed_curve_names=None, resampling_mode = "Blocks", frequency_prec=0.01, use_channels = [0,], dither="Random", patch_ends=False, prog_sig=None):
+def batch_res(filename, blocksize, overlap, speed_curve_names=None, resampling_mode = "Linear"):
 	print('Analyzing ' + filename + '...')
 	start_time = time()
 	write_after=400000
@@ -180,9 +177,6 @@ def batch_res(filename, blocksize, overlap, speed_curve_names=None, resampling_m
 				#save a new block for interpolation
 				if len(temp_pos)* periods[i2] > write_after:
 					offsets_speeds.append( ( offset, np.concatenate(temp_pos) ) )
-					#blo =( offset, np.concatenate(temp_pos) ) 
-					#block = np.interp(np.concatenate(temp_pos), samples_in2-int(offset), in_block)
-					#outfile.write( block )
 					offset += temp_offset
 					temp_offset = 0
 					temp_pos = []
@@ -215,15 +209,14 @@ def batch_res(filename, blocksize, overlap, speed_curve_names=None, resampling_m
 	dur = time() - start_time
 	print("duration",dur)
 
+#settings...
 fft_size=512
 fft_overlap=16
 hop=512//16
 overlap=100
 blocksize=100000
-filename = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH11.wav"
 speedname = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH1.wav"
-filename = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH7.wav"
-#filename = "C:/Users/arnfi/Desktop/nasa/te4.wav"
-#filename = "C:/Users/arnfi/Desktop/nasa/drop.wav"
-#trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop)
-read_and_show(speedname, filename, blocksize, overlap, hop)
+filename = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH2.wav"
+trace_all(speedname, blocksize, overlap, fft_size, fft_overlap, hop, start= 16.7)
+#show_all(speedname, hi=1020, lo=948)
+#resample_all(speedname, filename, blocksize, overlap, hop)

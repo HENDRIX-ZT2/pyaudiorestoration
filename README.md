@@ -65,10 +65,9 @@ Example of cyclic wow removal:
 
 ### Resampling Modes
 - Linear: Fastest, but causes some overtone artifacts.
-- Expansion: Excellent precision in time and frequency, but induces clicks. Repeats each input sample (N * speed + dithering) times and then downsamples everything by N. [based on Feaster, P. (2017)]
+- Expansion: Excellent precision in time and frequency, but induces clicks. Bad S/N ratio. Repeats each input sample (N * speed + dithering) times and then downsamples everything by N. [based on Feaster, P. (2017)]
 - Sinc: Slowest, but most accurate. No clicks. Accurate because of digital sampling theory. [based on endolith (2011) and Hope (2015)]
 - Blocks: Fast, but inaccurate in time, induces clicks. Resamples segements according to their mean speed.
-- Note that Linear & Sinc resampling currently require a relatively sparsely sampled speed curve (like FFT size = 4096, Overlap = 1) to work accurately. This may be fixed in the future.
 
 ### References
 - Czyzewski et al. (2007). DSP Techniques for Determining "Wow" Distortion. Journal of the Audio Engineering Society. 55.

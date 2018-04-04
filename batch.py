@@ -23,9 +23,6 @@ def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 1
 	soundob = sf.SoundFile(filename)
 	sr = soundob.samplerate
 	block_start = 0
-	#just temporarily, in reality we will just store the end of the last file to crossfade
-	alltimes = []
-	allspeeds = []
 	for i, block in enumerate(soundob.blocks( blocksize=blocksize*hop, overlap=overlap*hop)):
 		# if i not in (0, 1):
 			# continue
@@ -49,27 +46,11 @@ def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 1
 		else:
 			times = times[half-lag:-half]
 			freqs = freqs[half-lag:-half]
-		alltimes.append( times )
-		allspeeds.append( freqs )
-		
 		speed = np.stack((times, freqs), axis=1)
 		write_speed(filename, speed, piece=i)
 		block_start+= ((blocksize*hop - overlap*hop) / sr)
-
 	dur = time() - start_time
 	print("duration",dur)
-
-	# import matplotlib.pyplot as plt
-	# plt.figure()
-	# plt.plot(alltimes[0], allspeeds[0], label="0", alpha=0.5)
-	# #plt.plot(times, dbs, label="0", alpha=0.5)
-	# #plt.plot(alltimes[1], allspeeds[1], label="1", alpha=0.5)
-	# # plt.plot(alltimes[2], allspeeds[2], label="2", alpha=0.5)
-	# # plt.plot(alltimes[3], allspeeds[3], label="3", alpha=0.5)
-	# plt.xlabel('Speed')
-	# plt.ylabel('Freg Hz')
-	# plt.legend(frameon=True, framealpha=0.75)
-	# plt.show()
 
 def show_all(speedname, hi=1020, lo=948):
 	dir = os.path.dirname(speedname)
@@ -83,7 +64,6 @@ def show_all(speedname, hi=1020, lo=948):
 	for file in files:
 		speedcurve = np.load(file)
 		speedcurves.append(speedcurve)
-		#print(np.min(speedcurve[:,0]), np.max(speedcurve[:,0]))
 		
 		ma = np.max(speedcurve[:,1])
 		mi = np.min(speedcurve[:,1])
@@ -113,28 +93,19 @@ def show_all(speedname, hi=1020, lo=948):
 def resample_all(speedname, filename, blocksize, overlap, hop, resampling_mode = "Linear"):
 	dir = os.path.dirname(speedname)
 	name = os.path.basename(speedname).rsplit('.', 1)[0]
-	files = [os.path.join(dir,file) for file in os.listdir(dir) if name in file and file.endswith(".npy")]
-	batch_res(filename, blocksize, overlap, files, resampling_mode)
+	speed_files = [os.path.join(dir,file) for file in os.listdir(dir) if name in file and file.endswith(".npy")]
+	batch_res(filename, blocksize, overlap, speed_files, resampling_mode)
 	
-	
-
 def batch_res(filename, blocksize, overlap, speed_curve_names, resampling_mode):
 	print('Analyzing ' + filename + '...')
 	start_time = time()
-	write_after=400000
-	NT = 50
-	#user/debugging info
 	print(resampling_mode)
 	#read the file
 	soundob = sf.SoundFile(filename)
 	sr = soundob.samplerate
-	block_start = 0
-	#just temporarily, in reality we will just store the end of the last file to crossfade
-	alltimes = []
-	allspeeds = []
+	in_len = 0
 	outfilename = filename.rsplit('.', 1)[0]+'_cloned.wav'
 	with sf.SoundFile(outfilename, 'w', sr, 1, subtype='FLOAT') as outfile:
-		in_len = 0
 		for i, in_block in enumerate(soundob.blocks( blocksize=blocksize*hop, overlap=overlap*hop)):
 			# if i not in (0, 1,2,3):
 				# continue
@@ -145,7 +116,11 @@ def batch_res(filename, blocksize, overlap, speed_curve_names, resampling_mode):
 			#note: this expects a a linscale speed curve centered around 1 (= no speed change)
 			speeds = speed_curve[:,1]/1000
 			
-			offsets_speeds, samples_in2 = resampling.prepare_linear_or_sinc(in_block, times*sr, speeds)
+			#only update if it changes
+			if len(in_block) != in_len:
+				in_len = len(in_block)
+				samples_in2 = np.arange( in_len )
+			offsets_speeds = resampling.prepare_linear_or_sinc(times*sr, speeds)
 			#these must be called as generators...
 			if resampling_mode in ("Sinc",):
 				for i in resampling.sinc_kernel(outfile, offsets_speeds, in_block, samples_in2, NT = 50):

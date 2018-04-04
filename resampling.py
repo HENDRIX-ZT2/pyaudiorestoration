@@ -162,14 +162,12 @@ def update_progress(prog_sig, progress, prog_fac):
 		prog_sig.notifyProgress.emit(progress)
 	return progress
 	
-def prepare_linear_or_sinc(signal, sampletimes, speeds):
+def prepare_linear_or_sinc(sampletimes, speeds):
 	"""
 	signal: mono 1D array
 	"""
 	write_after=400000
 	
-	in_len = len(signal)
-	samples_in2 = np.arange(0, in_len)
 	periods = np.diff(sampletimes)
 		
 	offsets_speeds = []
@@ -208,7 +206,7 @@ def prepare_linear_or_sinc(signal, sampletimes, speeds):
 		#temp_offset+=period
 	# the end
 	if temp_pos: offsets_speeds.append( (offset, np.concatenate(temp_pos) ) )
-	return offsets_speeds, samples_in2
+	return offsets_speeds
 
 def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0.01, use_channels = [0,], dither="Random", patch_ends=False, prog_sig=None):
 
@@ -247,7 +245,8 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 	speeds = speed_curve[:,1]
 		
 	if resampling_mode in ("Sinc", "Linear"):
-		offsets_speeds, samples_in2 = prepare_linear_or_sinc(signal[:,0], sampletimes, speeds)
+		samples_in2 = np.arange( len(signal[:,0]) )
+		offsets_speeds = prepare_linear_or_sinc(sampletimes, speeds)
 		num_blocks = len(offsets_speeds)
 	else:
 		blocks = [(n, n+block_size) for n in range(0, len(signal), block_size)]

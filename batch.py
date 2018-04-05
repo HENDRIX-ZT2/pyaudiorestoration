@@ -39,13 +39,26 @@ def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 1
 			t0 = fft_size/2/sr
 			lag = fft_size//2 //hop
 		print("start at",t0)
-		times, freqs = wow_detection.trace_peak(imdata, fft_size, hop, sr, fL = 900, fU = 1100, t0 = t0, t1 = None, tolerance = 1, adaptation_mode="Average")
+		#times, freqs = wow_detection.trace_peak2(imdata, fft_size, hop, sr, fL = 900, fU = 1100, t0 = t0, t1 = None, tolerance = 1, adaptation_mode="Average")
+		times, freqs = wow_detection.trace_peak_static(imdata, fft_size, hop, sr, fL = 900, fU = 1100, t0 = t0, t1 = None, tolerance = 1, adaptation_mode="Average")
 		if i == 0:
 			times = times[:-half]
 			freqs = freqs[:-half]
 		else:
 			times = times[half-lag:-half]
 			freqs = freqs[half-lag:-half]
+		
+		# import matplotlib.pyplot as plt
+		# plt.figure()
+		# #plt.plot(mins, label="0", alpha=0.5)
+		# #plt.plot(maxs, label="1", alpha=0.5)
+		
+		# #maybe: set dropout freq to mean(freqs)
+		# plt.plot(times, freqs , label="1", alpha=0.5)
+		# plt.xlabel('Speed')
+		# plt.ylabel('Freg Hz')
+		# plt.legend(frameon=True, framealpha=0.75)
+		# plt.show()
 		speed = np.stack((times, freqs), axis=1)
 		write_speed(filename, speed, piece=i)
 		block_start+= ((blocksize*hop - overlap*hop) / sr)
@@ -75,15 +88,11 @@ def show_all(speedname, hi=1020, lo=948):
 			print("too high", file)
 	import matplotlib.pyplot as plt
 	plt.figure()
-	plt.plot(mins, label="0", alpha=0.5)
-	plt.plot(maxs, label="1", alpha=0.5)
+	#plt.plot(mins, label="0", alpha=0.5)
+	#plt.plot(maxs, label="1", alpha=0.5)
 	
 	#maybe: set dropout freq to mean(freqs)
-	#plt.plot(speedcurves[142][:,1], label="1", alpha=0.5)
-	#plt.plot(times, dbs, label="0", alpha=0.5)
-	# plt.plot(alltimes[1], allspeeds[1], label="1", alpha=0.5)
-	# plt.plot(alltimes[2], allspeeds[2], label="2", alpha=0.5)
-	# plt.plot(alltimes[3], allspeeds[3], label="3", alpha=0.5)
+	plt.plot(speedcurves[0][:,0], speedcurves[0][:,1], label="1", alpha=0.5)
 	plt.xlabel('Speed')
 	plt.ylabel('Freg Hz')
 	plt.legend(frameon=True, framealpha=0.75)
@@ -138,8 +147,11 @@ fft_overlap=16
 hop=512//16
 overlap=100
 blocksize=100000
-speedname = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH1.wav"
-filename = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH2.wav"
-#trace_all(speedname, blocksize, overlap, fft_size, fft_overlap, hop, start= 16.7)
+#speedname = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH1.wav"
+speedname = "C:/Users/arnfi/Desktop/nasa/A11_T648_HR1U_CH1.wav"
+filename = "C:/Users/arnfi/Desktop/nasa/A11_T648_HR1U_CH1.wav"
+#speedname = "C:/Users/arnfi/Desktop/nasa/test.wav"
+#filename = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH2.wav"
+#trace_all(speedname, blocksize, overlap, fft_size, fft_overlap, hop, start=0)
 #show_all(speedname, hi=1020, lo=948)
 resample_all(speedname, filename, blocksize, overlap, hop, resampling_mode = "Linear")

@@ -200,7 +200,10 @@ def trace_peak_static(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU =
 	freqs = np.empty(last_fft_i-first_fft_i)
 	for out_i, i in enumerate(range(first_fft_i, last_fft_i)):
 		i_raw = i_raws[out_i]
-		freqs[out_i] = ((D[i_raw-1, i] - D[i_raw+1, i]) / (D[i_raw-1, i] - 2 * D[i_raw, i] + D[i_raw+1, i]) / 2 + i_raw)  / freq_2_bin
+		i_interp = ((D[i_raw-1, i] - D[i_raw+1, i]) / (D[i_raw-1, i] - 2 * D[i_raw, i] + D[i_raw+1, i]) / 2 + i_raw)  / freq_2_bin
+		if i_interp < 1:
+			i_interp = i_raw
+		freqs[out_i] = i_interp
 	dBs = np.nanmean(20*np.log10(D[NL:NU, first_fft_i: last_fft_i]+.0000001), axis=0)
 	freqs[dBs < dB_cutoff] = np.mean(freqs)
 	return times, freqs#, dbs

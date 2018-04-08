@@ -14,7 +14,7 @@ def write_speed(filename, speed_curve, piece=None):
 	speedfilename = filename.rsplit('.', 1)[0]+piece_str+".npy"
 	np.save(speedfilename, speed_curve, allow_pickle=True, fix_imports=True)
 
-def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 16.7):
+def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 16.7, fL = 900, fU = 1100):
 	start_time = time()
 	#how many frames do we want?
 	half = overlap//2
@@ -39,8 +39,7 @@ def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 1
 			t0 = fft_size/2/sr
 			lag = fft_size//2 //hop
 		print("start at",t0)
-		#times, freqs = wow_detection.trace_peak2(imdata, fft_size, hop, sr, fL = 900, fU = 1100, t0 = t0, t1 = None, tolerance = 1, adaptation_mode="Average")
-		times, freqs = wow_detection.trace_peak_static(imdata, fft_size, hop, sr, fL = 900, fU = 1100, t0 = t0, t1 = None, tolerance = 1, adaptation_mode="Average")
+		times, freqs = wow_detection.trace_peak_static(imdata, fft_size, hop, sr, fL = fL, fU = fU, t0 = t0, t1 = None, tolerance = 1, adaptation_mode="Average")
 		if i == 0:
 			times = times[:-half]
 			freqs = freqs[:-half]
@@ -148,10 +147,10 @@ hop=512//16
 overlap=100
 blocksize=100000
 #speedname = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH1.wav"
-speedname = "C:/Users/arnfi/Desktop/nasa/A11_T648_HR1U_CH1.wav"
-filename = "C:/Users/arnfi/Desktop/nasa/A11_T648_HR1U_CH1.wav"
+speedname = "C:/Users/arnfi/Desktop/nasa/A11_T649_HR2U_CH1.wav"
+filename = "C:/Users/arnfi/Desktop/nasa/A11_T649_HR2U_CH1.wav"
 #speedname = "C:/Users/arnfi/Desktop/nasa/test.wav"
 #filename = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH2.wav"
-#trace_all(speedname, blocksize, overlap, fft_size, fft_overlap, hop, start=0)
+#trace_all(speedname, blocksize, overlap, fft_size, fft_overlap, hop, start=0, fL = 900, fU = 1100)
 #show_all(speedname, hi=1020, lo=948)
 resample_all(speedname, filename, blocksize, overlap, hop, resampling_mode = "Linear")

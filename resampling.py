@@ -202,7 +202,10 @@ def prepare_linear_or_sinc(sampletimes, speeds):
 		# positions = np.interp(np.arange(0, n), np.cumsum(block_speeds), samples_in)
 		
 		temp_pos.append( positions +  temp_offset)
-		temp_offset+=positions[-1]
+		if len(positions):
+			temp_offset+=positions[-1]
+		else:
+			print("ERROR: no positions in segment - something was wrong with the speed curve (negative speed?)")
 		#temp_offset+=period
 	# the end
 	if temp_pos: offsets_speeds.append( (offset, np.concatenate(temp_pos) ) )

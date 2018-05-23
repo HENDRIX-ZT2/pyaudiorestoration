@@ -183,6 +183,14 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.progressBar.setRange(0,100)
 		self.progressBar.setAlignment(QtCore.Qt.AlignCenter)
 		
+		
+		phase_l = QtWidgets.QLabel("Phase Offset")
+		self.phase_s = QtWidgets.QSpinBox()
+		self.phase_s.setRange(-20, 20)
+		self.phase_s.setSingleStep(1)
+		self.phase_s.setValue(0)
+		self.phase_s.valueChanged.connect(self.update_phase_offset)
+		
 		#channel_l = QtWidgets.QLabel("No Channels")
 		self.mygroupbox = QtWidgets.QGroupBox('Channels')
 		self.channel_layout = QtWidgets.QVBoxLayout()
@@ -219,6 +227,8 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.qgrid.addWidget(self.rpm_c, 3, 3)
 		# self.qgrid.addWidget(show_l, 3, 2)
 		# self.qgrid.addWidget(self.show_c, 3, 3)
+		self.qgrid.addWidget(phase_l, 4, 2)
+		self.qgrid.addWidget(self.phase_s, 4, 3)
 		
 		#column 45
 		self.qgrid.addWidget(self.autoalign_b, 0, 4)
@@ -331,12 +341,18 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.parent.canvas.master_speed.update()
 		self.parent.canvas.master_reg_speed.update()
 			
+	def update_phase_offset(self):
+		v = self.phase_s.value()
+		for reg in self.parent.canvas.regs:
+			reg.update_phase(v)
+		self.parent.canvas.master_reg_speed.update()
+	
 	def update_other_settings(self):
 		self.parent.canvas.trace_mode = self.trace_c.currentText()
 		self.parent.canvas.adapt_mode = self.adapt_c.currentText()
 		self.parent.canvas.auto_align = self.autoalign_b.isChecked()
 		self.parent.canvas.rpm = self.rpm_c.currentText()
-	
+		
 	def update_show_settings(self):
 		show = self.show_c.currentText()
 		if show == "Traces only":
@@ -421,6 +437,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		splitter.addWidget(self.props)
 		splitter.addWidget(self.canvas.native)
 
+		self.canvas.props = self.props
 		self.setCentralWidget(splitter)
 		self.props.settings_hard_changed.connect(self.update_settings_hard)
 		self.props.settings_soft_changed.connect(self.update_settings_soft)
@@ -546,18 +563,18 @@ class MasterRegLine:
 			amp_centers = []
 			
 			t_center, amplitude, omega, phase, offset = reg_data[0]
-			phi_centers.append(omega * times[0] + phase)
+			phi_centers.append(omega * times[0] + phase + offset*np.pi*2)
 			t_centers.append(times[0])
 			amp_centers.append(amplitude)
 			
 			for t_center, amplitude, omega, phase, offset in reg_data:
-				phi_centers.append(omega * t_center + phase)
+				phi_centers.append(omega * t_center + phase + offset*np.pi*2)
 				t_centers.append(t_center)
 				amp_centers.append(amplitude)
 				
 			#do the last one
 			t_center, amplitude, omega, phase, offset = reg_data[-1]
-			phi_centers.append(omega * times[-1] + phase)
+			phi_centers.append(omega * times[-1] + phase + offset*np.pi*2)
 			t_centers.append(times[-1])
 			amp_centers.append(amplitude)
 			
@@ -620,9 +637,7 @@ class RegLine:
 		self.amplitude = amplitude
 		self.omega = omega
 		self.phase = phase
-		#self.offset = offset
-		#for now
-		self.offset = 0
+		self.offset = offset
 		
 		#some conventions are needed
 		#correct the amplitude & phase so we can interpolate properly
@@ -640,7 +655,7 @@ class RegLine:
 		#create the speed curve visualization
 		self.data = np.zeros((len(clipped_times), 2), dtype=np.float32)
 		self.data[:, 0] = clipped_times
-		self.data[:, 1] = self.amplitude * np.sin(self.omega * clipped_times + self.phase) + self.offset
+		self.data[:, 1] = self.amplitude * np.sin(self.omega * clipped_times + self.phase)# + self.offset
 		#sine_on_hz = np.power(2, sine + np.log2(2000))
 		self.line_speed = scene.Line(pos=self.data, color=(0, 0, 1, .5), method='gl')
 		self.show()
@@ -649,7 +664,7 @@ class RegLine:
 		self.vispy_canvas.master_reg_speed.update()
 		
 	def set_offset(self, a, b):
-		#print(a,b,b/a)
+		#user manipulation: custom amplitude for sample
 		self.amplitude *= (b/a)
 		self.data[:, 1]*= (b/a)
 		self.line_speed.set_data(pos=self.data)
@@ -661,7 +676,7 @@ class RegLine:
 		self.vispy_canvas.selected_traces.remove(self)
 		
 	def select(self, multi=False):
-		"""Toggle this line's selection state"""
+		"""Toggle this line's selection state, and update the phase offset ui value"""
 		if not multi:
 			for trace in reversed(self.vispy_canvas.selected_traces):
 				trace.deselect()
@@ -669,8 +684,9 @@ class RegLine:
 			self.deselect()
 		else:
 			self.line_speed.set_data(color = (0, 1, 0, 1))
-			#self.line_spec.set_data(color = (0, 1, 0, 1))
 			self.vispy_canvas.selected_traces.append(self)
+			#set the offset in the ui
+			self.vispy_canvas.props.phase_s.setValue(self.offset)
 			
 	def show(self):
 		self.line_speed.parent = self.vispy_canvas.speed_view.scene
@@ -678,9 +694,12 @@ class RegLine:
 	def hide(self):
 		self.line_speed.parent = None
 		
+	def update_phase(self, v):
+		if self in self.vispy_canvas.selected_traces:
+			self.offset = v
+		
 	def remove(self):
 		self.line_speed.parent = None
-		#self.line_spec.parent = None
 		#note: this has to search the list
 		self.vispy_canvas.regs.remove(self)
 		self.vispy_canvas.master_speed.update()
@@ -797,6 +816,7 @@ class Canvas(scene.SceneCanvas):
 	def __init__(self):
 		
 		#some default dummy values
+		self.props = None
 		self.filename = "None"
 		cm = "fire"
 		self.vmin = -80
@@ -875,7 +895,7 @@ class Canvas(scene.SceneCanvas):
 		self.spec_view = grid.add_view(row=2, col=1, border_color='white')
 		grid.add_widget(self.colorbar_display, row=2, col=2)
 		self.spec_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0, 10, 10), )
-		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, -1.0, 10, 2.0), )
+		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, -0.1, 10, 0.2), )
 		
 		self.speed_view.height_min = 150
 		
@@ -971,7 +991,7 @@ class Canvas(scene.SceneCanvas):
 				
 				#(re)set the spec_view
 				#only the camera dimension is mel'ed, as the image gets it from its transform
-				self.speed_view.camera.rect = (0, -1.0, num_ffts * hop / sr, 2.0)
+				self.speed_view.camera.rect = (0, -0.1, num_ffts * hop / sr, 0.2)
 				self.spec_view.camera.rect = (0, 0, num_ffts * hop / sr, to_mel(sr//2))
 				#link them, but use custom logic to only link the x view
 				self.spec_view.camera.link(self.speed_view.camera)
@@ -1085,6 +1105,9 @@ class Canvas(scene.SceneCanvas):
 				#maybe query it here from the button instead of the other way
 				if self.trace_mode == "Sine Regression":
 					amplitude, omega, phase, offset = wow_detection.trace_sine_reg(self.master_speed.get_linspace(), t0, t1, self.rpm)
+					if amplitude == 0:
+						print("fallback")
+						amplitude, omega, phase, offset = wow_detection.trace_sine_reg(self.master_reg_speed.get_linspace(), t0, t1, self.rpm)
 					RegLine(self, t0, t1, amplitude, omega, phase, offset)
 					return
 				else:

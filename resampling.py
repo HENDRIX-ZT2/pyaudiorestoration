@@ -139,7 +139,7 @@ def sinc_kernel(outfile, offsets_speeds, signal, samples_in2, NT = 50):
 			#TODO: this is probably obsolete and could get its indices like the other two, because the end is cut off already
 			block[i] = np.sum(si * signal[lower:upper] * win_func[0:len(si)])
 		outfile.write( block )
-		print("len(block)",len(block))
+		#print("len(block)",len(block))
 		yield 1
 					
 def linear_kernel(outfile, offsets_speeds, signal, samples_in2, prog_sig=None):
@@ -153,7 +153,7 @@ def linear_kernel(outfile, offsets_speeds, signal, samples_in2, prog_sig=None):
 	for offset, positions in offsets_speeds:
 		block = np.interp(positions, samples_in2-int(offset), signal)
 		outfile.write( block )
-		print("len(block)",len(block))
+		#print("len(block)",len(block))
 		yield 1
 
 def update_progress(prog_sig, progress, prog_fac):

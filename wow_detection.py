@@ -579,7 +579,8 @@ def trace_sine_reg(speed_curve, t0, t1, rpm = None):
 
 	res = fit_sin(times[ind_start:ind_stop], speeds[ind_start:ind_stop], assumed_freq=assumed_freq)
 	
-	return res["amp"], res["omega"], res["phase"], res["offset"]
+	#return res["amp"], res["omega"], res["phase"], res["offset"]
+	return res["amp"], res["omega"], res["phase"], 0
 	
 def parabolic(f, x):
 	"""Helper function to refine a peak position in an array"""

@@ -10,11 +10,9 @@ You need to have installed:
 - [resampy](http://resampy.readthedocs.io/en/latest/)
 - [pysoundfile](https://pysoundfile.readthedocs.io/)
 - scipy
-- [librosa](https://librosa.github.io/) (OLD GUI)
-- tkinter (OLD GUI)
-- pyQt5 (NEW GUI)
-- [vispy](vispy.org) (NEW GUI)
-- [pyFFTW](https://github.com/pyFFTW/pyFFTW) (NEW GUI - optional speedup) Note for python 3.6 users on windows - to install pyFFTW, download the correct .whl file from [ ![Download](https://api.bintray.com/packages/hgomersall/generic/PyFFTW-development-builds/images/download.svg) ](https://bintray.com/hgomersall/generic/PyFFTW-development-builds/_latestVersion#files)  (scroll down!) and install it with `pip install PATH_TO_FILE.whl`.
+- pyQt5
+- [vispy](vispy.org)
+- [pyFFTW](https://github.com/pyFFTW/pyFFTW) (_optional_ speedup) Note for python 3.6 users on windows - to install pyFFTW, download the correct .whl file from [ ![Download](https://api.bintray.com/packages/hgomersall/generic/PyFFTW-development-builds/images/download.svg) ](https://bintray.com/hgomersall/generic/PyFFTW-development-builds/_latestVersion#files)  (scroll down!) and install it with `pip install PATH_TO_FILE.whl`.
 
 The bundled python platform [Anaconda](https://www.anaconda.com/download/) will have most of these dependencies installed by default. Best install the missing ones with `pip` (eg. in the Windows commandline, type `pip install vispy`).
 
@@ -24,7 +22,7 @@ Click the `Clone or Download` button at the right, then `Download ZIP`. Unzip to
 
 Otherwise, specify the full paths to `python.exe` and the script.
 
-### NEW Version - How to use
+### How to use
 1) Load an audio file
 2) Adjust the spectrogram settings, choose a tracing algorithm
 3) In the spectrum, trace sounds that should be of constant pitch with CTRL+LMB/drag

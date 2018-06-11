@@ -1116,7 +1116,7 @@ class Canvas(scene.SceneCanvas):
 					elif self.trace_mode == "Peak":
 						times, freqs = wow_detection.trace_peak(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1, adaptation_mode = self.adapt_mode)
 					elif self.trace_mode == "Correlation":
-						times, freqs = wow_detection.trace_correlation(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, t0 = t0, t1 = t1)
+						times, freqs = wow_detection.trace_correlation(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
 					elif self.trace_mode == "Freehand Draw":
 						#TODO: vectorize this: a[a[:,0].argsort()]
 						#TODO: reduce resolution with np.interp at speed curve sample rate

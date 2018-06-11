@@ -1,5 +1,6 @@
 import numpy as np
 import fourier
+import scipy
 	
 #https://github.com/librosa/librosa/blob/86275a8949fb4aef3fb16aa88b0e24862c24998f/librosa/core/pitch.py#L165
 #librosa piptrack
@@ -456,7 +457,7 @@ def trace_peak(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, 
 			log_prediction = 0
 	return times, freqs#, dbs
 	
-def trace_correlation(D, fft_size = 8192, hop = 256, sr = 44100, t0 = None, t1 = None):
+def trace_correlation(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None):
 
 	#start and stop reading the FFT data here, unless...
 	first_fft_i = 0
@@ -466,19 +467,19 @@ def trace_correlation(D, fft_size = 8192, hop = 256, sr = 44100, t0 = None, t1 =
 		#make sure we force start and stop at the ends!
 		first_fft_i = max(first_fft_i, int(t0*sr/hop)) 
 		last_fft_i = min(last_fft_i, int(t1*sr/hop))
+		
+	NL = max(1, min(num_bins-3, int(round(fL * fft_size / sr))) )
+	NU = min(num_bins-2, max(1, int(round(fU * fft_size / sr))) )
 	
-	num_freq_samples = fft_size//2
+	#print(NL,NU)
+	num_freq_samples = (NU-NL)*4
 	freqs = fourier.fft_freqs(fft_size, sr)
 	num_ffts = last_fft_i-first_fft_i
 
 	#skip the first bin (which is DC offset / 0Hz)
-	log_freqs = np.log2(freqs[1:])
-	#print("log_freqs",len(log_freqs))
+	log_freqs = np.log2(freqs[NL:NU])
 
 	linspace_freqs = np.linspace(log_freqs[0], log_freqs[-1], num_freq_samples)
-
-	#num_bins, num_ffts = D.shape
-	#print("num_bins, last_fft_i",num_bins, last_fft_i )
 
 	times = []
 	
@@ -491,15 +492,18 @@ def trace_correlation(D, fft_size = 8192, hop = 256, sr = 44100, t0 = None, t1 =
 		times.append(t)
 		
 		#skip the first bin (0Hz)
-		resampled[:,i2] = np.interp(linspace_freqs, log_freqs, D[1:,i])
+		#resampled[:,i2] = np.interp(linspace_freqs, log_freqs, D[NL:NU,i])
+		interolator = scipy.interpolate.interp1d(log_freqs, D[NL:NU,i], kind='quadratic')
+		resampled[:,i2] = interolator(linspace_freqs)
 		i2 +=1
 
+	wind = np.hanning(num_freq_samples)
 	#compute the change over each frame
 	changes = np.ones(num_ffts-1)
 	for i in range(num_ffts-1):
 		#correlation against the next sample, output will be of the same length
 		#TODO: this could be optimized by doing only, say 10 correlations instead of the full set (one correlation for each input sample)
-		res = np.correlate(resampled[:,i], resampled[:,i+1], mode="same")
+		res = np.correlate(resampled[:,i]*wind, resampled[:,i+1]*wind, mode="same")
 		#this should maybe hanned before argmax to kill obvious outliers
 		i_peak = np.argmax(res)
 		#interpolate the most accurate fit
@@ -513,8 +517,10 @@ def trace_correlation(D, fft_size = 8192, hop = 256, sr = 44100, t0 = None, t1 =
 	#on log scale, +1 means double frequency or speed
 	speed = speed / num_freq_samples * (log_freqs[-1]-log_freqs[0])
 
+	
+	log_mean_freq = np.log2((fL+fU)/2)
 	#convert to scale and from log2 scale
-	freqs = np.power(2, (9.9+ speed))
+	freqs = np.power(2, (log_mean_freq+ speed))
 	return times[1:], freqs
 	
 	

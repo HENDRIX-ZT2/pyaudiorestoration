@@ -1,5 +1,5 @@
 import numpy as np
-import resampy
+#import resampy
 import soundfile as sf
 import os
 
@@ -211,10 +211,9 @@ def prepare_linear_or_sinc(sampletimes, speeds):
 	if temp_pos: offsets_speeds.append( (offset, np.concatenate(temp_pos) ) )
 	return offsets_speeds
 
-def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0.01, use_channels = [0,], dither="Random", patch_ends=False, prog_sig=None):
+def run(filename, speed_curve=None, resampling_mode = "Linear", sinc_quality=50, use_channels = [0,], prog_sig=None):
 
-	if prog_sig:
-		prog_sig.notifyProgress.emit(0)
+	if prog_sig: prog_sig.notifyProgress.emit(0)
 		
 	#read the file
 	soundob = sf.SoundFile(filename)
@@ -222,66 +221,19 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 	sr = soundob.samplerate
 	
 	print('Analyzing ' + filename + '...')
-	#print('Shape:', signal.shape)
-	
-	block_size = int(100 / frequency_prec)
-	resampling_factor = 100 / frequency_prec
-	
-	#here we can use larger blocks without losing frequency precision (?), this speeds it up but be careful with the memory limit
-	#end value is fixed -> hence the more frequency precision, the smaller the block gets
-	if resampling_mode == "Expansion":
-		block_size = int(1000000 / resampling_factor)
 	
 	#user/debugging info
 	print(resampling_mode)
-	if resampling_mode == "Blocks":
-		print("frequency precision:",frequency_prec,"%")
-		print("temporal precision (different speed every X sec)",block_size/sr)
-	if resampling_mode == "Expansion":
-		print("frequency precision:",frequency_prec,"%")
-		print("expansion_factor",resampling_factor)
-		print("raw block_size:",block_size)
-		print("expanded block_size:",block_size*resampling_factor)
 	
 	sampletimes = speed_curve[:,0]*sr
 	#note: this expects a a linscale speed curve centered around 1 (= no speed change)
 	speeds = speed_curve[:,1]
 		
-	if resampling_mode in ("Sinc", "Linear"):
-		samples_in2 = np.arange( len(signal[:,0]) )
-		offsets_speeds = prepare_linear_or_sinc(sampletimes, speeds)
-		num_blocks = len(offsets_speeds)
-	else:
-		blocks = [(n, n+block_size) for n in range(0, len(signal), block_size)]
-		num_blocks = len(blocks)
-		#lerp the samples to the length of the signal
-		speed_samples_r = np.interp(np.arange(0, len(signal)), sampletimes, speeds)
-			
-		#do all processing of the speed samples right here to speed up multi channel files - the speed curve can be reused as is!
-		if resampling_mode == "Expansion":
-			#multiply each speed sample by the expansion factor
-			speed_samples_r *= resampling_factor
-			if dither == "Random":
-				#add -.5 to +.5 random noise before quantization to minimizes the global error at the cost of more local error
-				speed_samples_final = np.rint(np.random.rand(len(speed_samples_r))-.5 + speed_samples_r).astype(np.int64)
-			elif dither == "Diffused":
-				# the error of each sample is passed onto the next sample
-				speed_samples_final = np.ones(len(speed_samples_r), dtype = np.int64)
-				err = 0
-				for i in range( len(speed_samples_r) ):
-					inerr = speed_samples_r[i] + err
-					out = round(inerr)
-					err =  inerr-out
-					speed_samples_final[i] = out
-			else:
-				#do not dither, just round
-				speed_samples_final = np.rint(speed_samples_r).astype(np.int64)
-		else:
-			#do not dither, do not round, just copy
-			speed_samples_final = speed_samples_r
+	samples_in2 = np.arange( len(signal[:,0]) )
+	offsets_speeds = prepare_linear_or_sinc(sampletimes, speeds)
+	num_blocks = len(offsets_speeds)
 	
 	print("Num Blocks",num_blocks)
-	#there are no half blocks...
 	prog_fac = 100 / num_blocks / len(use_channels)
 	progress = 0
 	#resample on mono channels and export each separately as repeat does not like more dimensions
@@ -289,37 +241,11 @@ def run(filename, speed_curve=None, resampling_mode = "Blocks", frequency_prec=0
 		print('Processing channel ',channel)
 		outfilename = filename.rsplit('.', 1)[0]+str(channel)+'.wav'
 		with sf.SoundFile(outfilename, 'w+', sr, 1, subtype='FLOAT') as outfile:
-			if resampling_mode in ("Sinc",):
-				for i in sinc_kernel(outfile, offsets_speeds, signal[:,channel], samples_in2, NT = 50):
+			if resampling_mode == "Sinc":
+				for i in sinc_kernel(outfile, offsets_speeds, signal[:,channel], samples_in2, NT = sinc_quality):
 					progress = update_progress(prog_sig, progress, prog_fac)
-			elif resampling_mode in ("Linear",):
+			elif resampling_mode == "Linear":
 				for i in linear_kernel(outfile, offsets_speeds, signal[:,channel], samples_in2):
 					progress = update_progress(prog_sig, progress, prog_fac)
-			else:
-				for block_start, block_end in blocks:
-					progress = update_progress(prog_sig, progress, prog_fac)
-					#print("Writing",block_start,"to",block_end)
-					
-					#create a mono array for the current block and channel
-					signal_block = signal[block_start:block_end, channel]
-					speed_block = speed_samples_final[block_start:block_end]
-					
-					#apply the different methods
-					if resampling_mode == "Expansion":
-						#repeat each sample by the resampling_factor * the speed factor for that sample
-						#now divide it by the resampling_factor to return to the original median speed
-						#this is fast and does not cut off high freqs
-						resampled = resampy.resample(np.repeat(signal_block, speed_block), resampling_factor, 1, filter='sinc_window', num_zeros=4)
-						
-					elif resampling_mode == "Blocks":
-						#take a block of the signal
-						#tradeoff between frequency and time precision -> good for wow, unusable for flutter
-						#here we do not use the specified resampling factor but instead make our own from the average speed of the current block
-						#this is fast and does not cut off high freqs
-						resampled = resampy.resample(signal_block, 1/ np.mean(speed_block), 1, filter='sinc_window', num_zeros=4)
-					
-					#resample write the output block to the audio file
-					outfile.write(resampled)
-	if prog_sig:
-		prog_sig.notifyProgress.emit(100)
+	if prog_sig: prog_sig.notifyProgress.emit(100)
 	print("Done!\n")

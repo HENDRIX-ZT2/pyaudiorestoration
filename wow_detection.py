@@ -1,6 +1,7 @@
 import numpy as np
 import fourier
-import scipy
+import scipy.interpolate
+import scipy.optimize
 	
 #https://github.com/librosa/librosa/blob/86275a8949fb4aef3fb16aa88b0e24862c24998f/librosa/core/pitch.py#L165
 #librosa piptrack
@@ -556,7 +557,6 @@ def fit_sin(tt, yy, assumed_freq=None):
 
 	#using cosines does not seem to make it better?
 	def sinfunc(t, A, w, p, c):	 return A * np.sin(w*t + p) + c
-	import scipy.optimize
 	popt, pcov = scipy.optimize.curve_fit(sinfunc, tt, yy, p0=guess)
 	A, w, p, c = popt
 	f = w/(2.*np.pi)

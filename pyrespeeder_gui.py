@@ -5,7 +5,8 @@
 # -----------------------------------------------------------------------------
 
 
-import sys
+#import sys
+import os
 import numpy as np
 from vispy import scene, gloo, visuals, color, util, io
 import soundfile as sf
@@ -34,14 +35,55 @@ vec4 simple_cmap(float x) {
 
 }
 """
+class Spectrum():
+	"""
+	The visualization of the whole spectrogram.
+	"""
+	def __init__(self, parent):
+		self.pieces = []
+		self.parent = parent
+		self.MAX_TEXTURE_SIZE = gloo.gl.glGetParameter(gloo.gl.GL_MAX_TEXTURE_SIZE)
+		print("MAX_TEXTURE_SIZE", self.MAX_TEXTURE_SIZE)
+	
+	def update_data(self, imdata, hop, sr):
+		num_bins, num_ffts = imdata.shape
+		#TODO: only delete / add visuals when required due to changing data, not always
+		print("removing old pieces")
+		for i in reversed(range(0, len(self.pieces))):
+			self.pieces[i].parent = None
+			self.pieces.pop(i)
+		#this seems to be correct, so could be used to decimate the old pieces
+		num_pieces_new = num_ffts//self.MAX_TEXTURE_SIZE + 1
+		#spectra may only be of a certain size, so split them
+		for x in range(0, num_ffts, self.MAX_TEXTURE_SIZE):
+			for y in range(0, num_bins, self.MAX_TEXTURE_SIZE):
+				imdata_piece = imdata[y:y+self.MAX_TEXTURE_SIZE, x:x+self.MAX_TEXTURE_SIZE]
+				num_piece_bins, num_piece_ffts = imdata_piece.shape
+				if num_piece_bins > 1 and num_piece_ffts > 1:
+					#do the dB conversion here because the tracers don't like it
+					self.pieces.append(SpectrumPiece(20 * np.log10(imdata_piece), parent=self.parent.scene))
+					
+					#the y size is wrong when there is more than one Y piece
+					self.pieces[-1].set_size((num_piece_ffts*hop/sr, int(num_piece_bins/num_bins*sr/2)))
+
+					#add this piece's offset with STT - this is good
+					self.pieces[-1].transform = visuals.transforms.STTransform( translate=(x * hop / sr, to_mel(y/num_bins*sr/2))) * vispy_ext.MelTransform()
+		
+	def set_clims(self, vmin, vmax):
+		for image in self.pieces:
+			image.set_clims(vmin, vmax)
+			
+	def set_cmap(self, colormap):
+		for image in self.pieces:
+			image.set_cmap(colormap)
 
 class SpectrumPiece(scene.Image):
 	"""
 	The visualization of one part of the whole spectrogram.
 	"""
 	def __init__(self, texdata, parent):
-		#flip the shape, then it is much more straightforward for the rest
-		self._shape = (texdata.shape[1], texdata.shape[0])
+		#just set a dummy value
+		self._shape = (10.0, 22500)
 		self.get_data = visuals.shaders.Function(norm_luminance)
 		self.get_data['vmin'] = -80
 		self.get_data['vmax'] = -40
@@ -91,8 +133,8 @@ def to_mel(val):
 class TaskThread(QtCore.QThread):
 	notifyProgress = QtCore.pyqtSignal(int)
 	def run(self):
-		name, speed_curve, resampling_mode, frequency_prec, use_channels, dither = self.settings
-		resampling.run(name, speed_curve= speed_curve, resampling_mode = resampling_mode, frequency_prec=frequency_prec, use_channels=use_channels, dither=dither, prog_sig=self)
+		name, speed_curve, resampling_mode, sinc_quality, use_channels = self.settings
+		resampling.run(name, speed_curve= speed_curve, resampling_mode = resampling_mode, sinc_quality=sinc_quality, use_channels=use_channels, prog_sig=self)
 			
 class ObjectWidget(QtWidgets.QWidget):
 	"""
@@ -114,15 +156,13 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.save_b = QtWidgets.QPushButton('Save Traces')
 		self.save_b.clicked.connect(self.save_traces)
 		
-		#fft_l = QtWidgets.QLabel("FFT Size")
 		self.fft_c = QtWidgets.QComboBox(self)
-		self.fft_c.addItems(list(("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768")))
+		self.fft_c.addItems(("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768"))#, "65536"))
 		self.fft_c.setToolTip("FFT Size. This determines the frequency resolution.")
 		self.fft_c.currentIndexChanged.connect(self.update_param_hard)
 		
-		#overlap_l = QtWidgets.QLabel("FFT Overlap")
 		self.overlap_c = QtWidgets.QComboBox(self)
-		self.overlap_c.addItems(list(("1", "2", "4", "8", "16")))
+		self.overlap_c.addItems(("1", "2", "4", "8", "16", "32"))
 		self.overlap_c.setToolTip("FFT Overlap. Increase to improve temporal resolution.")
 		self.overlap_c.currentIndexChanged.connect(self.update_param_hard)
 		
@@ -137,8 +177,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		mode_l = QtWidgets.QLabel("Resampling Mode")
 		self.mode_c = QtWidgets.QComboBox(self)
-		self.mode_c.addItems(("Linear", "Expansion", "Sinc", "Blocks"))
-		self.mode_c.currentIndexChanged.connect(self.update_resampling_presets)
+		self.mode_c.addItems(("Linear", "Sinc"))
 		
 		trace_l = QtWidgets.QLabel("Tracing Mode")
 		self.trace_c = QtWidgets.QComboBox(self)
@@ -173,11 +212,11 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.autoalign_b.stateChanged.connect(self.update_other_settings)
 		
 		
-		prec_l = QtWidgets.QLabel("Precision")
-		self.prec_s = QtWidgets.QDoubleSpinBox()
-		self.prec_s.setRange(0.0001, 100.0)
-		self.prec_s.setSingleStep(0.1)
-		self.prec_s.setValue(0.01)
+		sinc_quality_l = QtWidgets.QLabel("Sinc Quality")
+		self.sinc_quality_s = QtWidgets.QSpinBox()
+		self.sinc_quality_s.setRange(1, 100)
+		self.sinc_quality_s.setSingleStep(1)
+		self.sinc_quality_s.setValue(50)
 		
 		self.progressBar = QtWidgets.QProgressBar(self)
 		self.progressBar.setRange(0,100)
@@ -191,7 +230,6 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.phase_s.setValue(0)
 		self.phase_s.valueChanged.connect(self.update_phase_offset)
 		
-		#channel_l = QtWidgets.QLabel("No Channels")
 		self.mygroupbox = QtWidgets.QGroupBox('Channels')
 		self.channel_layout = QtWidgets.QVBoxLayout()
 		self.channel_layout.setSpacing(0)
@@ -234,8 +272,8 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.qgrid.addWidget(self.autoalign_b, 0, 4)
 		self.qgrid.addWidget(self.resample_b, 0, 5)
 		
-		self.qgrid.addWidget(prec_l, 1, 4)
-		self.qgrid.addWidget(self.prec_s, 1, 5)
+		self.qgrid.addWidget(sinc_quality_l, 1, 4)
+		self.qgrid.addWidget(self.sinc_quality_s, 1, 5)
 		
 		self.qgrid.addWidget(mode_l, 2, 4)
 		self.qgrid.addWidget(self.mode_c, 2, 5)
@@ -248,14 +286,9 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.myLongTask.notifyProgress.connect(self.onProgress)
 		
 		self.qgrid.addWidget(self.progressBar, 3, 4, 1, 2 )
-
-		self.qgrid.setColumnStretch(0, 1)
-		self.qgrid.setColumnStretch(1, 1)
-		self.qgrid.setColumnStretch(2, 1)
-		self.qgrid.setColumnStretch(3, 1)
-		self.qgrid.setColumnStretch(4, 1)
-		self.qgrid.setColumnStretch(5, 1)
-		self.qgrid.setColumnStretch(6, 1)
+		
+		for i in range(7):
+			self.qgrid.setColumnStretch(i, 1)
 		vbox = QtWidgets.QVBoxLayout()
 		vbox.addLayout(self.qgrid)
 		vbox.addStretch(1.0)
@@ -271,50 +304,67 @@ class ObjectWidget(QtWidgets.QWidget):
 	def open_audio(self):
 		#just a wrapper around load_audio so we can access that via drag & drop and button
 		#pyqt5 returns a tuple
-		self.filename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open file', 'c:\\', "Audio files (*.flac *.wav)")[0]
-		self.load_audio()
+		filename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open file', 'c:\\', "Audio files (*.flac *.wav)")[0]
+		self.load_audio(filename)
 			
-	def load_audio(self):
-	#called whenever a potential audio file is set as self.filename - via drag& drop or open_audio
-		if self.filename:
-			# todo: maybe store the soundob until a new one is loaded, and use the same everywhere? (also consider threading!)
-			# is the (dropped) file an audio file, ie. can it be read by pysoundfile?
-			try:
-				soundob = sf.SoundFile(self.filename)
-			except:
-				print(self.filename+" could not be read, is it a valid audio file?")
-				return
-			num_channels = soundob.channels
-			self.settings_hard_changed.emit()
-			data = resampling.read_trace(self.filename)
-			for offset, times, freqs in data:
-				TraceLine(self.parent.canvas, times, freqs, offset=offset)
-			self.parent.canvas.master_speed.update()
-			
-			data = resampling.read_regs(self.filename)
-			for t0, t1, amplitude, omega, phase, offset in data:
-				RegLine(self.parent.canvas, t0, t1, amplitude, omega, phase, offset)
-			self.parent.canvas.master_reg_speed.update()
-			
-			#delete all previous channel widgets
-			for channel in self.channel_bs:
-				self.channel_layout.removeWidget(channel)
-				channel.deleteLater()
-			
-			self.channel_bs = []
-			channel_names = ("Front Left", "Front Right", "Center", "LFE", "Back Left", "Back Right")
-			# set the startup option to just resample channel 0
-			active = [0,]
-			for i in range(0, num_channels):
-				name = channel_names[i] if i < 6 else str(i)
-				self.channel_bs.append(QtWidgets.QCheckBox(name))
-				if i in active:
-					self.channel_bs[-1].setChecked(True)
-				else:
-					self.channel_bs[-1].setChecked(False)
-				self.channel_bs[-1].stateChanged.connect(self.update_other_settings)
-				self.channel_layout.addWidget( self.channel_bs[-1] )
-			
+	def load_audio(self, filename):
+		#called whenever a potential audio file is set as self.filename - via drag& drop or open_audio
+		if filename:
+			if filename != self.filename:
+				if self.filename:
+					qm = QtWidgets.QMessageBox
+					ret = qm.question(self,'', "Do you really want to load "+os.path.basename(filename)+"? You will lose unsaved work on "+os.path.basename(self.filename)+"!", qm.Yes | qm.No)
+					if ret == qm.No:
+						return
+				
+				self.parent.setWindowTitle('pyrespeeder '+os.path.basename(filename))
+				# todo: maybe store the soundob until a new one is loaded, and use the same everywhere? (also consider threading!)
+				# is the (dropped) file an audio file, ie. can it be read by pysoundfile?
+				try:
+					soundob = sf.SoundFile(filename)
+				except:
+					print(filename+" could not be read, is it a valid audio file?")
+					return
+				#has the file changed?
+				
+				#clear the fft storage!
+				self.parent.canvas.fft_storage = {}
+				
+				print("removing old lines")
+				for line in reversed(self.parent.canvas.lines):
+					line.remove()
+				self.filename = filename
+				num_channels = soundob.channels
+				self.settings_hard_changed.emit()
+				data = resampling.read_trace(self.filename)
+				for offset, times, freqs in data:
+					TraceLine(self.parent.canvas, times, freqs, offset=offset)
+				self.parent.canvas.master_speed.update()
+				
+				data = resampling.read_regs(self.filename)
+				for t0, t1, amplitude, omega, phase, offset in data:
+					RegLine(self.parent.canvas, t0, t1, amplitude, omega, phase, offset)
+				self.parent.canvas.master_reg_speed.update()
+				
+				#delete all previous channel widgets
+				for channel in self.channel_bs:
+					self.channel_layout.removeWidget(channel)
+					channel.deleteLater()
+				
+				self.channel_bs = []
+				channel_names = ("Front Left", "Front Right", "Center", "LFE", "Back Left", "Back Right")
+				# set the startup option to just resample channel 0
+				active = [0,]
+				for i in range(0, num_channels):
+					name = channel_names[i] if i < 6 else str(i)
+					self.channel_bs.append(QtWidgets.QCheckBox(name))
+					if i in active:
+						self.channel_bs[-1].setChecked(True)
+					else:
+						self.channel_bs[-1].setChecked(False)
+					self.channel_bs[-1].stateChanged.connect(self.update_other_settings)
+					self.channel_layout.addWidget( self.channel_bs[-1] )
+				
 	def save_traces(self):
 		#get the data from the traces and save it
 		data = [ (line.offset, line.times, line.freqs) for line in self.parent.canvas.lines ]
@@ -386,7 +436,7 @@ class ObjectWidget(QtWidgets.QWidget):
 	def run_resample(self):
 		if self.filename:
 			mode = self.mode_c.currentText()
-			prec = self.prec_s.value()
+			sinc_quality = self.sinc_quality_s.value()
 			#make a copy to prevent unexpected side effects
 			channels = [i for i in range(len(self.channel_bs)) if self.channel_bs[i].isChecked()]
 			print(channels)
@@ -396,20 +446,9 @@ class ObjectWidget(QtWidgets.QWidget):
 			else:
 				speed_curve = self.parent.canvas.master_speed.get_linspace()
 				print("Using measured speed")
-			print("Resampling",self.filename, mode, prec)
-			self.myLongTask.settings = (self.filename, speed_curve, mode, prec, channels, "Diffused")
+			print("Resampling",self.filename, mode, sinc_quality)
+			self.myLongTask.settings = (self.filename, speed_curve, mode, sinc_quality, channels)
 			self.myLongTask.start()
-			
-	def update_resampling_presets(self, option):
-		mode = self.mode_c.currentText()
-		if mode == "Expansion":
-			self.prec_s.setValue(5.0)
-		elif mode == "Blocks":
-			self.prec_s.setValue(0.01)
-		elif mode == "Sinc":
-			self.prec_s.setValue(0.05)
-		elif mode == "Linear":
-			self.prec_s.setValue(0.01)
 		
 	def update_param_hard(self, option):
 		self.settings_hard_changed.emit()
@@ -424,7 +463,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		QtWidgets.QMainWindow.__init__(self)
 
 		self.resize(700, 500)
-		self.setWindowTitle('pyrespeeder 2.0')
+		self.setWindowTitle('pyrespeeder')
 
 		self.setAcceptDrops(True)
 		splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
@@ -467,9 +506,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			event.setDropAction(QtCore.Qt.CopyAction)
 			event.accept()
 			for url in event.mimeData().urls():
-				url_name = str(url.toLocalFile())
-				self.props.filename = url_name
-				self.props.load_audio()
+				self.props.load_audio( str(url.toLocalFile()) )
 				return
 		else:
 			event.ignore()
@@ -817,7 +854,8 @@ class Canvas(scene.SceneCanvas):
 		
 		#some default dummy values
 		self.props = None
-		self.filename = "None"
+		self.filename = ""
+		#self.soundob = None
 		cm = "fire"
 		self.vmin = -80
 		self.vmax = -40
@@ -886,9 +924,7 @@ class Canvas(scene.SceneCanvas):
 		self.colorbar_display.ticks[0].color = "white"
 		self.colorbar_display.ticks[1].color = "white"
 		
-		#grid.add_widget(self.header, row=0, col=0, col_span=2)
 		grid.add_widget(self.speed_yaxis, row=1, col=0)
-		#grid.add_widget(self.speed_xaxis, row=1, col=1)
 		grid.add_widget(self.spec_yaxis, row=2, col=0)
 		grid.add_widget(self.spec_xaxis, row=3, col=1)
 		self.speed_view = grid.add_view(row=1, col=1, border_color='white')
@@ -900,122 +936,73 @@ class Canvas(scene.SceneCanvas):
 		self.speed_view.height_min = 150
 		
 		#TODO: make sure they are bound when started, not just after scrolling
-		#self.speed_xaxis.link_view(self.speed_view)
 		self.speed_yaxis.link_view(self.speed_view)
 		self.spec_xaxis.link_view(self.spec_view)
 		self.spec_yaxis.link_view(self.spec_view)
 		
-		self.images = []
 		self.lines = []
 		self.regs = []
 		self.fft_storage = {}
 		
 		self.master_speed = MasterSpeedLine(self)
 		self.master_reg_speed = MasterRegLine(self)
-		
-		# test for a brush overlay
-		# img_data = io.read_png('brush.png')
-		# interpolation = 'nearest'
-		# image = scene.visuals.Image(img_data, interpolation=interpolation, parent=self.spec_view.scene, method='subdivide')
+		self.spectrum = Spectrum( self.spec_view)
 		
 		self.freeze()
 		
 		
 	#fast stuff that does not require rebuilding everything
 	def set_data_soft(self, cmap="fire"):
-		for image in self.images:
-			image.set_cmap(cmap)
+		self.spectrum.set_cmap(cmap)
 		self.colorbar_display.cmap = cmap
 	
 	#called if either  the file or FFT settings have changed
 	def set_data_hard(self, filename, fft_size = 256, fft_overlap = 1):
 		if filename:
-			#only set this one once, but can't set it in _init_
-			if not self.MAX_TEXTURE_SIZE:
-				self.MAX_TEXTURE_SIZE = gloo.gl.glGetParameter(gloo.gl.GL_MAX_TEXTURE_SIZE)
-				print("self.MAX_TEXTURE_SIZE", self.MAX_TEXTURE_SIZE)
 			
+			#if self.filename != filename:
 			soundob = sf.SoundFile(filename)
 				
-			#has the file changed?
-			if self.filename != filename:
-				
-				# TODO: ask - do you really want to load a new file?
-				# save changes to the old file?
-			
-				#clear the fft storage!
-				self.fft_storage = {}
-				
-				print("removing old lines")
-				for line in reversed(self.lines):
-					line.remove()
-					
-			sr = soundob.samplerate
-			
-			hop = int(fft_size/fft_overlap)
-			
 			#set this for the tracers etc.
 			self.fft_size = fft_size
-			self.hop = hop
-			self.sr = sr
-			
-			print("fft_size,hop",fft_size,hop)
+			self.hop = fft_size // fft_overlap
+			self.sr = soundob.samplerate
 			
 			#store the FFTs for fast shuffling around
 			#TODO: analyze the RAM consumption of this
 			#TODO: perform FFT at minimal hop and get shorter hops via stride operation ::x
-			k = (fft_size, hop)
+			k = (self.fft_size, self.hop)
 			if k not in self.fft_storage:
-				print("storing new fft")
+				print("storing new fft",self.fft_size)
 				signal = soundob.read(always_2d=True)[:,0]
 				#this will automatically zero-pad the last fft
 				#get the magnitude spectrum
 				#avoid divide by 0 error in log10
-				imdata = np.abs(fourier.stft(signal, fft_size, hop, "hann")+.0000001)
+				imdata = np.abs(fourier.stft(signal, self.fft_size, self.hop, "hann")+.0000001)
 				#change to dB scale later, for the tracers
 				#imdata = 20 * np.log10(imdata)
 				#clamping the data to 0,1 range happens in the vertex shader
 				
 				#now store this for retrieval later
 				self.fft_storage[k] = imdata.astype('float32')
+			
 			#retrieve the FFT data
 			imdata = self.fft_storage[k]
-			num_bins, num_ffts = imdata.shape
-			self.num_ffts = num_ffts
+			self.num_ffts = imdata.shape[1]
 
 			#has the file changed?
 			if self.filename != filename:
 				print("file has changed!")
 				self.filename = filename
-				#self.header.text = filename
 				
 				#(re)set the spec_view
 				#only the camera dimension is mel'ed, as the image gets it from its transform
-				self.speed_view.camera.rect = (0, -0.1, num_ffts * hop / sr, 0.2)
-				self.spec_view.camera.rect = (0, 0, num_ffts * hop / sr, to_mel(sr//2))
+				self.speed_view.camera.rect = (0, -0.1, self.num_ffts * self.hop / self.sr, 0.2)
+				self.spec_view.camera.rect = (0, 0, self.num_ffts * self.hop / self.sr, to_mel(self.sr//2))
 				#link them, but use custom logic to only link the x view
 				self.spec_view.camera.link(self.speed_view.camera)
-				
-			#TODO: is this as efficient as possible?
-			#TODO: move the multi-resolution handling into the spec class
-			#only delete / add visuals when required due to changing data, not always
-			print("removing old images")
-			for i in reversed(range(0, len(self.images))):
-				self.images[i].parent = None
-				self.images.pop(i)
-				
-			#spectra may only be of a certain size, so split them
-			#to support 2**17 FFT sizes, it would also need to split along the Y axis
-			for i in range(0, num_ffts, self.MAX_TEXTURE_SIZE):
-				imdata_piece = imdata[:,i:i+self.MAX_TEXTURE_SIZE]
-				
-				#do the dB conversion here because the tracers don't like it
-				self.images.append(SpectrumPiece(20 * np.log10(imdata_piece), parent=self.spec_view.scene))
-				
-				self.images[-1].set_clims(self.vmin, self.vmax)
-				self.images[-1].set_size((imdata_piece.shape[1]*hop/sr, sr//2))
-				#add this piece's offset with STT
-				self.images[-1].transform = visuals.transforms.STTransform( translate=(i * hop / sr, 0)) * vispy_ext.MelTransform()
+			self.spectrum.update_data(imdata, self.hop, self.sr)
+			self.spectrum.set_clims(self.vmin, self.vmax)
 			self.master_speed.update()
 			self.master_reg_speed.update()
 		
@@ -1042,8 +1029,7 @@ class Canvas(scene.SceneCanvas):
 				self.vmin += d[1]
 
 			self.colorbar_display.clim = (int(self.vmin), int(self.vmax))
-			for image in self.images:
-				image.set_clims(self.vmin, self.vmax)
+			self.spectrum.set_clims(self.vmin, self.vmax)
 				
 		#spec & speed X axis scroll
 		if self.click_on_widget(click, self.spec_xaxis):
@@ -1188,13 +1174,13 @@ class Canvas(scene.SceneCanvas):
 		if self.click_on_widget(click, self.spec_view):
 			scene_space = self.spec_view.scene.transform.imap(grid_space)
 			#careful, we need a spectrum already
-			if self.images:
+			if self.spectrum:
 				#in fact the simple Y mel transform would be enough in any case
 				#but this would also support other transforms
-				return self.images[0].transform.imap(scene_space)
+				return self.spectrum.pieces[0].transform.imap(scene_space)
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
-	appQt = QtWidgets.QApplication(sys.argv)
+	appQt = QtWidgets.QApplication([])
 	win = MainWindow()
 	win.show()
 	appQt.exec_()

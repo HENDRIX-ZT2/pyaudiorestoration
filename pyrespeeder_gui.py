@@ -43,7 +43,6 @@ class Spectrum():
 		self.pieces = []
 		self.parent = parent
 		self.MAX_TEXTURE_SIZE = gloo.gl.glGetParameter(gloo.gl.GL_MAX_TEXTURE_SIZE)
-		print("MAX_TEXTURE_SIZE", self.MAX_TEXTURE_SIZE)
 	
 	def update_data(self, imdata, hop, sr):
 		num_bins, num_ffts = imdata.shape
@@ -130,7 +129,7 @@ def to_mel(val):
 	### just to set the image size correctly	
 	return np.log(val / 700 + 1) * 1127
 
-class TaskThread(QtCore.QThread):
+class ResamplingThread(QtCore.QThread):
 	notifyProgress = QtCore.pyqtSignal(int)
 	def run(self):
 		name, speed_curve, resampling_mode, sinc_quality, use_channels = self.settings
@@ -140,7 +139,7 @@ class ObjectWidget(QtWidgets.QWidget):
 	"""
 	Widget for editing OBJECT parameters
 	"""
-	settings_hard_changed = QtCore.pyqtSignal(name='objectChanged')
+	file_or_fft_settings_changed = QtCore.pyqtSignal(name='objectChanged')
 	settings_soft_changed = QtCore.pyqtSignal(name='objectChanged2')
 
 	def __init__(self, parent=None):
@@ -149,6 +148,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.parent = parent
 		
 		self.filename = ""
+		self.deltraces = []
 		
 		myFont=QtGui.QFont()
 		myFont.setBold(True)
@@ -159,14 +159,16 @@ class ObjectWidget(QtWidgets.QWidget):
 		fft_l = QtWidgets.QLabel("FFT Size")
 		self.fft_c = QtWidgets.QComboBox(self)
 		self.fft_c.addItems(("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768"))#, "65536"))
-		self.fft_c.setToolTip("FFT Size. This determines the frequency resolution.")
+		self.fft_c.setToolTip("This determines the frequency resolution.")
 		self.fft_c.currentIndexChanged.connect(self.update_param_hard)
+		self.fft_c.setCurrentIndex(5)
 		
 		overlap_l = QtWidgets.QLabel("FFT Overlap")
 		self.overlap_c = QtWidgets.QComboBox(self)
 		self.overlap_c.addItems(("1", "2", "4", "8", "16", "32"))
-		self.overlap_c.setToolTip("FFT Overlap. Increase to improve temporal resolution.")
+		self.overlap_c.setToolTip("Increase to improve temporal resolution.")
 		self.overlap_c.currentIndexChanged.connect(self.update_param_hard)
+		self.overlap_c.setCurrentIndex(2)
 		
 		cmap_l = QtWidgets.QLabel("Colors")
 		self.cmap_c = QtWidgets.QComboBox(self)
@@ -174,13 +176,9 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.cmap_c.setCurrentText("viridis")
 		self.cmap_c.currentIndexChanged.connect(self.update_param_soft)
 
-		mode_l = QtWidgets.QLabel("Resampling Mode")
-		self.mode_c = QtWidgets.QComboBox(self)
-		self.mode_c.addItems(("Linear", "Sinc"))
-		
 		tracing_l = QtWidgets.QLabel("\nTracing")
 		tracing_l.setFont(myFont)
-		trace_l = QtWidgets.QLabel("Tracing Mode")
+		trace_l = QtWidgets.QLabel("Mode")
 		self.trace_c = QtWidgets.QComboBox(self)
 		self.trace_c.addItems(("Center of Gravity","Peak","Correlation","Freehand Draw", "Sine Regression"))
 		self.trace_c.currentIndexChanged.connect(self.update_other_settings)
@@ -192,29 +190,34 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.adapt_c.currentIndexChanged.connect(self.update_other_settings)
 		
 		rpm_l = QtWidgets.QLabel("Source RPM")
-		rpm_l.setToolTip("This helps avoid bad values in the Sine regression. If you don't know the source, measure the duration of one wow cycle. RPM = 60/cycle length")
 		self.rpm_c = QtWidgets.QComboBox(self)
 		self.rpm_c.setEditable(True)
 		self.rpm_c.addItems(("Unknown","33.333","45","78"))
 		self.rpm_c.currentIndexChanged.connect(self.update_other_settings)
+		self.rpm_c.setToolTip("This helps avoid bad values in the sine regression. \nIf you don't know the source, measure the duration of one wow cycle. \nRPM = 60/cycle length")
 		
-		show_l = QtWidgets.QLabel("Show Speed for")
+		show_l = QtWidgets.QLabel("Show")
 		self.show_c = QtWidgets.QComboBox(self)
-		self.show_c.addItems(("Both","Traces only","Regressions only"))
+		self.show_c.addItems(("Both","Traces","Regressions"))
 		self.show_c.currentIndexChanged.connect(self.update_show_settings)
 		
 		self.autoalign_b = QtWidgets.QCheckBox("Auto-Align")
 		self.autoalign_b.setChecked(True)
 		self.autoalign_b.stateChanged.connect(self.update_other_settings)
+		self.autoalign_b.setToolTip("Should new traces be aligned with existing ones?")
 		
 		
 		resampling_l = QtWidgets.QLabel("\nResampling")
 		resampling_l.setFont(myFont)
+		mode_l = QtWidgets.QLabel("Mode")
+		self.mode_c = QtWidgets.QComboBox(self)
+		self.mode_c.addItems(("Linear", "Sinc"))
 		sinc_quality_l = QtWidgets.QLabel("Sinc Quality")
 		self.sinc_quality_s = QtWidgets.QSpinBox()
 		self.sinc_quality_s.setRange(1, 100)
 		self.sinc_quality_s.setSingleStep(1)
 		self.sinc_quality_s.setValue(50)
+		self.sinc_quality_s.setToolTip("Number of input samples that contribute to each output sample.\nMore samples = more quality, but slower. Only for sinc mode.")
 		
 		self.progressBar = QtWidgets.QProgressBar(self)
 		self.progressBar.setRange(0,100)
@@ -227,8 +230,10 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.phase_s.setSingleStep(1)
 		self.phase_s.setValue(0)
 		self.phase_s.valueChanged.connect(self.update_phase_offset)
+		self.phase_s.setToolTip("Adjust the phase of the selected sine regression to match the surrounding regions.")
 		
 		self.mygroupbox = QtWidgets.QGroupBox('Channels')
+		self.mygroupbox.setToolTip("Only selected channels will be resampled.")
 		self.channel_layout = QtWidgets.QVBoxLayout()
 		self.channel_layout.setSpacing(0)
 		self.mygroupbox.setLayout(self.channel_layout)
@@ -242,7 +247,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c), (show_l, self.show_c), (cmap_l,self.cmap_c), \
 					(tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (self.autoalign_b, ), \
-					(resampling_l, ), (sinc_quality_l, self.sinc_quality_s), (mode_l, self.mode_c), (self.scroll,), (self.progressBar,) ]
+					(resampling_l, ), (mode_l, self.mode_c), (sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,) ]
 		for i, line in enumerate(buttons):
 			for j, element in enumerate(line):
 				#we want to stretch that one
@@ -251,10 +256,8 @@ class ObjectWidget(QtWidgets.QWidget):
 				else:
 					self.qgrid.addWidget(line[j], i, j)
 		
-		
-		
-		self.myLongTask = TaskThread()
-		self.myLongTask.notifyProgress.connect(self.onProgress)
+		self.resampling_thread = ResamplingThread()
+		self.resampling_thread.notifyProgress.connect(self.onProgress)
 		
 		
 		for i in range(2):
@@ -263,11 +266,9 @@ class ObjectWidget(QtWidgets.QWidget):
 		vbox.addLayout(self.qgrid)
 		vbox.addStretch(1.0)
 
-		self.channel_bs = [ ]
-		
+		self.channel_checkboxes = [ ]
 		self.setLayout(vbox)
 		
-	
 	def onProgress(self, i):
 		self.progressBar.setValue(i)
 		
@@ -281,59 +282,56 @@ class ObjectWidget(QtWidgets.QWidget):
 		#called whenever a potential audio file is set as self.filename - via drag& drop or open_audio
 		if filename:
 			if filename != self.filename:
+				#ask the user if it should really be opened, if another file was already open
 				if self.filename:
 					qm = QtWidgets.QMessageBox
 					ret = qm.question(self,'', "Do you really want to load "+os.path.basename(filename)+"? You will lose unsaved work on "+os.path.basename(self.filename)+"!", qm.Yes | qm.No)
 					if ret == qm.No:
 						return
 				
-				self.parent.setWindowTitle('pyrespeeder '+os.path.basename(filename))
-				# todo: maybe store the soundob until a new one is loaded, and use the same everywhere? (also consider threading!)
 				# is the (dropped) file an audio file, ie. can it be read by pysoundfile?
 				try:
 					soundob = sf.SoundFile(filename)
+					self.filename = filename
 				except:
 					print(filename+" could not be read, is it a valid audio file?")
 					return
-				#has the file changed?
 				
-				#clear the fft storage!
+				#Cleanup of old data
 				self.parent.canvas.fft_storage = {}
+				self.delete_traces(not_only_selected=True)
+				for channel in self.channel_checkboxes:
+					self.channel_layout.removeWidget(channel)
+					channel.deleteLater()
+				self.channel_checkboxes = []
 				
-				print("removing old lines")
-				for line in reversed(self.parent.canvas.lines):
-					line.remove()
-				self.filename = filename
-				num_channels = soundob.channels
-				self.settings_hard_changed.emit()
+				#read any saved traces or regressions
 				data = resampling.read_trace(self.filename)
 				for offset, times, freqs in data:
 					TraceLine(self.parent.canvas, times, freqs, offset=offset)
 				self.parent.canvas.master_speed.update()
-				
 				data = resampling.read_regs(self.filename)
 				for t0, t1, amplitude, omega, phase, offset in data:
 					RegLine(self.parent.canvas, t0, t1, amplitude, omega, phase, offset)
 				self.parent.canvas.master_reg_speed.update()
 				
-				#delete all previous channel widgets
-				for channel in self.channel_bs:
-					self.channel_layout.removeWidget(channel)
-					channel.deleteLater()
-				
-				self.channel_bs = []
+				#fill the channel UI
 				channel_names = ("Front Left", "Front Right", "Center", "LFE", "Back Left", "Back Right")
-				# set the startup option to just resample channel 0
-				active = [0,]
+				num_channels = soundob.channels
 				for i in range(0, num_channels):
 					name = channel_names[i] if i < 6 else str(i)
-					self.channel_bs.append(QtWidgets.QCheckBox(name))
-					if i in active:
-						self.channel_bs[-1].setChecked(True)
+					self.channel_checkboxes.append(QtWidgets.QCheckBox(name))
+					# set the startup option to just resample channel 0
+					if i == 0:
+						self.channel_checkboxes[-1].setChecked(True)
 					else:
-						self.channel_bs[-1].setChecked(False)
-					self.channel_bs[-1].stateChanged.connect(self.update_other_settings)
-					self.channel_layout.addWidget( self.channel_bs[-1] )
+						self.channel_checkboxes[-1].setChecked(False)
+					self.channel_checkboxes[-1].stateChanged.connect(self.update_other_settings)
+					self.channel_layout.addWidget( self.channel_checkboxes[-1] )
+				
+				#finally - proceed with spectrum stuff elsewhere
+				self.parent.setWindowTitle('pyrespeeder '+os.path.basename(self.filename))
+				self.file_or_fft_settings_changed.emit()
 				
 	def save_traces(self):
 		#get the data from the traces and save it
@@ -347,26 +345,25 @@ class ObjectWidget(QtWidgets.QWidget):
 			print("Saved",len(data),"regressions")
 			resampling.write_regs(self.filename, data)
 			
-	def delete_selected_traces(self):
-		for trace in reversed(self.parent.canvas.selected_traces):
-			try:
-				trace.remove()
-			except:
-				print("Could not remove a trace due to a sorting issue.")
+	def delete_traces(self, not_only_selected=False):
+		self.deltraces= []
+		for trace in reversed(self.parent.canvas.regs+self.parent.canvas.lines):
+			if (trace.selected and not not_only_selected) or not_only_selected:
+				self.deltraces.append(trace)
+		for trace in self.deltraces:
+			trace.remove()
 		self.parent.canvas.master_speed.update()
 		self.parent.canvas.master_reg_speed.update()
-			
-	def delete_all_traces(self):
-		if self.parent.canvas.lines:
-			qm = QtWidgets.QMessageBox
-			ret = qm.question(self,'', "Do you really want to delete all traces and regressions?", qm.Yes | qm.No)
-			if ret == qm.Yes:
-				for line in reversed(self.parent.canvas.lines):
-					line.remove()
-				for reg in reversed(self.parent.canvas.regs):
-					reg.remove()
-				self.parent.canvas.master_speed.update()
-				self.parent.canvas.master_reg_speed.update()
+		#this means a file was loaded, so clear the undo stack
+		if not_only_selected:
+			self.deltraces= []
+	
+	def restore_traces(self):
+		for trace in self.deltraces:
+			trace.initialize()
+		self.parent.canvas.master_speed.update()
+		self.parent.canvas.master_reg_speed.update()
+		self.deltraces = []
 			
 	def update_phase_offset(self):
 		v = self.phase_s.value()
@@ -382,7 +379,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 	def update_show_settings(self):
 		show = self.show_c.currentText()
-		if show == "Traces only":
+		if show == "Traces":
 			self.parent.canvas.show_regs = False
 			self.parent.canvas.show_lines = True
 			self.parent.canvas.master_speed.show()
@@ -391,7 +388,7 @@ class ObjectWidget(QtWidgets.QWidget):
 			self.parent.canvas.master_reg_speed.hide()
 			for reg in self.parent.canvas.regs:
 				reg.hide()
-		elif show == "Regressions only":
+		elif show == "Regressions":
 			self.parent.canvas.show_regs = True
 			self.parent.canvas.show_lines = False
 			self.parent.canvas.master_speed.hide()
@@ -411,22 +408,20 @@ class ObjectWidget(QtWidgets.QWidget):
 				reg.show()
 				
 	def run_resample(self):
-		if self.filename:
-			if self.parent.canvas.lines:
-				mode = self.mode_c.currentText()
-				sinc_quality = self.sinc_quality_s.value()
-				channels = [i for i in range(len(self.channel_bs)) if self.channel_bs[i].isChecked()]
+		if self.filename and self.parent.canvas.lines:
+			channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
+			if channels:
 				if self.parent.canvas.regs:
 					speed_curve = self.parent.canvas.master_reg_speed.get_linspace()
 					print("Using regressed speed")
 				else:
 					speed_curve = self.parent.canvas.master_speed.get_linspace()
 					print("Using measured speed")
-				self.myLongTask.settings = (self.filename, speed_curve, mode, sinc_quality, channels)
-				self.myLongTask.start()
+				self.resampling_thread.settings = (self.filename, speed_curve, self.mode_c.currentText(), self.sinc_quality_s.value(), channels)
+				self.resampling_thread.start()
 			
 	def update_param_hard(self, option):
-		self.settings_hard_changed.emit()
+		self.file_or_fft_settings_changed.emit()
 		
 	def update_param_soft(self, option):
 		self.settings_soft_changed.emit()
@@ -449,7 +444,11 @@ class MainWindow(QtWidgets.QMainWindow):
 		
 		self.resize(720, 400)
 		self.setWindowTitle('pyrespeeder')
-
+		try:
+			scriptDir = os.path.dirname(os.path.realpath(__file__))
+			self.setWindowIcon(QtGui.QIcon(os.path.join(scriptDir,'icon.png')))
+		except: pass
+		
 		self.setAcceptDrops(True)
 		splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 
@@ -463,7 +462,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		self.canvas.props = self.props
 		self.setCentralWidget(splitter)
-		self.props.settings_hard_changed.connect(self.update_settings_hard)
+		self.props.file_or_fft_settings_changed.connect(self.update_settings_hard)
 		self.props.settings_soft_changed.connect(self.update_settings_soft)
 		
 		mainMenu = self.menuBar() 
@@ -476,12 +475,11 @@ class MainWindow(QtWidgets.QMainWindow):
 						(fileMenu, "Save", "Save your traces so you can continue work later", self.props.save_traces, "CTRL+S"), \
 						(fileMenu, "Resample", "Apply the speed curve to the audio file", self.props.run_resample, "CTRL+R"), \
 						(fileMenu, "Exit", "Quit the app", self.close, ""), \
-						(editMenu, "Undo", "Not implemented!", self.props.foo, "CTRL+Z"), \
-						(editMenu, "Redo", "Not implemented!", self.props.foo, "CTRL+Y"), \
+						(editMenu, "Undo", "Not implemented!", self.props.restore_traces, "CTRL+Z"), \
+						# (editMenu, "Redo", "Not implemented!", self.props.foo, "CTRL+Y"), \
 						(editMenu, "Select All", "Select all traces and regressions", self.props.select_all, "CTRL+A"), \
 						(editMenu, "Invert Selection", "Select those that were not selected, and vice versa", self.props.invert_selection, "CTRL+I"), \
-						(editMenu, "Delete Selected", "Delete the selected traces and regressions", self.props.delete_selected_traces, "DEL"), \
-						# (editMenu, "Delete All", "Delete all traces", self.props.delete_all_traces, "DEL"), \
+						(editMenu, "Delete Selected", "Delete the selected traces and regressions", self.props.delete_traces, "DEL"), \
 						)
 		
 		for submenu, name, tooltip, func, shortcut in button_data:
@@ -661,6 +659,8 @@ class RegLine:
 	"""Stores a single sinc regression's data and displays it"""
 	def __init__(self, vispy_canvas, t0, t1, amplitude, omega, phase, offset):
 	
+		self.selected = False
+	
 		self.vispy_canvas = vispy_canvas
 		
 		#the extents on which this regression operated
@@ -707,10 +707,13 @@ class RegLine:
 		self.data[:, 1] = self.amplitude * np.sin(self.omega * clipped_times + self.phase)# + self.offset
 		#sine_on_hz = np.power(2, sine + np.log2(2000))
 		self.line_speed = scene.Line(pos=self.data, color=(0, 0, 1, .5), method='gl')
+		self.initialize()
+		
+	def initialize(self):
+		"""Called when first created, or revived via undo."""
 		self.show()
-		#self.line_speed.parent = vispy_canvas.speed_view.scene
 		self.vispy_canvas.regs.append(self)
-		self.vispy_canvas.master_reg_speed.update()
+		self.vispy_canvas.master_speed.update()
 		
 	def set_offset(self, a, b):
 		#user manipulation: custom amplitude for sample
@@ -720,20 +723,19 @@ class RegLine:
 		
 	def deselect(self):
 		"""Deselect this line, ie. restore its colors to their original state"""
+		self.selected = False
 		self.line_speed.set_data(color = (1, 1, 1, .5))
-		#self.line_spec.set_data(color = (1, 1, 1, 1))
-		self.vispy_canvas.selected_traces.remove(self)
 		
 	def select(self):
 		"""Deselect this line, ie. restore its colors to their original state"""
+		self.selected = True
 		self.line_speed.set_data(color = (0, 1, 0, 1))
-		self.vispy_canvas.selected_traces.append(self)
 		#set the offset in the ui
 		self.vispy_canvas.props.phase_s.setValue(self.offset)
 		
 	def toggle(self):
 		"""Toggle this line's selection state"""
-		if self in self.vispy_canvas.selected_traces:
+		if self.selected:
 			self.deselect()
 		else:
 			self.select()
@@ -741,35 +743,34 @@ class RegLine:
 	def select_handle(self, multi=False):
 		"""Toggle this line's selection state, and update the phase offset ui value"""
 		if not multi:
-			for trace in reversed(self.vispy_canvas.selected_traces):
+			for trace in self.vispy_canvas.regs+self.vispy_canvas.lines:
 				trace.deselect()
-		if self in self.vispy_canvas.selected_traces:
-			self.deselect()
-		else:
-			self.select()
+		self.toggle()
 			
 	def show(self):
 		self.line_speed.parent = self.vispy_canvas.speed_view.scene
 		
 	def hide(self):
 		self.line_speed.parent = None
-		
-	def update_phase(self, v):
-		if self in self.vispy_canvas.selected_traces:
-			self.offset = v
+		self.deselect()
 		
 	def remove(self):
-		self.line_speed.parent = None
+		self.hide()
 		#note: this has to search the list
 		self.vispy_canvas.regs.remove(self)
-		self.vispy_canvas.master_speed.update()
-		if self in self.vispy_canvas.selected_traces:
-			self.deselect()
+		
+		
+	def update_phase(self, v):
+		"""Adjust this regressions's phase offset according to the UI input."""
+		if self.selected: self.offset = v
+		
 	
 
 class TraceLine:
 	"""Stores and visualizes a trace fragment, including its speed offset."""
 	def __init__(self, vispy_canvas, times, freqs, offset=None):
+		
+		self.selected = False
 		
 		self.vispy_canvas = vispy_canvas
 		
@@ -815,15 +816,20 @@ class TraceLine:
 		self.line_spec = scene.Line(pos=data, color=(1, 1, 1, 1), method='gl')
 		#the data is in Hz, so to visualize correctly, it has to be mel'ed
 		self.line_spec.transform =	vispy_ext.MelTransform()
-		self.line_spec.parent = vispy_canvas.spec_view.scene
 		
 		#create the speed curve visualization
 		self.speed_data = np.ones((len(times), 2), dtype=np.float32)
 		self.speed_data[:, 0] = self.times
 		self.speed_data[:, 1] = self.speed
 		self.line_speed = scene.Line(pos=self.speed_data, color=(1, 1, 1, .5), method='gl')
-		self.line_speed.parent = vispy_canvas.speed_view.scene
-		#self.vispy_canvas.master_speed.update()
+		self.initialize()
+
+		
+	def initialize(self):
+		"""Called when first created, or revived via undo."""
+		self.show()
+		self.line_spec.parent = self.vispy_canvas.spec_view.scene
+		self.line_speed.parent = self.vispy_canvas.speed_view.scene
 		self.vispy_canvas.lines.append(self)
 		
 	def show(self):
@@ -831,6 +837,7 @@ class TraceLine:
 		
 	def hide(self):
 		self.line_speed.parent = None
+		self.deselect()
 		
 	def set_offset(self, a, b):
 		offset = b-a
@@ -841,45 +848,39 @@ class TraceLine:
 		#print("new center",self.center)
 		self.speed_data[:, 1] = self.speed
 		self.line_speed.set_data(pos = self.speed_data)
-		#self.vispy_canvas.master_speed.update()
 	
 	
 	def deselect(self):
 		"""Deselect this line, ie. restore its colors to their original state"""
+		self.selected = False
 		self.line_speed.set_data(color = (1, 1, 1, .5))
 		self.line_spec.set_data(color = (1, 1, 1, 1))
-		self.vispy_canvas.selected_traces.remove(self)
 		
 	def select(self):
 		"""Toggle this line's selection state"""
+		self.selected = True
 		self.line_speed.set_data(color = (0, 1, 0, 1))
 		self.line_spec.set_data(color = (0, 1, 0, 1))
-		self.vispy_canvas.selected_traces.append(self)
 		
 	def toggle(self):
 		"""Toggle this line's selection state"""
-		if self in self.vispy_canvas.selected_traces:
+		if self.selected:
 			self.deselect()
 		else:
 			self.select()
 		
 	def select_handle(self, multi=False):
 		if not multi:
-			for trace in reversed(self.vispy_canvas.selected_traces):
+			for trace in self.vispy_canvas.regs+self.vispy_canvas.lines:
 				trace.deselect()
-		if self in self.vispy_canvas.selected_traces:
-			self.deselect()
-		else:
-			self.select()
+		self.toggle()
 		
 	def remove(self):
 		self.line_speed.parent = None
 		self.line_spec.parent = None
 		#note: this has to search the list
 		self.vispy_canvas.lines.remove(self)
-		self.vispy_canvas.master_speed.update()
-		if self in self.vispy_canvas.selected_traces:
-			self.deselect()
+
 	
 class Canvas(scene.SceneCanvas):
 
@@ -894,7 +895,6 @@ class Canvas(scene.SceneCanvas):
 		self.trace_mode = "Center of Gravity"
 		self.adapt_mode = "Linear"
 		self.rpm = "Unknown"
-		self.selected_traces = []
 		self.show_regs = True
 		self.show_lines = True
 		
@@ -903,8 +903,6 @@ class Canvas(scene.SceneCanvas):
 		self.hop = 256
 		self.sr = 44100
 		self.num_ffts = 0
-		
-		self.MAX_TEXTURE_SIZE = None
 		
 		scene.SceneCanvas.__init__(self, keys="interactive", size=(1024, 512), bgcolor="#353535")
 		
@@ -1123,7 +1121,7 @@ class Canvas(scene.SceneCanvas):
 						print("fallback")
 						amplitude, omega, phase, offset = wow_detection.trace_sine_reg(self.master_reg_speed.get_linspace(), t0, t1, self.rpm)
 					RegLine(self, t0, t1, amplitude, omega, phase, offset)
-					return
+					self.master_reg_speed.update()
 				else:
 					if self.trace_mode == "Center of Gravity":
 						times, freqs = wow_detection.trace_cog(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
@@ -1141,7 +1139,7 @@ class Canvas(scene.SceneCanvas):
 					if len(freqs) and np.nan not in freqs:
 						TraceLine(self, times, freqs)
 						self.master_speed.update()
-						return
+				return
 			
 			#or in speed view?
 			#then we are only interested in the Y difference, so we can move the selected speed trace up or down
@@ -1149,8 +1147,9 @@ class Canvas(scene.SceneCanvas):
 			b = self.click_speed_conversion(click)
 			if a is not None and b is not None:
 				#diff = b[1]-a[1]
-				for trace in self.selected_traces:
-					trace.set_offset(a[1], b[1])
+				for trace in self.lines+self.regs:
+					if trace.selected:
+						trace.set_offset(a[1], b[1])
 				self.master_speed.update()
 				self.master_reg_speed.update()
 				
@@ -1206,20 +1205,20 @@ class Canvas(scene.SceneCanvas):
 				#in fact the simple Y mel transform would be enough in any case
 				#but this would also support other transforms
 				return self.spectrum.pieces[0].transform.imap(scene_space)
-				
-
-WHITE =     QtGui.QColor(255, 255, 255)
-BLACK =     QtGui.QColor(0, 0, 0)
-RED =       QtGui.QColor(255, 0, 0)
-PRIMARY =   QtGui.QColor(53, 53, 53)
-SECONDARY = QtGui.QColor(35, 35, 35)
-TERTIARY =  QtGui.QColor(42, 130, 218)
+		
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
 	appQt = QtWidgets.QApplication([])
+	
+	#style
 	appQt.setStyle(QtWidgets.QStyleFactory.create('Fusion'))
 	dark_palette = QtGui.QPalette()
-
+	WHITE =     QtGui.QColor(255, 255, 255)
+	BLACK =     QtGui.QColor(0, 0, 0)
+	RED =       QtGui.QColor(255, 0, 0)
+	PRIMARY =   QtGui.QColor(53, 53, 53)
+	SECONDARY = QtGui.QColor(35, 35, 35)
+	TERTIARY =  QtGui.QColor(42, 130, 218)
 	dark_palette.setColor(QtGui.QPalette.Window,          PRIMARY)
 	dark_palette.setColor(QtGui.QPalette.WindowText,      WHITE)
 	dark_palette.setColor(QtGui.QPalette.Base,            SECONDARY)
@@ -1233,10 +1232,9 @@ if __name__ == '__main__':
 	dark_palette.setColor(QtGui.QPalette.Link,            TERTIARY)
 	dark_palette.setColor(QtGui.QPalette.Highlight,       TERTIARY)
 	dark_palette.setColor(QtGui.QPalette.HighlightedText, BLACK)
-
 	appQt.setPalette(dark_palette)
-
-	appQt.setStyleSheet("QToolTip { color: #ffffff; background-color: #2a82da; border: 1px solid white; }")
+	appQt.setStyleSheet("QToolTip { color: #ffffff; background-color: #353535; border: 1px solid white; }")
+	
 	win = MainWindow()
 	win.show()
 	appQt.exec_()

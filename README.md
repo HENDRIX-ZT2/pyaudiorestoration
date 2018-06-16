@@ -1,7 +1,7 @@
 # pyrespeeder
 Remove tape wow and flutter from audio recordings via their spectra. A simple solution for a mean problem.
 
-![Imgur](https://i.imgur.com/yUg6TTn.jpg)
+![Imgur](https://i.imgur.com/iodF5NB.jpg)
 
 ### Installation
 You need to have installed:
@@ -57,15 +57,14 @@ Example of cyclic wow removal:
 
 ### Tracing Modes
 - Adaptive Center of Gravity [adapted from Czyzewski et al. (2007)]: The trace starts in the given frequency band, which should be relatively narrow and not too low.
-- Correlation: Tries to correlate the whole spectrum sequentially. Only works well for big FFT sizes.
-- Sine Draw: Not really useful
+- Peak: Traces the loudest bin. Not really stable for normal music!
+- Freehand Draw: Just draw the speed curve as you see it.
+- Correlation: Tries to correlate the selected spectrum sequentially. Only works well for big FFT sizes. Works best for short sections.
 - Sine Regression: Sample the master speed curve in some points to get the parameters of cyclic wow in these areas, which are then used to extrapolate the sine over the whole duration.
 
 ### Resampling Modes
-- Linear: Fastest, but causes some overtone artifacts. Use during speed curve development and for quick tests.
-- Expansion: Good precision in time and frequency, but induces clicks and distortions. Bad S/N ratio. Repeats each input sample (N * speed + dithering) times and then downsamples everything by N. [based on Feaster, P. (2017)]
-- Sinc: Slowest, but most accurate. No clicks or overtones. About 30x slower than Linear, but worth it - use this mode in the end after you have perfected the speed curve. Accurate because of digital sampling theory. [based on endolith (2011) and Hope (2015)]
-- Blocks: Fast, but inaccurate in time, induces clicks. Resamples segements according to their mean speed.
+- Linear: Fast, but causes some overtone artifacts. Use during speed curve development and for quick tests.
+- Sinc: Slow, but accurate. No clicks or overtones. About 30x slower than Linear, but worth it - use this mode in the end after you have perfected the speed curve. Accurate because of digital sampling theory. [based on endolith (2011) and Hope (2015)]
 
 ### References
 - Czyzewski et al. (2007). DSP Techniques for Determining "Wow" Distortion. Journal of the Audio Engineering Society. 55.

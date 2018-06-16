@@ -150,17 +150,19 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		self.filename = ""
 		
-		self.open_b = QtWidgets.QPushButton('Open Audio')
-		self.open_b.clicked.connect(self.open_audio)
+		myFont=QtGui.QFont()
+		myFont.setBold(True)
+
+		display_l = QtWidgets.QLabel("Display")
+		display_l.setFont(myFont)
 		
-		self.save_b = QtWidgets.QPushButton('Save Traces')
-		self.save_b.clicked.connect(self.save_traces)
-		
+		fft_l = QtWidgets.QLabel("FFT Size")
 		self.fft_c = QtWidgets.QComboBox(self)
 		self.fft_c.addItems(("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768"))#, "65536"))
 		self.fft_c.setToolTip("FFT Size. This determines the frequency resolution.")
 		self.fft_c.currentIndexChanged.connect(self.update_param_hard)
 		
+		overlap_l = QtWidgets.QLabel("FFT Overlap")
 		self.overlap_c = QtWidgets.QComboBox(self)
 		self.overlap_c.addItems(("1", "2", "4", "8", "16", "32"))
 		self.overlap_c.setToolTip("FFT Overlap. Increase to improve temporal resolution.")
@@ -172,13 +174,12 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.cmap_c.setCurrentText("viridis")
 		self.cmap_c.currentIndexChanged.connect(self.update_param_soft)
 
-		self.resample_b = QtWidgets.QPushButton("Resample")
-		self.resample_b.clicked.connect(self.run_resample)
-		
 		mode_l = QtWidgets.QLabel("Resampling Mode")
 		self.mode_c = QtWidgets.QComboBox(self)
 		self.mode_c.addItems(("Linear", "Sinc"))
 		
+		tracing_l = QtWidgets.QLabel("\nTracing")
+		tracing_l.setFont(myFont)
 		trace_l = QtWidgets.QLabel("Tracing Mode")
 		self.trace_c = QtWidgets.QComboBox(self)
 		self.trace_c.addItems(("Center of Gravity","Peak","Correlation","Freehand Draw", "Sine Regression"))
@@ -189,11 +190,6 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.adapt_c.addItems(("Average", "Linear", "Constant", "None"))
 		self.adapt_c.setToolTip("Used to predict the next frequencies when tracing.")
 		self.adapt_c.currentIndexChanged.connect(self.update_other_settings)
-		
-		self.delete_selected_b = QtWidgets.QPushButton('Delete Selected Trace')
-		self.delete_selected_b.clicked.connect(self.delete_selected_traces)
-		self.delete_all_b = QtWidgets.QPushButton('Delete All Traces')
-		self.delete_all_b.clicked.connect(self.delete_all_traces)
 		
 		rpm_l = QtWidgets.QLabel("Source RPM")
 		rpm_l.setToolTip("This helps avoid bad values in the Sine regression. If you don't know the source, measure the duration of one wow cycle. RPM = 60/cycle length")
@@ -212,6 +208,8 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.autoalign_b.stateChanged.connect(self.update_other_settings)
 		
 		
+		resampling_l = QtWidgets.QLabel("\nResampling")
+		resampling_l.setFont(myFont)
 		sinc_quality_l = QtWidgets.QLabel("Sinc Quality")
 		self.sinc_quality_s = QtWidgets.QSpinBox()
 		self.sinc_quality_s.setRange(1, 100)
@@ -241,53 +239,25 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.qgrid = QtWidgets.QGridLayout()
 		self.qgrid.setHorizontalSpacing(3)
 		self.qgrid.setVerticalSpacing(0)
-		#column 01
-		self.qgrid.addWidget(self.open_b, 0, 0)
-		self.qgrid.addWidget(self.save_b, 0, 1)
 		
-		self.qgrid.addWidget(self.fft_c, 1, 0)
-		self.qgrid.addWidget(self.overlap_c, 1, 1)
+		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c), (show_l, self.show_c), (cmap_l,self.cmap_c), \
+					(tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (self.autoalign_b, ), \
+					(resampling_l, ), (sinc_quality_l, self.sinc_quality_s), (mode_l, self.mode_c), (self.scroll,), (self.progressBar,) ]
+		for i, line in enumerate(buttons):
+			for j, element in enumerate(line):
+				#we want to stretch that one
+				if 1 == len(line):
+					self.qgrid.addWidget(line[j], i, j, 1, 2)
+				else:
+					self.qgrid.addWidget(line[j], i, j)
 		
-		self.qgrid.addWidget(show_l, 2, 0)
-		self.qgrid.addWidget(self.show_c, 2, 1)
-		
-		self.qgrid.addWidget(cmap_l, 3, 0)
-		self.qgrid.addWidget(self.cmap_c, 3, 1)
-		
-		#column 23
-		self.qgrid.addWidget(self.delete_selected_b, 0, 2)
-		self.qgrid.addWidget(self.delete_all_b, 0, 3)
-		self.qgrid.addWidget(trace_l, 1, 2)
-		self.qgrid.addWidget(self.trace_c, 1, 3)
-		self.qgrid.addWidget(adapt_l, 2, 2)
-		self.qgrid.addWidget(self.adapt_c, 2, 3)
-		self.qgrid.addWidget(rpm_l, 3, 2)
-		self.qgrid.addWidget(self.rpm_c, 3, 3)
-		# self.qgrid.addWidget(show_l, 3, 2)
-		# self.qgrid.addWidget(self.show_c, 3, 3)
-		self.qgrid.addWidget(phase_l, 4, 2)
-		self.qgrid.addWidget(self.phase_s, 4, 3)
-		
-		#column 45
-		self.qgrid.addWidget(self.autoalign_b, 0, 4)
-		self.qgrid.addWidget(self.resample_b, 0, 5)
-		
-		self.qgrid.addWidget(sinc_quality_l, 1, 4)
-		self.qgrid.addWidget(self.sinc_quality_s, 1, 5)
-		
-		self.qgrid.addWidget(mode_l, 2, 4)
-		self.qgrid.addWidget(self.mode_c, 2, 5)
-		
-		#column 6 - channels
-		self.qgrid.addWidget(self.scroll, 0, 6, 4, 1)
 		
 		
 		self.myLongTask = TaskThread()
 		self.myLongTask.notifyProgress.connect(self.onProgress)
 		
-		self.qgrid.addWidget(self.progressBar, 3, 4, 1, 2 )
 		
-		for i in range(7):
+		for i in range(2):
 			self.qgrid.setColumnStretch(i, 1)
 		vbox = QtWidgets.QVBoxLayout()
 		vbox.addLayout(self.qgrid)
@@ -379,17 +349,24 @@ class ObjectWidget(QtWidgets.QWidget):
 			
 	def delete_selected_traces(self):
 		for trace in reversed(self.parent.canvas.selected_traces):
-			trace.remove()
+			try:
+				trace.remove()
+			except:
+				print("Could not remove a trace due to a sorting issue.")
 		self.parent.canvas.master_speed.update()
 		self.parent.canvas.master_reg_speed.update()
 			
 	def delete_all_traces(self):
-		for line in reversed(self.parent.canvas.lines):
-			line.remove()
-		for reg in reversed(self.parent.canvas.regs):
-			reg.remove()
-		self.parent.canvas.master_speed.update()
-		self.parent.canvas.master_reg_speed.update()
+		if self.parent.canvas.lines:
+			qm = QtWidgets.QMessageBox
+			ret = qm.question(self,'', "Do you really want to delete all traces and regressions?", qm.Yes | qm.No)
+			if ret == qm.Yes:
+				for line in reversed(self.parent.canvas.lines):
+					line.remove()
+				for reg in reversed(self.parent.canvas.regs):
+					reg.remove()
+				self.parent.canvas.master_speed.update()
+				self.parent.canvas.master_reg_speed.update()
 			
 	def update_phase_offset(self):
 		v = self.phase_s.value()
@@ -435,51 +412,86 @@ class ObjectWidget(QtWidgets.QWidget):
 				
 	def run_resample(self):
 		if self.filename:
-			mode = self.mode_c.currentText()
-			sinc_quality = self.sinc_quality_s.value()
-			#make a copy to prevent unexpected side effects
-			channels = [i for i in range(len(self.channel_bs)) if self.channel_bs[i].isChecked()]
-			print(channels)
-			if self.parent.canvas.regs:
-				speed_curve = self.parent.canvas.master_reg_speed.get_linspace()
-				print("Using regressed speed")
-			else:
-				speed_curve = self.parent.canvas.master_speed.get_linspace()
-				print("Using measured speed")
-			print("Resampling",self.filename, mode, sinc_quality)
-			self.myLongTask.settings = (self.filename, speed_curve, mode, sinc_quality, channels)
-			self.myLongTask.start()
-		
+			if self.parent.canvas.lines:
+				mode = self.mode_c.currentText()
+				sinc_quality = self.sinc_quality_s.value()
+				channels = [i for i in range(len(self.channel_bs)) if self.channel_bs[i].isChecked()]
+				if self.parent.canvas.regs:
+					speed_curve = self.parent.canvas.master_reg_speed.get_linspace()
+					print("Using regressed speed")
+				else:
+					speed_curve = self.parent.canvas.master_speed.get_linspace()
+					print("Using measured speed")
+				self.myLongTask.settings = (self.filename, speed_curve, mode, sinc_quality, channels)
+				self.myLongTask.start()
+			
 	def update_param_hard(self, option):
 		self.settings_hard_changed.emit()
 		
 	def update_param_soft(self, option):
 		self.settings_soft_changed.emit()
-
-
+		
+	def foo(self):
+		print("foo")
+		
+	def select_all(self):
+		for trace in self.parent.canvas.lines+self.parent.canvas.regs:
+			trace.select()
+		
+	def invert_selection(self):
+		for trace in self.parent.canvas.lines+self.parent.canvas.regs:
+			trace.toggle()
+		
 class MainWindow(QtWidgets.QMainWindow):
 
 	def __init__(self):
-		QtWidgets.QMainWindow.__init__(self)
-
-		self.resize(700, 500)
+		QtWidgets.QMainWindow.__init__(self)		
+		
+		self.resize(720, 400)
 		self.setWindowTitle('pyrespeeder')
 
 		self.setAcceptDrops(True)
-		splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+		splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 
 		self.canvas = Canvas()
 		self.canvas.create_native()
 		self.canvas.native.setParent(self)
 
 		self.props = ObjectWidget(parent=self)
-		splitter.addWidget(self.props)
 		splitter.addWidget(self.canvas.native)
+		splitter.addWidget(self.props)
 
 		self.canvas.props = self.props
 		self.setCentralWidget(splitter)
 		self.props.settings_hard_changed.connect(self.update_settings_hard)
 		self.props.settings_soft_changed.connect(self.update_settings_soft)
+		
+		mainMenu = self.menuBar() 
+		fileMenu = mainMenu.addMenu('File')
+		editMenu = mainMenu.addMenu('Edit')
+		#viewMenu = mainMenu.addMenu('View')
+		#helpMenu = mainMenu.addMenu('Help')
+		
+		button_data = ( (fileMenu, "Open", "Open a new audio file and its traces", self.props.open_audio, "CTRL+O"), \
+						(fileMenu, "Save", "Save your traces so you can continue work later", self.props.save_traces, "CTRL+S"), \
+						(fileMenu, "Resample", "Apply the speed curve to the audio file", self.props.run_resample, "CTRL+R"), \
+						(fileMenu, "Exit", "Quit the app", self.close, ""), \
+						(editMenu, "Undo", "Not implemented!", self.props.foo, "CTRL+Z"), \
+						(editMenu, "Redo", "Not implemented!", self.props.foo, "CTRL+Y"), \
+						(editMenu, "Select All", "Select all traces and regressions", self.props.select_all, "CTRL+A"), \
+						(editMenu, "Invert Selection", "Select those that were not selected, and vice versa", self.props.invert_selection, "CTRL+I"), \
+						(editMenu, "Delete Selected", "Delete the selected traces and regressions", self.props.delete_selected_traces, "DEL"), \
+						# (editMenu, "Delete All", "Delete all traces", self.props.delete_all_traces, "DEL"), \
+						)
+		
+		for submenu, name, tooltip, func, shortcut in button_data:
+			button = QtWidgets.QAction(name, self)
+			button.setStatusTip(tooltip)
+			button.triggered.connect(func)
+			if shortcut: button.setShortcut(shortcut)
+			submenu.addAction(button)
+		
+		
 
 	def update_settings_hard(self):
 		self.canvas.set_data_hard(self.props.filename,
@@ -512,7 +524,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			event.ignore()
 
 	def update_settings_soft(self):
-		self.canvas.set_data_soft(cmap=self.props.cmap_c.currentText())	
+		self.canvas.set_colormap(self.props.cmap_c.currentText())	
 
 class MasterSpeedLine:
 	"""Stores and displays the average, ie. master speed curve."""
@@ -712,7 +724,21 @@ class RegLine:
 		#self.line_spec.set_data(color = (1, 1, 1, 1))
 		self.vispy_canvas.selected_traces.remove(self)
 		
-	def select(self, multi=False):
+	def select(self):
+		"""Deselect this line, ie. restore its colors to their original state"""
+		self.line_speed.set_data(color = (0, 1, 0, 1))
+		self.vispy_canvas.selected_traces.append(self)
+		#set the offset in the ui
+		self.vispy_canvas.props.phase_s.setValue(self.offset)
+		
+	def toggle(self):
+		"""Toggle this line's selection state"""
+		if self in self.vispy_canvas.selected_traces:
+			self.deselect()
+		else:
+			self.select()
+			
+	def select_handle(self, multi=False):
 		"""Toggle this line's selection state, and update the phase offset ui value"""
 		if not multi:
 			for trace in reversed(self.vispy_canvas.selected_traces):
@@ -720,10 +746,7 @@ class RegLine:
 		if self in self.vispy_canvas.selected_traces:
 			self.deselect()
 		else:
-			self.line_speed.set_data(color = (0, 1, 0, 1))
-			self.vispy_canvas.selected_traces.append(self)
-			#set the offset in the ui
-			self.vispy_canvas.props.phase_s.setValue(self.offset)
+			self.select()
 			
 	def show(self):
 		self.line_speed.parent = self.vispy_canvas.speed_view.scene
@@ -827,17 +850,27 @@ class TraceLine:
 		self.line_spec.set_data(color = (1, 1, 1, 1))
 		self.vispy_canvas.selected_traces.remove(self)
 		
-	def select(self, multi=False):
+	def select(self):
 		"""Toggle this line's selection state"""
+		self.line_speed.set_data(color = (0, 1, 0, 1))
+		self.line_spec.set_data(color = (0, 1, 0, 1))
+		self.vispy_canvas.selected_traces.append(self)
+		
+	def toggle(self):
+		"""Toggle this line's selection state"""
+		if self in self.vispy_canvas.selected_traces:
+			self.deselect()
+		else:
+			self.select()
+		
+	def select_handle(self, multi=False):
 		if not multi:
 			for trace in reversed(self.vispy_canvas.selected_traces):
 				trace.deselect()
 		if self in self.vispy_canvas.selected_traces:
 			self.deselect()
 		else:
-			self.line_speed.set_data(color = (0, 1, 0, 1))
-			self.line_spec.set_data(color = (0, 1, 0, 1))
-			self.vispy_canvas.selected_traces.append(self)
+			self.select()
 		
 	def remove(self):
 		self.line_speed.parent = None
@@ -855,8 +888,6 @@ class Canvas(scene.SceneCanvas):
 		#some default dummy values
 		self.props = None
 		self.filename = ""
-		#self.soundob = None
-		cm = "fire"
 		self.vmin = -80
 		self.vmax = -40
 		self.auto_align = True
@@ -875,7 +906,7 @@ class Canvas(scene.SceneCanvas):
 		
 		self.MAX_TEXTURE_SIZE = None
 		
-		scene.SceneCanvas.__init__(self, keys="interactive", size=(1024, 512), bgcolor="grey")
+		scene.SceneCanvas.__init__(self, keys="interactive", size=(1024, 512), bgcolor="#353535")
 		
 		self.unfreeze()
 		
@@ -913,9 +944,7 @@ class Canvas(scene.SceneCanvas):
 		right_padding.width_max = 70
 
 		#create the color bar display
-		self.colorbar_display = scene.ColorBarWidget(label="Gain [dB]", clim=(self.vmin, self.vmax),
-										   cmap=cm, orientation="right",
-											border_width=1)
+		self.colorbar_display = scene.ColorBarWidget(label="Gain [dB]", clim=(self.vmin, self.vmax), cmap="viridis", orientation="right", border_width=1)
 		self.colorbar_display.label.font_size = 10
 		self.colorbar_display.label.color = "white"
 
@@ -939,6 +968,8 @@ class Canvas(scene.SceneCanvas):
 		self.speed_yaxis.link_view(self.speed_view)
 		self.spec_xaxis.link_view(self.spec_view)
 		self.spec_yaxis.link_view(self.spec_view)
+		#link them, but use custom logic to only link the x view
+		self.spec_view.camera.link(self.speed_view.camera)
 		
 		self.lines = []
 		self.regs = []
@@ -950,9 +981,8 @@ class Canvas(scene.SceneCanvas):
 		
 		self.freeze()
 		
-		
 	#fast stuff that does not require rebuilding everything
-	def set_data_soft(self, cmap="fire"):
+	def set_colormap(self, cmap):
 		self.spectrum.set_cmap(cmap)
 		self.colorbar_display.cmap = cmap
 	
@@ -999,8 +1029,6 @@ class Canvas(scene.SceneCanvas):
 				#only the camera dimension is mel'ed, as the image gets it from its transform
 				self.speed_view.camera.rect = (0, -0.1, self.num_ffts * self.hop / self.sr, 0.2)
 				self.spec_view.camera.rect = (0, 0, self.num_ffts * self.hop / self.sr, to_mel(self.sr//2))
-				#link them, but use custom logic to only link the x view
-				self.spec_view.camera.link(self.speed_view.camera)
 			self.spectrum.update_data(imdata, self.hop, self.sr)
 			self.spectrum.set_clims(self.vmin, self.vmax)
 			self.master_speed.update()
@@ -1070,10 +1098,10 @@ class Canvas(scene.SceneCanvas):
 			closest_line = self.get_closest_line( click )
 			if closest_line:
 				if "Shift" in event.modifiers:
-					closest_line.select(multi=True)
+					closest_line.select_handle(multi=True)
 					event.handled = True
 				else:
-					closest_line.select()
+					closest_line.select_handle()
 					event.handled = True
 	
 	def on_mouse_release(self, event):
@@ -1178,9 +1206,37 @@ class Canvas(scene.SceneCanvas):
 				#in fact the simple Y mel transform would be enough in any case
 				#but this would also support other transforms
 				return self.spectrum.pieces[0].transform.imap(scene_space)
+				
+
+WHITE =     QtGui.QColor(255, 255, 255)
+BLACK =     QtGui.QColor(0, 0, 0)
+RED =       QtGui.QColor(255, 0, 0)
+PRIMARY =   QtGui.QColor(53, 53, 53)
+SECONDARY = QtGui.QColor(35, 35, 35)
+TERTIARY =  QtGui.QColor(42, 130, 218)
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
 	appQt = QtWidgets.QApplication([])
+	appQt.setStyle(QtWidgets.QStyleFactory.create('Fusion'))
+	dark_palette = QtGui.QPalette()
+
+	dark_palette.setColor(QtGui.QPalette.Window,          PRIMARY)
+	dark_palette.setColor(QtGui.QPalette.WindowText,      WHITE)
+	dark_palette.setColor(QtGui.QPalette.Base,            SECONDARY)
+	dark_palette.setColor(QtGui.QPalette.AlternateBase,   PRIMARY)
+	dark_palette.setColor(QtGui.QPalette.ToolTipBase,     WHITE)
+	dark_palette.setColor(QtGui.QPalette.ToolTipText,     WHITE)
+	dark_palette.setColor(QtGui.QPalette.Text,            WHITE)
+	dark_palette.setColor(QtGui.QPalette.Button,          PRIMARY)
+	dark_palette.setColor(QtGui.QPalette.ButtonText,      WHITE)
+	dark_palette.setColor(QtGui.QPalette.BrightText,      RED)
+	dark_palette.setColor(QtGui.QPalette.Link,            TERTIARY)
+	dark_palette.setColor(QtGui.QPalette.Highlight,       TERTIARY)
+	dark_palette.setColor(QtGui.QPalette.HighlightedText, BLACK)
+
+	appQt.setPalette(dark_palette)
+
+	appQt.setStyleSheet("QToolTip { color: #ffffff; background-color: #2a82da; border: 1px solid white; }")
 	win = MainWindow()
 	win.show()
 	appQt.exec_()

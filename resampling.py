@@ -213,17 +213,13 @@ def prepare_linear_or_sinc(sampletimes, speeds):
 
 def run(filename, speed_curve=None, resampling_mode = "Linear", sinc_quality=50, use_channels = [0,], prog_sig=None):
 
+	print('Resampling ' + filename + '...', resampling_mode, sinc_quality, use_channels)
 	if prog_sig: prog_sig.notifyProgress.emit(0)
 		
 	#read the file
 	soundob = sf.SoundFile(filename)
 	signal = soundob.read(always_2d=True)
 	sr = soundob.samplerate
-	
-	print('Analyzing ' + filename + '...')
-	
-	#user/debugging info
-	print(resampling_mode)
 	
 	sampletimes = speed_curve[:,0]*sr
 	#note: this expects a a linscale speed curve centered around 1 (= no speed change)

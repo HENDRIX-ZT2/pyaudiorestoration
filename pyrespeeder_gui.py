@@ -492,7 +492,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		
 
 	def update_settings_hard(self):
-		self.canvas.set_data_hard(self.props.filename,
+		self.canvas.set_file_or_fft_settings(self.props.filename,
 								 fft_size = int(self.props.fft_c.currentText()),
 								 fft_overlap = int(self.props.overlap_c.currentText()))
 		#also force a soft update here
@@ -883,6 +883,7 @@ class TraceLine:
 
 	
 class Canvas(scene.SceneCanvas):
+	"""This class wraps the vispy canvas and controls all the visualization, as well as the interaction with it."""
 
 	def __init__(self):
 		
@@ -912,27 +913,14 @@ class Canvas(scene.SceneCanvas):
 		grid.spacing = 0
 		
 		#speed chart
-		self.speed_yaxis = scene.AxisWidget(orientation='left',
-								 axis_label='Octaves',
-								 axis_font_size=8,
-								 axis_label_margin=35,
-								 tick_label_margin=5)
+		self.speed_yaxis = scene.AxisWidget(orientation='left', axis_label='Octaves', axis_font_size=8, axis_label_margin=35, tick_label_margin=5)
 		self.speed_yaxis.width_max = 55
 		
 		#spectrum
-		self.spec_yaxis = vispy_ext.ExtAxisWidget(orientation='left',
-								 axis_label='Hz',
-								 axis_font_size=8,
-								 axis_label_margin=35,
-								 tick_label_margin=5,
-								 scale_type="logarithmic")
+		self.spec_yaxis = vispy_ext.ExtAxisWidget(orientation='left', axis_label='Hz', axis_font_size=8, axis_label_margin=35, tick_label_margin=5, scale_type="logarithmic")
 		self.spec_yaxis.width_max = 55
 		
-		self.spec_xaxis = scene.AxisWidget(orientation='bottom',
-								 axis_label='sec',
-								 axis_font_size=8,
-								 axis_label_margin=35,
-								 tick_label_margin=5)
+		self.spec_xaxis = scene.AxisWidget(orientation='bottom', axis_label='sec', axis_font_size=8, axis_label_margin=35, tick_label_margin=5)
 		self.spec_xaxis.height_max = 55
 
 		top_padding = grid.add_widget(row=0)
@@ -942,32 +930,27 @@ class Canvas(scene.SceneCanvas):
 		right_padding.width_max = 70
 
 		#create the color bar display
-		self.colorbar_display = scene.ColorBarWidget(label="Gain [dB]", clim=(self.vmin, self.vmax), cmap="viridis", orientation="right", border_width=1)
-		self.colorbar_display.label.font_size = 10
-		self.colorbar_display.label.color = "white"
-
+		self.colorbar_display = scene.ColorBarWidget(label="Gain [dB]", clim=(self.vmin, self.vmax), cmap="viridis", orientation="right", border_width=1, label_color="white")
+		self.colorbar_display.label.font_size = 8
 		self.colorbar_display.ticks[0].font_size = 8
 		self.colorbar_display.ticks[1].font_size = 8
-		self.colorbar_display.ticks[0].color = "white"
-		self.colorbar_display.ticks[1].color = "white"
 		
 		grid.add_widget(self.speed_yaxis, row=1, col=0)
 		grid.add_widget(self.spec_yaxis, row=2, col=0)
 		grid.add_widget(self.spec_xaxis, row=3, col=1)
-		self.speed_view = grid.add_view(row=1, col=1, border_color='white')
-		self.spec_view = grid.add_view(row=2, col=1, border_color='white')
 		grid.add_widget(self.colorbar_display, row=2, col=2)
-		self.spec_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0, 10, 10), )
+		
+		self.speed_view = grid.add_view(row=1, col=1, border_color='white')
 		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, -0.1, 10, 0.2), )
-		
 		self.speed_view.height_min = 150
+		self.spec_view = grid.add_view(row=2, col=1, border_color='white')
+		self.spec_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0, 10, 10), )
+		#link them, but use custom logic to only link the x view
+		self.spec_view.camera.link(self.speed_view.camera)
 		
-		#TODO: make sure they are bound when started, not just after scrolling
 		self.speed_yaxis.link_view(self.speed_view)
 		self.spec_xaxis.link_view(self.spec_view)
 		self.spec_yaxis.link_view(self.spec_view)
-		#link them, but use custom logic to only link the x view
-		self.spec_view.camera.link(self.speed_view.camera)
 		
 		self.lines = []
 		self.regs = []
@@ -975,7 +958,7 @@ class Canvas(scene.SceneCanvas):
 		
 		self.master_speed = MasterSpeedLine(self)
 		self.master_reg_speed = MasterRegLine(self)
-		self.spectrum = Spectrum( self.spec_view)
+		self.spectrum = Spectrum(self.spec_view)
 		
 		self.freeze()
 		
@@ -983,12 +966,15 @@ class Canvas(scene.SceneCanvas):
 	def set_colormap(self, cmap):
 		self.spectrum.set_cmap(cmap)
 		self.colorbar_display.cmap = cmap
+		
+	#fast stuff that does not require rebuilding everything
+	def set_clims(self, vmin, vmax):
+		self.spectrum.set_clims(vmin, vmax)
+		self.colorbar_display.clim = (vmin, vmax)
 	
 	#called if either  the file or FFT settings have changed
-	def set_data_hard(self, filename, fft_size = 256, fft_overlap = 1):
+	def set_file_or_fft_settings(self, filename, fft_size = 256, fft_overlap = 1):
 		if filename:
-			
-			#if self.filename != filename:
 			soundob = sf.SoundFile(filename)
 				
 			#set this for the tracers etc.
@@ -1022,13 +1008,12 @@ class Canvas(scene.SceneCanvas):
 			if self.filename != filename:
 				print("file has changed!")
 				self.filename = filename
-				
 				#(re)set the spec_view
 				#only the camera dimension is mel'ed, as the image gets it from its transform
 				self.speed_view.camera.rect = (0, -0.1, self.num_ffts * self.hop / self.sr, 0.2)
 				self.spec_view.camera.rect = (0, 0, self.num_ffts * self.hop / self.sr, to_mel(self.sr//2))
 			self.spectrum.update_data(imdata, self.hop, self.sr)
-			self.spectrum.set_clims(self.vmin, self.vmax)
+			self.set_clims(self.vmin, self.vmax)
 			self.master_speed.update()
 			self.master_reg_speed.update()
 		
@@ -1038,24 +1023,19 @@ class Canvas(scene.SceneCanvas):
 		
 		#colorbar scroll
 		if self.click_on_widget(click, self.colorbar_display):
-			grid_space = self.colorbar_display._colorbar.transform.imap(click)
-			dim = self.colorbar_display.size
-			d = event.delta
-			self.vmin, self.vmax = self.colorbar_display.clim
-			
+			y_pos = self.colorbar_display._colorbar.transform.imap(click)[1]
+			d = int(event.delta[1])
 			#now split Y in three parts
-			a = dim[1]/3
-			b = a*2
-			if grid_space[1] < a:
-				self.vmax += d[1]
-			elif a < grid_space[1] < b:
-				self.vmin += d[1]
-				self.vmax -= d[1]
-			elif b < grid_space[1]:
-				self.vmin += d[1]
-
-			self.colorbar_display.clim = (int(self.vmin), int(self.vmax))
-			self.spectrum.set_clims(self.vmin, self.vmax)
+			lower = self.colorbar_display.size[1]/3
+			upper = lower*2
+			if y_pos < lower:
+				self.vmax += d
+			elif lower < y_pos < upper:
+				self.vmin += d
+				self.vmax -= d
+			elif upper < y_pos:
+				self.vmin += d
+			self.set_clims(self.vmin, self.vmax)
 				
 		#spec & speed X axis scroll
 		if self.click_on_widget(click, self.spec_xaxis):
@@ -1152,8 +1132,7 @@ class Canvas(scene.SceneCanvas):
 						trace.set_offset(a[1], b[1])
 				self.master_speed.update()
 				self.master_reg_speed.update()
-				
-				
+							
 	def get_closest_line(self, click):
 		if click is not None:
 			#first, check in speed view

@@ -32,9 +32,11 @@ float norm_luminance(vec2 pos) {
 simple_cmap = """
 vec4 simple_cmap(float x) {
 	return vec4(0, 0, x, 1);
-
 }
 """
+
+mel_transform = vispy_ext.MelTransform()
+
 class Spectrum():
 	"""
 	The visualization of the whole spectrogram.
@@ -70,7 +72,7 @@ class Spectrum():
 					self.pieces[-1].set_size((num_piece_ffts*hop/sr, height_Hz_corrected))
 
 					#add this piece's offset with STT
-					self.pieces[-1].transform = visuals.transforms.STTransform( translate=(x * hop / sr, to_mel(ystart_Hz))) * vispy_ext.MelTransform()
+					self.pieces[-1].transform = visuals.transforms.STTransform( translate=(x * hop / sr, to_mel(ystart_Hz))) * mel_transform
 		
 	def set_clims(self, vmin, vmax):
 		for image in self.pieces:
@@ -249,13 +251,18 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.scroll.setWidget(self.mygroupbox)
 		self.scroll.setWidgetResizable(True)
 		
+		self.inspector_l = QtWidgets.QLabel("\n        -.- Hz\n-:--:--:--- h:m:s:ms")
+		myFont2=QtGui.QFont("Monospace")
+		myFont2.setStyleHint(QtGui.QFont.TypeWriter)
+		self.inspector_l.setFont(myFont2)
+		
 		self.qgrid = QtWidgets.QGridLayout()
 		self.qgrid.setHorizontalSpacing(3)
 		self.qgrid.setVerticalSpacing(0)
 		
 		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c), (show_l, self.show_c), (cmap_l,self.cmap_c), \
 					(tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (self.autoalign_b, ), \
-					(resampling_l, ), (mode_l, self.mode_c), (sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,) ]
+					(resampling_l, ), (mode_l, self.mode_c), (sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,), (self.inspector_l,) ]
 		for i, line in enumerate(buttons):
 			for j, element in enumerate(line):
 				#we want to stretch that one
@@ -479,20 +486,19 @@ class MainWindow(QtWidgets.QMainWindow):
 		#viewMenu = mainMenu.addMenu('View')
 		#helpMenu = mainMenu.addMenu('Help')
 		
-		button_data = ( (fileMenu, "Open", "Open a new audio file and its traces", self.props.open_audio, "CTRL+O"), \
-						(fileMenu, "Save", "Save your traces so you can continue work later", self.props.save_traces, "CTRL+S"), \
-						(fileMenu, "Resample", "Apply the speed curve to the audio file", self.props.run_resample, "CTRL+R"), \
-						(fileMenu, "Exit", "Quit the app", self.close, ""), \
-						(editMenu, "Undo", "Not implemented!", self.props.restore_traces, "CTRL+Z"), \
-						# (editMenu, "Redo", "Not implemented!", self.props.foo, "CTRL+Y"), \
-						(editMenu, "Select All", "Select all traces and regressions", self.props.select_all, "CTRL+A"), \
-						(editMenu, "Invert Selection", "Select those that were not selected, and vice versa", self.props.invert_selection, "CTRL+I"), \
-						(editMenu, "Delete Selected", "Delete the selected traces and regressions", self.props.delete_traces, "DEL"), \
+		button_data = ( (fileMenu, "Open", self.props.open_audio, "CTRL+O"), \
+						(fileMenu, "Save", self.props.save_traces, "CTRL+S"), \
+						(fileMenu, "Resample", self.props.run_resample, "CTRL+R"), \
+						(fileMenu, "Exit", self.close, ""), \
+						(editMenu, "Undo", self.props.restore_traces, "CTRL+Z"), \
+						# (editMenu, "Redo", self.props.foo, "CTRL+Y"), \
+						(editMenu, "Select All", self.props.select_all, "CTRL+A"), \
+						(editMenu, "Invert Selection", self.props.invert_selection, "CTRL+I"), \
+						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
 						)
 		
-		for submenu, name, tooltip, func, shortcut in button_data:
+		for submenu, name, func, shortcut in button_data:
 			button = QtWidgets.QAction(name, self)
-			button.setStatusTip(tooltip)
 			button.triggered.connect(func)
 			if shortcut: button.setShortcut(shortcut)
 			submenu.addAction(button)
@@ -772,8 +778,6 @@ class RegLine:
 		"""Adjust this regressions's phase offset according to the UI input."""
 		if self.selected: self.offset = v
 		
-	
-
 class TraceLine:
 	"""Stores and visualizes a trace fragment, including its speed offset."""
 	def __init__(self, vispy_canvas, times, freqs, offset=None):
@@ -823,7 +827,7 @@ class TraceLine:
 		#create the spectral visualization
 		self.line_spec = scene.Line(pos=data, color=(1, 1, 1, 1), method='gl')
 		#the data is in Hz, so to visualize correctly, it has to be mel'ed
-		self.line_spec.transform =	vispy_ext.MelTransform()
+		self.line_spec.transform = mel_transform
 		
 		#create the speed curve visualization
 		self.speed_data = np.ones((len(times), 2), dtype=np.float32)
@@ -889,7 +893,6 @@ class TraceLine:
 		#note: this has to search the list
 		self.vispy_canvas.lines.remove(self)
 
-	
 class Canvas(scene.SceneCanvas):
 	"""This class wraps the vispy canvas and controls all the visualization, as well as the interaction with it."""
 
@@ -932,11 +935,11 @@ class Canvas(scene.SceneCanvas):
 		self.spec_xaxis.height_max = 55
 
 		top_padding = grid.add_widget(row=0)
-		top_padding.height_max = 20
+		top_padding.height_max = 10
 		
 		right_padding = grid.add_widget(row=1, col=2, row_span=1)
 		right_padding.width_max = 70
-
+		
 		#create the color bar display
 		self.colorbar_display = scene.ColorBarWidget(label="Gain [dB]", clim=(self.vmin, self.vmax), cmap="viridis", orientation="right", border_width=1, label_color="white")
 		self.colorbar_display.label.font_size = 8
@@ -946,7 +949,7 @@ class Canvas(scene.SceneCanvas):
 		grid.add_widget(self.speed_yaxis, row=1, col=0)
 		grid.add_widget(self.spec_yaxis, row=2, col=0)
 		grid.add_widget(self.spec_xaxis, row=3, col=1)
-		grid.add_widget(self.colorbar_display, row=2, col=2)
+		colorbar_column = grid.add_widget(self.colorbar_display, row=2, col=2)
 		
 		self.speed_view = grid.add_view(row=1, col=1, border_color='white')
 		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, -0.1, 10, 0.2), )
@@ -1090,6 +1093,18 @@ class Canvas(scene.SceneCanvas):
 					closest_line.select_handle()
 					event.handled = True
 	
+	def on_mouse_move(self, event):
+		#update the inspector label
+		click = self.click_spec_conversion(event.pos)
+		self.props.inspector_l.setText("\n        -.- Hz\n-:--:--:--- h:m:s:ms")
+		if click is not None:
+			t, f = click[0:2]
+			if t >= 0 and  self.sr/2 > f >= 0:
+				m, s = divmod(t, 60)
+				s, ms = divmod(s*1000, 1000)
+				h, m = divmod(m, 60)
+				self.props.inspector_l.setText("\n    % 7.1f Hz\n%d:%02d:%02d:%03d h:m:s:ms" % (f, h, m, s, ms))
+			
 	def on_mouse_release(self, event):
 		#coords of the click on the vispy canvas
 		click = event.pos
@@ -1191,7 +1206,7 @@ class Canvas(scene.SceneCanvas):
 			if self.spectrum:
 				#in fact the simple Y mel transform would be enough in any case
 				#but this would also support other transforms
-				return self.spectrum.pieces[0].transform.imap(scene_space)
+				return mel_transform.imap(scene_space)
 		
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':

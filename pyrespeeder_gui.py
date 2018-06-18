@@ -62,11 +62,15 @@ class Spectrum():
 					#do the dB conversion here because the tracers don't like it
 					self.pieces.append(SpectrumPiece(20 * np.log10(imdata_piece), parent=self.parent.scene))
 					
-					#the y size is wrong when there is more than one Y piece
-					self.pieces[-1].set_size((num_piece_ffts*hop/sr, int(num_piece_bins/num_bins*sr/2)))
+					#to get correct heights for subsequent pieces, the start y has to be added in mel space
+					height_Hz_in = int(num_piece_bins/num_bins*sr/2)
+					ystart_Hz = (y/num_bins*sr/2)
+					height_Hz_corrected = to_Hz(to_mel(height_Hz_in + ystart_Hz) - to_mel(ystart_Hz))
+					
+					self.pieces[-1].set_size((num_piece_ffts*hop/sr, height_Hz_corrected))
 
-					#add this piece's offset with STT - this is good
-					self.pieces[-1].transform = visuals.transforms.STTransform( translate=(x * hop / sr, to_mel(y/num_bins*sr/2))) * vispy_ext.MelTransform()
+					#add this piece's offset with STT
+					self.pieces[-1].transform = visuals.transforms.STTransform( translate=(x * hop / sr, to_mel(ystart_Hz))) * vispy_ext.MelTransform()
 		
 	def set_clims(self, vmin, vmax):
 		for image in self.pieces:
@@ -129,6 +133,10 @@ def to_mel(val):
 	### just to set the image size correctly	
 	return np.log(val / 700 + 1) * 1127
 
+def to_Hz(val):
+	### just to set the image size correctly	
+	return (np.exp(val / 1127) - 1) * 700
+	
 class ResamplingThread(QtCore.QThread):
 	notifyProgress = QtCore.pyqtSignal(int)
 	def run(self):
@@ -158,7 +166,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		fft_l = QtWidgets.QLabel("FFT Size")
 		self.fft_c = QtWidgets.QComboBox(self)
-		self.fft_c.addItems(("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768"))#, "65536"))
+		self.fft_c.addItems(("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768", "65536"))
 		self.fft_c.setToolTip("This determines the frequency resolution.")
 		self.fft_c.currentIndexChanged.connect(self.update_param_hard)
 		self.fft_c.setCurrentIndex(5)

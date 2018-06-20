@@ -168,7 +168,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		fft_l = QtWidgets.QLabel("FFT Size")
 		self.fft_c = QtWidgets.QComboBox(self)
-		self.fft_c.addItems(("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768", "65536"))
+		self.fft_c.addItems(("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768", "65536", "131072"))
 		self.fft_c.setToolTip("This determines the frequency resolution.")
 		self.fft_c.currentIndexChanged.connect(self.update_param_hard)
 		self.fft_c.setCurrentIndex(5)
@@ -580,13 +580,6 @@ class MasterSpeedLine:
 		lin_scale = np.power(2, out[:,1])
 		out[:,1] = lin_scale
 		return out
-
-def pairwise(iterable):
-	it = iter(iterable)
-	a = next(it, None)
-	for b in it:
-		yield (a, b)
-		a = b
 
 class MasterRegLine:
 	"""Stores and displays the average, ie. master speed curve."""

@@ -320,16 +320,6 @@ class ObjectWidget(QtWidgets.QWidget):
 					channel.deleteLater()
 				self.channel_checkboxes = []
 				
-				#read any saved traces or regressions
-				data = resampling.read_trace(self.filename)
-				for offset, times, freqs in data:
-					TraceLine(self.parent.canvas, times, freqs, offset=offset)
-				self.parent.canvas.master_speed.update()
-				data = resampling.read_regs(self.filename)
-				for t0, t1, amplitude, omega, phase, offset in data:
-					RegLine(self.parent.canvas, t0, t1, amplitude, omega, phase, offset)
-				self.parent.canvas.master_reg_speed.update()
-				
 				#fill the channel UI
 				channel_names = ("Front Left", "Front Right", "Center", "LFE", "Back Left", "Back Right")
 				num_channels = soundob.channels
@@ -347,6 +337,16 @@ class ObjectWidget(QtWidgets.QWidget):
 				#finally - proceed with spectrum stuff elsewhere
 				self.parent.setWindowTitle('pyrespeeder '+os.path.basename(self.filename))
 				self.file_or_fft_settings_changed.emit()
+				
+				#read any saved traces or regressions
+				data = resampling.read_trace(self.filename)
+				for offset, times, freqs in data:
+					TraceLine(self.parent.canvas, times, freqs, offset=offset)
+				self.parent.canvas.master_speed.update()
+				data = resampling.read_regs(self.filename)
+				for t0, t1, amplitude, omega, phase, offset in data:
+					RegLine(self.parent.canvas, t0, t1, amplitude, omega, phase, offset)
+				self.parent.canvas.master_reg_speed.update()
 				
 	def save_traces(self):
 		#get the data from the traces and save it
@@ -503,8 +503,6 @@ class MainWindow(QtWidgets.QMainWindow):
 			if shortcut: button.setShortcut(shortcut)
 			submenu.addAction(button)
 		
-		
-
 	def update_settings_hard(self):
 		self.canvas.set_file_or_fft_settings(self.props.filename,
 								 fft_size = int(self.props.fft_c.currentText()),
@@ -583,6 +581,13 @@ class MasterSpeedLine:
 		out[:,1] = lin_scale
 		return out
 
+def pairwise(iterable):
+	it = iter(iterable)
+	a = next(it, None)
+	for b in it:
+		yield (a, b)
+		a = b
+
 class MasterRegLine:
 	"""Stores and displays the average, ie. master speed curve."""
 	def __init__(self, vispy_canvas):
@@ -603,53 +608,36 @@ class MasterRegLine:
 			#https://stackoverflow.com/questions/11199509/sine-wave-that-slowly-ramps-up-frequency-from-f1-to-f2-for-a-given-time
 			#https://stackoverflow.com/questions/19771328/sine-wave-that-exponentialy-changes-between-frequencies-f1-and-f2-at-given-time
 			
-			num = self.vispy_canvas.num_ffts
 			#get the times at which the average should be sampled
+			num = self.vispy_canvas.num_ffts
 			times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
 			
-			#sample all regressions
-			reg_data = []
-			offsets_sampled = 0
-			#amplitudes_sampled = 0
-			for reg in self.vispy_canvas.regs:
-				reg_data.append((reg.t_center, reg.amplitude, reg.omega, reg.phase % (2*np.pi), reg.offset))
-				#amplitudes_sampled+=reg.amplitude
-			#amplitudes_sampled/=len(self.vispy_canvas.regs)
-			#interp needs x keys to be sorted
-			reg_data.sort(key=lambda tup: tup[0])
+			#sort the regressions by their time
+			self.vispy_canvas.regs.sort(key=lambda tup: tup.t_center)
 			
-			#create lists
-			phi_centers = []
+			pi2 = 2*np.pi
 			t_centers = []
 			amp_centers = []
-			
-			t_center, amplitude, omega, phase, offset = reg_data[0]
-			phi_centers.append(omega * times[0] + phase + offset*np.pi*2)
-			t_centers.append(times[0])
-			amp_centers.append(amplitude)
-			
-			for t_center, amplitude, omega, phase, offset in reg_data:
-				phi_centers.append(omega * t_center + phase + offset*np.pi*2)
-				t_centers.append(t_center)
-				amp_centers.append(amplitude)
-				
-			#do the last one
-			t_center, amplitude, omega, phase, offset = reg_data[-1]
-			phi_centers.append(omega * times[-1] + phase + offset*np.pi*2)
-			t_centers.append(times[-1])
-			amp_centers.append(amplitude)
-			
-			
-			#phi = omegas_sampled * times + phases_sampled
-			phi = np.interp(times, t_centers, phi_centers)
+			phi_centers =[]
+			for i, reg in enumerate(self.vispy_canvas.regs):
+				if i == 0:
+					phi_centers.append(reg.omega * times[0] + reg.phase % pi2 + reg.offset*pi2)
+					t_centers.append(times[0])
+					amp_centers.append(reg.amplitude)
+				phi_centers.append(reg.omega * reg.t_center + reg.phase % pi2 + reg.offset*pi2)
+				t_centers.append(reg.t_center)
+				amp_centers.append(reg.amplitude)
+				if i == len(self.vispy_canvas.regs)-1:
+					phi_centers.append(reg.omega * times[-1] + reg.phase % pi2 + reg.offset*pi2)
+					t_centers.append(times[-1])
+					amp_centers.append(reg.amplitude)
+			sine_curve = np.sin( np.interp(times, t_centers, phi_centers))
 			amplitudes_sampled = np.interp(times, t_centers, amp_centers)
 			
-			#create the speed curve visualization
+			#create the speed curve visualization, boost it a bit to distinguish from the raw curves
 			self.data = np.zeros((len(times), 2), dtype=np.float32)
 			self.data[:, 0] = times
-			#boost it a bit
-			self.data[:, 1] = 1.5 * amplitudes_sampled * np.sin(phi) + offsets_sampled
-			
+			self.data[:, 1] = 1.5  * amplitudes_sampled *  sine_curve
 		else:
 			self.data = np.zeros((2, 2), dtype=np.float32)
 			self.data[:, 0] = (0, 999)

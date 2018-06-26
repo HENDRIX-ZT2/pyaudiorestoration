@@ -3,6 +3,10 @@ import fourier
 import scipy.interpolate
 import scipy.optimize
 	
+def nan_helper(y):
+	# https://stackoverflow.com/questions/6518811/interpolate-nan-values-in-a-numpy-array
+	return np.isnan(y), lambda z: z.nonzero()[0]
+	
 #https://github.com/librosa/librosa/blob/86275a8949fb4aef3fb16aa88b0e24862c24998f/librosa/core/pitch.py#L165
 #librosa piptrack
 
@@ -456,6 +460,8 @@ def trace_peak(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, 
 			NU = NU_o
 			window = np.ones(NU_o-NL_o)
 			log_prediction = 0
+	nans, x = nan_helper(freqs)
+	freqs[nans]= np.interp(x(nans), x(~nans), freqs[~nans])
 	return times, freqs#, dbs
 	
 def trace_correlation(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None):

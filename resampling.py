@@ -21,14 +21,15 @@ def write_trace(filename, data):
 	"""
 	
 	#write the data to the speed file
-	print("Writing trace data")
-	speedfilename = filename.rsplit('.', 1)[0]+".speed"
-	outstr = ""
-	for offset, times, frequencies in data:
-		outstr+= "? "+str(offset)+"\n"+"\n".join([str(t)+" "+str(f) for t, f in zip(times, frequencies)])+"\n"
-	text_file = open(speedfilename, "w")
-	text_file.write(outstr)
-	text_file.close()
+	if data:
+		print("Saved",len(data),"traces")
+		speedfilename = filename.rsplit('.', 1)[0]+".speed"
+		outstr = ""
+		for offset, times, frequencies in data:
+			outstr+= "? "+str(offset)+"\n"+"\n".join([str(t)+" "+str(f) for t, f in zip(times, frequencies)])+"\n"
+		text_file = open(speedfilename, "w")
+		text_file.write(outstr)
+		text_file.close()
 
 def read_trace(filename):
 	"""
@@ -64,12 +65,13 @@ def write_regs(filename, data):
 	"""
 	
 	#write the data to the speed file
-	print("Writing regression data")
-	speedfilename = filename.rsplit('.', 1)[0]+".sin"
-	outstr = "\n".join([" ".join([str(v) for v in values]) for values in data])
-	text_file = open(speedfilename, "w")
-	text_file.write(outstr)
-	text_file.close()
+	if data:
+		print("Writing",len(data),"regressions")
+		speedfilename = filename.rsplit('.', 1)[0]+".sin"
+		outstr = "\n".join([" ".join([str(v) for v in values]) for values in data])
+		text_file = open(speedfilename, "w")
+		text_file.write(outstr)
+		text_file.close()
 	
 def read_regs(filename):
 	"""

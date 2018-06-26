@@ -35,7 +35,6 @@ vec4 simple_cmap(float x) {
 }
 """
 
-mel_transform = vispy_ext.MelTransform()
 
 class Spectrum():
 	"""
@@ -45,6 +44,7 @@ class Spectrum():
 		self.pieces = []
 		self.parent = parent
 		self.MAX_TEXTURE_SIZE = gloo.gl.glGetParameter(gloo.gl.GL_MAX_TEXTURE_SIZE)
+		self.mel_transform = vispy_ext.MelTransform()
 	
 	def update_data(self, imdata, hop, sr):
 		num_bins, num_ffts = imdata.shape
@@ -72,7 +72,7 @@ class Spectrum():
 					self.pieces[-1].set_size((num_piece_ffts*hop/sr, height_Hz_corrected))
 
 					#add this piece's offset with STT
-					self.pieces[-1].transform = visuals.transforms.STTransform( translate=(x * hop / sr, to_mel(ystart_Hz))) * mel_transform
+					self.pieces[-1].transform = visuals.transforms.STTransform( translate=(x * hop / sr, to_mel(ystart_Hz))) * self.mel_transform
 		
 	def set_clims(self, vmin, vmax):
 		for image in self.pieces:
@@ -222,12 +222,14 @@ class ObjectWidget(QtWidgets.QWidget):
 		mode_l = QtWidgets.QLabel("Mode")
 		self.mode_c = QtWidgets.QComboBox(self)
 		self.mode_c.addItems(("Linear", "Sinc"))
-		sinc_quality_l = QtWidgets.QLabel("Sinc Quality")
+		self.mode_c.currentIndexChanged.connect(self.toggle_resampling_quality)
+		self.sinc_quality_l = QtWidgets.QLabel("Quality")
 		self.sinc_quality_s = QtWidgets.QSpinBox()
 		self.sinc_quality_s.setRange(1, 100)
 		self.sinc_quality_s.setSingleStep(1)
 		self.sinc_quality_s.setValue(50)
 		self.sinc_quality_s.setToolTip("Number of input samples that contribute to each output sample.\nMore samples = more quality, but slower. Only for sinc mode.")
+		self.toggle_resampling_quality()
 		
 		self.progressBar = QtWidgets.QProgressBar(self)
 		self.progressBar.setRange(0,100)
@@ -262,7 +264,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c), (show_l, self.show_c), (cmap_l,self.cmap_c), \
 					(tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (self.autoalign_b, ), \
-					(resampling_l, ), (mode_l, self.mode_c), (sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,), (self.inspector_l,) ]
+					(resampling_l, ), (mode_l, self.mode_c), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,), (self.inspector_l,) ]
 		for i, line in enumerate(buttons):
 			for j, element in enumerate(line):
 				#we want to stretch that one
@@ -349,16 +351,9 @@ class ObjectWidget(QtWidgets.QWidget):
 				self.parent.canvas.master_reg_speed.update()
 				
 	def save_traces(self):
-		#get the data from the traces and save it
-		data = [ (line.offset, line.times, line.freqs) for line in self.parent.canvas.lines ]
-		if data:
-			print("Saved",len(data),"traces")
-			resampling.write_trace(self.filename, data)
-		#get the data from the regressions and save it
-		data = [ (reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.parent.canvas.regs ]
-		if data:
-			print("Saved",len(data),"regressions")
-			resampling.write_regs(self.filename, data)
+		#get the data from the traces and regressions and save it
+		resampling.write_trace(self.filename, [ (line.offset, line.times, line.freqs) for line in self.parent.canvas.lines ] )
+		resampling.write_regs(self.filename, [ (reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.parent.canvas.regs ] )
 			
 	def delete_traces(self, not_only_selected=False):
 		self.deltraces= []
@@ -386,6 +381,11 @@ class ObjectWidget(QtWidgets.QWidget):
 			reg.update_phase(v)
 		self.parent.canvas.master_reg_speed.update()
 	
+	def toggle_resampling_quality(self):
+		b = (self.mode_c.currentText() == "Sinc")
+		self.sinc_quality_l.setVisible(b)
+		self.sinc_quality_s.setVisible(b)
+		
 	def update_other_settings(self):
 		self.parent.canvas.trace_mode = self.trace_c.currentText()
 		self.parent.canvas.adapt_mode = self.adapt_c.currentText()
@@ -808,7 +808,7 @@ class TraceLine:
 		#create the spectral visualization
 		self.line_spec = scene.Line(pos=data, color=(1, 1, 1, 1), method='gl')
 		#the data is in Hz, so to visualize correctly, it has to be mel'ed
-		self.line_spec.transform = mel_transform
+		self.line_spec.transform = vispy_canvas.spectrum.mel_transform
 		
 		#create the speed curve visualization
 		self.speed_data = np.ones((len(times), 2), dtype=np.float32)
@@ -1183,11 +1183,7 @@ class Canvas(scene.SceneCanvas):
 		#is the mouse over the spectrum spec_view area?
 		if self.click_on_widget(click, self.spec_view):
 			scene_space = self.spec_view.scene.transform.imap(grid_space)
-			#careful, we need a spectrum already
-			if self.spectrum:
-				#in fact the simple Y mel transform would be enough in any case
-				#but this would also support other transforms
-				return mel_transform.imap(scene_space)
+			return self.spectrum.mel_transform.imap(scene_space)
 		
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':

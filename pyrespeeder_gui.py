@@ -193,6 +193,14 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.trace_c.addItems(("Center of Gravity","Peak","Correlation","Freehand Draw", "Sine Regression"))
 		self.trace_c.currentIndexChanged.connect(self.update_other_settings)
 		
+		tolerance_l = QtWidgets.QLabel("Tolerance")
+		self.tolerance_s = QtWidgets.QDoubleSpinBox()
+		self.tolerance_s.setRange(.01, 5)
+		self.tolerance_s.setSingleStep(.05)
+		self.tolerance_s.setValue(.1)
+		self.tolerance_s.setToolTip("Intervall to consider in the trace, in semitones.")
+		self.tolerance_s.valueChanged.connect(self.update_other_settings)
+		
 		adapt_l = QtWidgets.QLabel("Adaptation")
 		self.adapt_c = QtWidgets.QComboBox(self)
 		self.adapt_c.addItems(("Average", "Linear", "Constant", "None"))
@@ -262,9 +270,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.qgrid.setHorizontalSpacing(3)
 		self.qgrid.setVerticalSpacing(0)
 		
-		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c), (show_l, self.show_c), (cmap_l,self.cmap_c), \
-					(tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (self.autoalign_b, ), \
-					(resampling_l, ), (mode_l, self.mode_c), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,), (self.inspector_l,) ]
+		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c), (show_l, self.show_c), (cmap_l,self.cmap_c), (tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (self.autoalign_b, ), (resampling_l, ), (mode_l, self.mode_c), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,), (self.inspector_l,) ]
 		for i, line in enumerate(buttons):
 			for j, element in enumerate(line):
 				#we want to stretch that one
@@ -368,6 +374,37 @@ class ObjectWidget(QtWidgets.QWidget):
 		if not_only_selected:
 			self.deltraces= []
 	
+	def merge_traces(self):
+		#TODO: the offset handling is hacky here
+		#it should be possible without the extra correction step in the end
+	
+		self.deltraces= []
+		t0 = 999999
+		t1 = 0
+		offset = 0
+		for trace in reversed(self.parent.canvas.lines):
+			if trace.selected:
+				self.deltraces.append(trace)
+				t0 = min(t0, trace.speed_data[0, 0])
+				t1 = max(t1, trace.speed_data[-1, 0])
+				offset += trace.offset
+		if self.deltraces:
+			for trace in self.deltraces:
+				trace.remove()
+			offset /= len(self.deltraces)
+			sr = self.parent.canvas.sr
+			hop = self.parent.canvas.hop
+			i0 = int(t0*sr/hop)
+			i1 = int(t1*sr/hop)
+			data = self.parent.canvas.master_speed.data[i0:i1]
+			freqs = np.power(2, data[:,1]+10)
+			y0 = self.parent.canvas.master_speed.data[i0,1]
+			line = TraceLine(self.parent.canvas, data[:,0], freqs, offset)
+			y1 = line.speed_data[0,1]
+			d = y0-y1
+			line.set_offset(0, d)
+			self.parent.canvas.master_speed.update()
+			
 	def restore_traces(self):
 		for trace in self.deltraces:
 			trace.initialize()
@@ -388,6 +425,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 	def update_other_settings(self):
 		self.parent.canvas.trace_mode = self.trace_c.currentText()
+		self.parent.canvas.tolerance = self.tolerance_s.value()
 		self.parent.canvas.adapt_mode = self.adapt_c.currentText()
 		self.parent.canvas.auto_align = self.autoalign_b.isChecked()
 		self.parent.canvas.rpm = self.rpm_c.currentText()
@@ -494,6 +532,7 @@ class MainWindow(QtWidgets.QMainWindow):
 						# (editMenu, "Redo", self.props.foo, "CTRL+Y"), \
 						(editMenu, "Select All", self.props.select_all, "CTRL+A"), \
 						(editMenu, "Invert Selection", self.props.invert_selection, "CTRL+I"), \
+						(editMenu, "Merge Selected", self.props.merge_traces, "CTRL+M"), \
 						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
 						)
 		
@@ -556,29 +595,31 @@ class MasterSpeedLine:
 		self.line_speed.parent = None
 		
 	def update(self):
+		#set the output data
 		num = self.vispy_canvas.num_ffts
 		#get the times at which the average should be sampled
 		times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
-		#create the array for sampling
-		out = np.zeros((len(times), len(self.vispy_canvas.lines)), dtype=np.float32)
-		#lerp and sample all lines, use NAN for missing parts
-		for i, line in enumerate(self.vispy_canvas.lines):
-			line_sampled = np.interp(times, line.times, line.speed, left = np.nan, right = np.nan)
-			out[:, i] = line_sampled
-		#take the mean and ignore nans
-		mean_with_nans = np.nanmean(out, axis=1)
-		mean_with_nans[np.isnan(mean_with_nans)]=0
-		#set the output data
 		self.data = np.zeros((len(times), 2), dtype=np.float32)
 		self.data[:, 0] = times
-		self.data[:, 1] = mean_with_nans
+		if self.vispy_canvas.lines:
+			#create the array for sampling
+			out = np.zeros((len(times), len(self.vispy_canvas.lines)), dtype=np.float32)
+			#lerp and sample all lines, use NAN for missing parts
+			for i, line in enumerate(self.vispy_canvas.lines):
+				line_sampled = np.interp(times, line.times, line.speed, left = np.nan, right = np.nan)
+				out[:, i] = line_sampled
+			#take the mean and ignore nans
+			mean_with_nans = np.nanmean(out, axis=1)
+			#lerp over nan areas
+			nans, x = wow_detection.nan_helper(mean_with_nans)
+			mean_with_nans[nans]= np.interp(x(nans), x(~nans), mean_with_nans[~nans])
+			self.data[:, 1] = mean_with_nans
 		self.line_speed.set_data(pos=self.data)
-		
+
 	def get_linspace(self):
 		"""Convert the log2 spaced speed curve back into linspace for direct use in resampling"""
 		out = np.array(self.data)
-		lin_scale = np.power(2, out[:,1])
-		out[:,1] = lin_scale
+		np.power(2, out[:,1], out[:,1])
 		return out
 
 class MasterRegLine:
@@ -646,8 +687,7 @@ class MasterRegLine:
 	def get_linspace(self):
 		"""Convert the log2 spaced speed curve back into linspace for further processing"""
 		out = np.array(self.data)
-		lin_scale = np.power(2, out[:,1])
-		out[:,1] = lin_scale
+		np.power(2, out[:,1], out[:,1])
 		return out
 		
 class RegLine:
@@ -891,7 +931,7 @@ class Canvas(scene.SceneCanvas):
 		self.show_regs = True
 		self.show_lines = True
 		
-		self.last_click = None
+		self.tolerance = 5
 		self.fft_size = 1024
 		self.hop = 256
 		self.sr = 44100
@@ -1054,18 +1094,9 @@ class Canvas(scene.SceneCanvas):
 			self.speed_view.camera.zoom((1, (1 + self.speed_view.camera.zoom_factor) ** (-event.delta[1] * 30)), c)
 
 	def on_mouse_press(self, event):
-		#coords of the click on the vispy canvas
-		self.last_click = None
-		click = np.array([event.pos[0],event.pos[1],0,1])
-		#ok, so left matches up with the axis! this means we need to transform mel's imap function
-		#print((np.exp(self.spec_view.scene.transform.imap(self.spec_view.transform.imap(click)) / 1127) - 1) * 700, self.spec_view.scene.transform.imap(self.spec_view.transform.imap(click)), self.click_spec_conversion(click))
-		if event.button == 1:
-			if "Control" in event.modifiers:
-				self.last_click = click
-					
 		#selection, single or multi
 		if event.button == 2:
-			closest_line = self.get_closest_line( click )
+			closest_line = self.get_closest_line( event.pos )
 			if closest_line:
 				if "Shift" in event.modifiers:
 					closest_line.select_handle(multi=True)
@@ -1088,54 +1119,43 @@ class Canvas(scene.SceneCanvas):
 			
 	def on_mouse_release(self, event):
 		#coords of the click on the vispy canvas
-		click = event.pos
-		if self.last_click is not None:
-			a = self.click_spec_conversion(self.last_click)
-			b = self.click_spec_conversion(click)
-			#are they in spec_view?
-			if a is not None and b is not None:
-				t0, t1 = sorted((a[0], b[0]))
-				f0, f1 = sorted((a[1], b[1]))
-				t0 = max(0, t0)
-				fft_key = (self.fft_size, self.hop)
-				#maybe query it here from the button instead of the other way
-				if self.trace_mode == "Sine Regression":
-					amplitude, omega, phase, offset = wow_detection.trace_sine_reg(self.master_speed.get_linspace(), t0, t1, self.rpm)
-					if amplitude == 0:
-						print("fallback")
-						amplitude, omega, phase, offset = wow_detection.trace_sine_reg(self.master_reg_speed.get_linspace(), t0, t1, self.rpm)
-					RegLine(self, t0, t1, amplitude, omega, phase, offset)
+		if self.filename and len(event.trail()) and event.button == 1 and "Control" in event.modifiers:
+			last_click = event.trail()[0]
+			click = event.pos
+			if last_click is not None:
+				a = self.click_spec_conversion(last_click)
+				b = self.click_spec_conversion(click)
+				#are they in spec_view?
+				if a is not None and b is not None:
+					t0, t1 = sorted((a[0], b[0]))
+					f0, f1 = sorted((a[1], b[1]))
+					t0 = max(0, t0)
+					#maybe query it here from the button instead of the other way
+					if self.trace_mode == "Sine Regression":
+						amplitude, omega, phase, offset = wow_detection.trace_sine_reg(self.master_speed.get_linspace(), t0, t1, self.rpm)
+						if amplitude == 0:
+							print("fallback")
+							amplitude, omega, phase, offset = wow_detection.trace_sine_reg(self.master_reg_speed.get_linspace(), t0, t1, self.rpm)
+						RegLine(self, t0, t1, amplitude, omega, phase, offset)
+						self.master_reg_speed.update()
+					else:
+						if self.trace_mode in ("Center of Gravity", "Peak", "Correlation", "Freehand Draw"):
+							times, freqs = wow_detection.trace_handle(self.trace_mode, self.fft_storage[(self.fft_size, self.hop)], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1, adaptation_mode = self.adapt_mode, tolerance = self.tolerance, trail = [self.click_spec_conversion(click) for click in event.trail()])
+						if len(freqs) and np.nan not in freqs:
+							TraceLine(self, times, freqs)
+							self.master_speed.update()
+					return
+				
+				#or in speed view?
+				#then we are only interested in the Y difference, so we can move the selected speed trace up or down
+				a = self.click_speed_conversion(last_click)
+				b = self.click_speed_conversion(click)
+				if a is not None and b is not None:
+					for trace in self.lines+self.regs:
+						if trace.selected:
+							trace.set_offset(a[1], b[1])
+					self.master_speed.update()
 					self.master_reg_speed.update()
-				else:
-					if self.trace_mode == "Center of Gravity":
-						times, freqs = wow_detection.trace_cog(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
-					elif self.trace_mode == "Peak":
-						times, freqs = wow_detection.trace_peak(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1, adaptation_mode = self.adapt_mode)
-					elif self.trace_mode == "Correlation":
-						times, freqs = wow_detection.trace_correlation(self.fft_storage[fft_key], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1)
-					elif self.trace_mode == "Freehand Draw":
-						#TODO: vectorize this: a[a[:,0].argsort()]
-						#TODO: reduce resolution with np.interp at speed curve sample rate
-						data = [self.click_spec_conversion(click) for click in event.trail()]
-						data.sort(key=lambda tup: tup[0])
-						times = [d[0] for d in data]
-						freqs = [d[1] for d in data]
-					if len(freqs) and np.nan not in freqs:
-						TraceLine(self, times, freqs)
-						self.master_speed.update()
-				return
-			
-			#or in speed view?
-			#then we are only interested in the Y difference, so we can move the selected speed trace up or down
-			a = self.click_speed_conversion(self.last_click)
-			b = self.click_speed_conversion(click)
-			if a is not None and b is not None:
-				#diff = b[1]-a[1]
-				for trace in self.lines+self.regs:
-					if trace.selected:
-						trace.set_offset(a[1], b[1])
-				self.master_speed.update()
-				self.master_reg_speed.update()
 							
 	def get_closest_line(self, click):
 		if click is not None:

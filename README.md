@@ -7,7 +7,7 @@ Remove tape wow and flutter from audio recordings via their spectra. A simple so
 You need to have installed:
 - python 3.6
 - numpy
-- [resampy](http://resampy.readthedocs.io/en/latest/)
+- numba
 - [pysoundfile](https://pysoundfile.readthedocs.io/)
 - scipy
 - pyQt5
@@ -64,7 +64,7 @@ Example of cyclic wow removal:
 
 ### Resampling Modes
 - Linear: Fast, but causes some overtone artifacts. Use during speed curve development and for quick tests.
-- Sinc: Slow, but accurate. No clicks or overtones. About 30x slower than Linear, but worth it - use this mode in the end after you have perfected the speed curve. Accurate because of digital sampling theory. [based on endolith (2011) and Hope (2015)]
+- Sinc: Slow, but accurate. No clicks or overtones. About 3-4x slower than Linear, but worth it - use this mode in the end after you have perfected the speed curve. Accurate because of digital sampling theory. [based on endolith (2011) and Hope (2015)]
 
 ### References
 - Czyzewski et al. (2007). DSP Techniques for Determining "Wow" Distortion. Journal of the Audio Engineering Society. 55.

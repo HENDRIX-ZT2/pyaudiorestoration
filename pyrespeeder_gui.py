@@ -1021,7 +1021,7 @@ class Canvas(scene.SceneCanvas):
 			k = (self.fft_size, self.hop)
 			if k not in self.fft_storage:
 				print("storing new fft",self.fft_size)
-				signal = soundob.read(always_2d=True)[:,0]
+				signal = soundob.read(always_2d=True, dtype='float32')[:,0]
 				#this will automatically zero-pad the last fft
 				#get the magnitude spectrum
 				#avoid divide by 0 error in log10

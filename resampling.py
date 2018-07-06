@@ -98,7 +98,8 @@ def read_regs(filename):
 # lazy optimization is recommended
 # @jit(float32[:](float32[:], int64, int64, float64[:], float64[:], int64, int64, float32[:], int32[:]), nopython=True, cache=True, parallel=True)
 @jit(nopython=True, nogil=True, cache=True)
-def sinc_core(block, block_len, offset, positions, win_func, NT, in_len, signal, samples_in2):
+def sinc_core(block, offset, positions, win_func, NT, in_len, signal, samples_in2):
+	block_len = len(positions)
 	#this is probably not required!
 	offset = int(offset)
 	for i in range( block_len):
@@ -146,11 +147,8 @@ def sinc_kernel(outfile, offsets_speeds, signal, samples_in2, NT = 50):
 	in_len = len(samples_in2)
 	win_func = np.hanning(2*NT)
 	for offset, positions in offsets_speeds:
-		#can this be made to use a fixed len and/ or always dump into the same array?
-		block_len = int(len(positions))
-		block = np.zeros( block_len, dtype="float32")
-		#block is returned so it can easily be cut if required
-		block = sinc_core(block, block_len, offset, positions, win_func, NT, in_len, signal, samples_in2)
+		#note that currently, numba does not allow np array creation in nopython mode, so we have to pass the empty output array...
+		block = sinc_core(np.empty(len(positions), "float32"), offset, positions, win_func, NT, in_len, signal, samples_in2)
 		outfile.write( block )
 		yield 1
 					

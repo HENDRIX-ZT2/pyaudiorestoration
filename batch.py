@@ -6,6 +6,12 @@ import fourier
 import wow_detection
 import resampling
 
+def sec_to_timestamp(t):
+	m, s = divmod(t, 60)
+	s, ms = divmod(s*1000, 1000)
+	h, m = divmod(m, 60)
+	return "%d:%02d:%02d:%03d h:m:s:ms" % (h, m, s, ms)
+	
 def write_speed(filename, speed_curve, piece=None):
 	piece_str  = ""
 	if piece is not None:
@@ -16,53 +22,37 @@ def write_speed(filename, speed_curve, piece=None):
 
 def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 16.7, fL = 900, fU = 1100):
 	start_time = time()
-	#how many frames do we want?
-	half = overlap//2
-	quart = overlap//4
-	#read in chunks for FFT
 	soundob = sf.SoundFile(filename)
 	sr = soundob.samplerate
 	block_start = 0
+	num_cores = os.cpu_count()
+	#we read the audio in with overlap
 	for i, block in enumerate(soundob.blocks( blocksize=blocksize*hop, overlap=overlap*hop)):
 		# if i not in (0, 1):
 			# continue
-		print("Block from",block_start,"to",block_start+len(block)/sr)
-		imdata = np.abs(fourier.stft(block, fft_size, hop, "hann"))
+		print("Tracing from",sec_to_timestamp(block_start),"to",sec_to_timestamp(block_start+len(block)/sr))
+		imdata = fourier.stft(block, fft_size, hop, "hann", num_cores)
 		
 		#we can't do the start automatically
 		#note: this is already accorded for in trace_peak
 		if i == 0:
 			t0 = start
-			lag = 0
 		else:
 			#we only start at a good FFT, not influenced by cut artifacts
 			t0 = fft_size/2/sr
-			lag = fft_size//2 //hop
-		print("start at",t0)
 		times, freqs = wow_detection.trace_peak_static(imdata, fft_size, hop, sr, fL = fL, fU = fU, t0 = t0, t1 = None, tolerance = 1, adaptation_mode="Average")
+		#now we trim the start and end of each trace to remove end artifacts
+		half = overlap//2
 		if i == 0:
-			times = times[:-half]
-			freqs = freqs[:-half]
+			speed = np.stack((times[:-half], freqs[:-half]), axis=1)
 		else:
-			times = times[half-lag:-half]
-			freqs = freqs[half-lag:-half]
-		
-		# import matplotlib.pyplot as plt
-		# plt.figure()
-		# #plt.plot(mins, label="0", alpha=0.5)
-		# #plt.plot(maxs, label="1", alpha=0.5)
-		
-		# #maybe: set dropout freq to mean(freqs)
-		# plt.plot(times, freqs , label="1", alpha=0.5)
-		# plt.xlabel('Speed')
-		# plt.ylabel('Freg Hz')
-		# plt.legend(frameon=True, framealpha=0.75)
-		# plt.show()
-		speed = np.stack((times, freqs), axis=1)
+			speed = np.stack((times[half:-half], freqs[half:-half]), axis=1)
+		speed[:,0]*=sr
+		speed[:,1]/=1000
 		write_speed(filename, speed, piece=i)
 		block_start+= ((blocksize*hop - overlap*hop) / sr)
 	dur = time() - start_time
-	print("duration",dur)
+	print("duration",sec_to_timestamp(dur))
 
 def show_all(speedname, hi=1020, lo=948):
 	dir = os.path.dirname(speedname)
@@ -105,30 +95,25 @@ def resample_all(speedname, filename, blocksize, overlap, hop, resampling_mode =
 	batch_res(filename, blocksize, overlap, speed_files, resampling_mode)
 	
 def batch_res(filename, blocksize, overlap, speed_curve_names, resampling_mode):
-	print('Analyzing ' + filename + '...')
+	print('Resampling ' + filename + '...',resampling_mode)
 	start_time = time()
-	print(resampling_mode)
 	#read the file
 	soundob = sf.SoundFile(filename)
-	sr = soundob.samplerate
 	in_len = 0
-	outfilename = filename.rsplit('.', 1)[0]+'_cloned.wav'
-	with sf.SoundFile(outfilename, 'w', sr, 1, subtype='FLOAT') as outfile:
+	outfilename = filename.rsplit('.', 1)[0]+'_cloned.w64'
+	with sf.SoundFile(outfilename, 'w', soundob.samplerate, 1, subtype='FLOAT') as outfile:
 		for i, in_block in enumerate(soundob.blocks( blocksize=blocksize*hop, overlap=overlap*hop)):
-			# if i not in (0, 1,2,3):
-				# continue
-			print(i, len(in_block))
-			speed_curve = np.load(speed_curve_names[i])
-			times = speed_curve[:,0]
-			print("times:",times[0],times[len(times)-1])
-			#note: this expects a a linscale speed curve centered around 1 (= no speed change)
-			speeds = speed_curve[:,1]/1000
-			
+			try:
+				speed_curve = np.load(speed_curve_names[i])
+			except:
+				print("Resampling aborted! No more speed curves, can not resample block",i)
+				break
+			print("Block",i)
 			#only update if it changes
 			if len(in_block) != in_len:
 				in_len = len(in_block)
 				samples_in2 = np.arange( in_len )
-			offsets_speeds = resampling.prepare_linear_or_sinc(times*sr, speeds)
+			offsets_speeds = resampling.prepare_linear_or_sinc(speed_curve[:,0], speed_curve[:,1])
 			#these must be called as generators...
 			if resampling_mode in ("Sinc",):
 				for i in resampling.sinc_kernel(outfile, offsets_speeds, in_block, samples_in2, NT = 50):
@@ -138,19 +123,24 @@ def batch_res(filename, blocksize, overlap, speed_curve_names, resampling_mode):
 					pass
 
 	dur = time() - start_time
-	print("duration",dur)
+	print("duration",sec_to_timestamp(dur))
 
 #settings...
-fft_size=512
+# #at 8kHz
+# fft_size=512
+#at 44kHz
+# fft_size=4096
+# fft_overlap=16
+fft_size=2048
 fft_overlap=16
-hop=512//16
-overlap=100
+hop=fft_size//fft_overlap
+overlap=10
 blocksize=100000
 #speedname = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH1.wav"
-speedname = "C:/Users/arnfi/Desktop/nasa/A11_T649_HR2U_CH1.wav"
-filename = "C:/Users/arnfi/Desktop/nasa/A11_T649_HR2U_CH1.wav"
+speedname = "C:/Users/arnfi/Desktop/nasa/A11_T869_HR1U_CH1.wav"
+filename = "C:/Users/arnfi/Desktop/nasa/A11_T869_HR1U_CH7.wav"
 #speedname = "C:/Users/arnfi/Desktop/nasa/test.wav"
 #filename = "C:/Users/arnfi/Desktop/nasa/A11_T876_HR1L_CH2.wav"
-#trace_all(speedname, blocksize, overlap, fft_size, fft_overlap, hop, start=0, fL = 900, fU = 1100)
-#show_all(speedname, hi=1020, lo=948)
-resample_all(speedname, filename, blocksize, overlap, hop, resampling_mode = "Linear")
+trace_all(speedname, blocksize, overlap, fft_size, fft_overlap, hop, start=0, fL = 900, fU = 1100)
+# show_all(speedname, hi=1020, lo=948)
+# resample_all(speedname, filename, blocksize, overlap, hop, resampling_mode = "Linear")

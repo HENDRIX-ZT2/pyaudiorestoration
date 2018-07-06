@@ -3,9 +3,13 @@
 # Distributed under the (new) BSD License. See LICENSE.txt for more info.
 
 import numpy as np
+try:
+	import pyfftw
+except:
+	print("Warning: pyfftw is not installed. Run 'pip install pyfftw' to speed up spectrogram generation.")
 
 
-def stft(x, n_fft=1024, step=512, window='hann'):
+def stft(x, n_fft=1024, step=512, window='hann', num_cores=1):
 	"""Compute the STFT
 
 	Parameters
@@ -31,7 +35,6 @@ def stft(x, n_fft=1024, step=512, window='hann'):
 	--------
 	fft_freqs
 	"""
-	x = np.asarray(x, float)
 	if x.ndim != 1:
 		raise ValueError('x must be 1D')
 	if window is not None:
@@ -42,31 +45,31 @@ def stft(x, n_fft=1024, step=512, window='hann'):
 		w = np.ones(n_fft)
 	n_fft = int(n_fft)
 	step = max(n_fft // 2, 1) if step is None else int(step)
-	#zero pad only if the whole data is too short
-	# zero_pad = n_fft - len(x)
-	# if zero_pad > 0:
-		# x = np.concatenate((x, np.zeros(zero_pad, float)))
+
 	# Pad both sides with half fft size so that frames are centered
 	x = np.pad(x, int(n_fft // 2), mode="reflect")
 		
 	n_freqs = n_fft // 2 + 1
 	n_estimates = (len(x) - n_fft) // step + 1
-	result = np.empty((n_freqs, n_estimates), np.complex128)
+	result = np.empty((n_freqs, n_estimates), "float32")
 	
 	#don't force fftw, fallback to numpy fft if pyFFTW import fails
 	try:
-		import pyfftw
-		pyfftw.interfaces.cache.enable()
-		for ii in range(n_estimates):
-			#TODO: can this normalization be merged with the other normalization, or does it break the tracing?
-			#TODO: recode using FFTW object (faster!!)
-			#hgomersall.github.io/pyFFTW/sphinx/tutorial.html
-			result[:, ii] = pyfftw.interfaces.numpy_fft.rfft(w * x[ii * step:ii * step + n_fft]) / n_fft
-			#result[:, ii] = np.fft.rfft(w * x[ii * step:ii * step + n_fft]) / n_fft
+		#this is the input for the FFT object
+		fft_in = pyfftw.empty_aligned(n_fft, dtype='float32')
+		#the fft object itself, which must be called for each FFT
+		fft_ob = pyfftw.builders.rfft(fft_in, threads=num_cores, planner_effort="FFTW_ESTIMATE", overwrite_input=True)
+		for i in range(n_estimates):
+			#set the data on the FFT input
+			fft_ob.input_array[:] = w * x[i*step : i*step+n_fft]
+			result[:, i] = abs(fft_ob() / n_fft)+.0000001
+		# pyfftw.interfaces.cache.enable()
+		# for i in range(n_estimates):
+			# result[:, i] = abs(pyfftw.interfaces.numpy_fft.rfft(w * x[i * step:i * step + n_fft], threads=num_cores) / n_fft)+.0000001
 	except:
-		print("Warning: pyfftw is not installed. Run 'pip install pyfftw' to speed up spectrogram generation.")
-		for ii in range(n_estimates):
-			result[:, ii] = np.fft.rfft(w * x[ii * step:ii * step + n_fft]) / n_fft
+		print("Fallback to numpy fftpack!")
+		for i in range(n_estimates):
+			result[:, i] = abs(np.fft.rfft(w * x[i*step : i*step+n_fft]) / n_fft)+.0000001
 	return result
 
 

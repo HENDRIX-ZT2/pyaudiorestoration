@@ -191,6 +191,7 @@ def prepare_linear_or_sinc(sampletimes, speeds):
 		#the desired number of samples in this block - this is clearly correct
 		n = periods[i]*mean_speed
 		
+		#without dithering here, we get big gaps at the end of each segment!
 		inerr = n + err
 		n = round(inerr)
 		err =  inerr-n

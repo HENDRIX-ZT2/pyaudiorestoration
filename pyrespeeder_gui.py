@@ -930,6 +930,7 @@ class Canvas(scene.SceneCanvas):
 		self.rpm = "Unknown"
 		self.show_regs = True
 		self.show_lines = True
+		self.num_cores = os.cpu_count()
 		
 		self.tolerance = 5
 		self.fft_size = 1024
@@ -1024,13 +1025,12 @@ class Canvas(scene.SceneCanvas):
 				#this will automatically zero-pad the last fft
 				#get the magnitude spectrum
 				#avoid divide by 0 error in log10
-				imdata = np.abs(fourier.stft(signal, self.fft_size, self.hop, "hann")+.0000001)
 				#change to dB scale later, for the tracers
 				#imdata = 20 * np.log10(imdata)
 				#clamping the data to 0,1 range happens in the vertex shader
 				
 				#now store this for retrieval later
-				self.fft_storage[k] = imdata.astype('float32')
+				self.fft_storage[k] = fourier.stft(signal, self.fft_size, self.hop, "hann", self.num_cores)
 			
 			#retrieve the FFT data
 			imdata = self.fft_storage[k]

@@ -153,7 +153,7 @@ def sinc_core(positions, samples_in2, signal, output, win_func, NT ):
 			return output[0:i]
 			
 		lower = max(0, ind-NT)
-		upper = min(ind+NT, in_len)
+		upper = max(0, min(ind+NT, in_len))
 		# length = upper - lower
 		
 		#fc is the cutoff frequency expressed as a fraction of the nyquist freq
@@ -174,12 +174,6 @@ def sinc_core(positions, samples_in2, signal, output, win_func, NT ):
 		output[i] = np.sum(si * signal[lower:upper] * win_func[0:len(si)])
 	return output
 
-def update_progress(prog_sig, progress, prog_fac):
-	if prog_sig:
-		progress += prog_fac
-		prog_sig.notifyProgress.emit(progress)
-	return progress
-	
 @jit(nopython=False, nogil=True, cache=True)
 def prepare_linear_or_sinc(sampletimes, speeds):
 	# replace periods with fixed dt, but how to deal with the end?
@@ -213,40 +207,41 @@ def prepare_linear_or_sinc(sampletimes, speeds):
 	#trim to remove the extra tolerance
 	return output[:out_ind]
 
-def run(filename, speed_curve=None, resampling_mode = "Linear", sinc_quality=50, use_channels = [0,], prog_sig=None, lag_curve=None):
-	print('Resampling ' + filename + '...', resampling_mode, sinc_quality, use_channels)
+def run(filenames, speed_curve=None, resampling_mode = "Linear", sinc_quality=50, use_channels = [0,], prog_sig=None, lag_curve=None):
 	if prog_sig: prog_sig.notifyProgress.emit(0)
-	start_time = time()
-		
-	#read the file
-	soundob = sf.SoundFile(filename)
-	signal = soundob.read(always_2d=True, dtype='float32')
-	sr = soundob.samplerate
 	
-	samples_in = np.arange( len(signal[:,0]) )
-	if speed_curve is not None:
-		sampletimes = speed_curve[:,0]*sr
-		speeds = speed_curve[:,1]
-		samples_out = prepare_linear_or_sinc(sampletimes, speeds)
-	elif lag_curve is not None:
-		sampletimes = lag_curve[:,0]*sr
-		lags = lag_curve[:,1]*sr
-		samples_out = np.interp(samples_in, sampletimes, sampletimes-lags)
+	for filename in filenames:
+		start_time = time()
+		print('Resampling ' + filename + '...', resampling_mode, sinc_quality, use_channels)
+		#read the file
+		soundob = sf.SoundFile(filename)
+		signal = soundob.read(always_2d=True, dtype='float32')
+		sr = soundob.samplerate
 		
-	dur = time() - start_time
-	print("Preparation took",dur)
-	start_time = time()
-	#resample mono channels and export each separately
-	for progress, channel in enumerate(use_channels):
-		print('Processing channel ',channel)
-		outfilename = filename.rsplit('.', 1)[0]+str(channel)+'.wav'
-		with sf.SoundFile(outfilename, 'w+', sr, 1, subtype='FLOAT') as outfile:
-			if resampling_mode == "Sinc":
-				outfile.write( sinc_core(samples_out, samples_in, signal[:,channel], np.empty(len(samples_out), "float32"), np.hanning(2*sinc_quality), sinc_quality ) )
-			elif resampling_mode == "Linear":
-				outfile.write( np.interp(samples_out, samples_in, signal[:,channel]) )
-		if prog_sig: prog_sig.notifyProgress.emit(progress/len(use_channels)*100)
-	if prog_sig: prog_sig.notifyProgress.emit(100)
-	dur = time() - start_time
-	print("Resampling took",dur)
+		samples_in = np.arange( len(signal[:,0]) )
+		if speed_curve is not None:
+			sampletimes = speed_curve[:,0]*sr
+			speeds = speed_curve[:,1]
+			samples_out = prepare_linear_or_sinc(sampletimes, speeds)
+		elif lag_curve is not None:
+			sampletimes = lag_curve[:,0]*sr
+			lags = lag_curve[:,1]*sr
+			samples_out = np.interp(samples_in, sampletimes, sampletimes-lags)
+			
+		dur = time() - start_time
+		print("Preparation took",dur)
+		start_time = time()
+		#resample mono channels and export each separately
+		for progress, channel in enumerate(use_channels):
+			print('Processing channel ',channel)
+			outfilename = filename.rsplit('.', 1)[0]+str(channel)+'.wav'
+			with sf.SoundFile(outfilename, 'w+', sr, 1, subtype='FLOAT') as outfile:
+				if resampling_mode == "Sinc":
+					outfile.write( sinc_core(samples_out, samples_in, signal[:,channel], np.empty(len(samples_out), "float32"), np.hanning(2*sinc_quality), sinc_quality ) )
+				elif resampling_mode == "Linear":
+					outfile.write( np.interp(samples_out, samples_in, signal[:,channel]) )
+			if prog_sig: prog_sig.notifyProgress.emit(progress/len(use_channels)*100)
+		if prog_sig: prog_sig.notifyProgress.emit(100)
+		dur = time() - start_time
+		print("Resampling took",dur)
 	print("Done!\n")

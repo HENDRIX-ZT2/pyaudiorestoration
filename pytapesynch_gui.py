@@ -43,8 +43,8 @@ def to_Hz(val):
 class ResamplingThread(QtCore.QThread):
 	notifyProgress = QtCore.pyqtSignal(int)
 	def run(self):
-		name, lag_curve, resampling_mode, sinc_quality, use_channels = self.settings
-		resampling.run(name, lag_curve= lag_curve, resampling_mode = resampling_mode, sinc_quality=sinc_quality, use_channels=use_channels, prog_sig=self)
+		names, lag_curve, resampling_mode, sinc_quality, use_channels = self.settings
+		resampling.run(names, lag_curve= lag_curve, resampling_mode = resampling_mode, sinc_quality=sinc_quality, use_channels=use_channels, prog_sig=self)
 			
 class ObjectWidget(QtWidgets.QWidget):
 	"""
@@ -251,9 +251,18 @@ class ObjectWidget(QtWidgets.QWidget):
 			channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
 			if channels and self.parent.canvas.lag_samples:
 				lag_curve = self.parent.canvas.lag_line.data
-				self.resampling_thread.settings = (self.srcfilename, lag_curve, self.mode_c.currentText(), self.sinc_quality_s.value(), channels)
+				self.resampling_thread.settings = ((self.srcfilename,), lag_curve, self.mode_c.currentText(), self.sinc_quality_s.value(), channels)
 				self.resampling_thread.start()
-			
+
+	def run_resample_batch(self):
+		if self.srcfilename and self.parent.canvas.lag_samples:
+			reffilenames = QtWidgets.QFileDialog.getOpenFileNames(self, 'Open Files for Batch Resampling', 'c:\\', "Audio files (*.flac *.wav)")[0]
+			channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
+			if channels and self.parent.canvas.lag_samples:
+				lag_curve = self.parent.canvas.lag_line.data
+				self.resampling_thread.settings = (reffilenames, lag_curve, self.mode_c.currentText(), self.sinc_quality_s.value(), channels)
+				self.resampling_thread.start()
+				
 	def update_param_hard(self, option):
 		self.file_or_fft_settings_changed.emit()
 		
@@ -297,6 +306,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		button_data = ( (fileMenu, "Open", self.props.open_audio, "CTRL+O"), \
 						(fileMenu, "Save", self.props.save_traces, "CTRL+S"), \
 						(fileMenu, "Resample", self.props.run_resample, "CTRL+R"), \
+						(fileMenu, "Batch Resample", self.props.run_resample_batch, "CTRL+B"), \
 						(fileMenu, "Exit", self.close, ""), \
 						(editMenu, "Improve", self.props.improve_lag, "CTRL+I"), \
 						# (editMenu, "Undo", self.props.restore_traces, "CTRL+Z"), \

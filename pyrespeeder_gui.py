@@ -49,8 +49,6 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.filename = ""
 		self.deltraces = []
 		
-		self.playing = False
-		
 		myFont=QtGui.QFont()
 		myFont.setBold(True)
 
@@ -266,38 +264,6 @@ class ObjectWidget(QtWidgets.QWidget):
 		#this means a file was loaded, so clear the undo stack
 		if not_only_selected:
 			self.deltraces= []
-	
-	def play_pause(self):
-		if not self.playing:
-			self.playing = True
-		else:
-			self.playing = False
-		# sound = wave.open('15 My Sweet Lord [early stereo remix]0.wav')
-		# p = pyaudio.PyAudio()
-		# chunk = 1024
-		# stream = p.open(format = p.get_format_from_width(sound.getsampwidth()),
-						# channels = sound.getnchannels(),
-						# rate = sound.getframerate(),
-						# output = True)
-		# data = sound.readframes(chunk)
-		# while data != '' and self.playing:
-			# stream.write(data)
-			# data = sound.readframes(chunk)
-		
-    
-        # if self.output.state() == QAudio.ActiveState:
-            # self.output.stop()
-        
-        # if self.buffer.isOpen():
-            # self.buffer.close()
-        
-        # self.createData()
-        
-        # self.buffer.setData(self.data)
-        # self.buffer.open(QIODevice.ReadOnly)
-        # self.buffer.seek(0)
-        
-        # self.output.start(self.buffer)
 		
 	def merge_traces(self):
 		#TODO: the offset handling is hacky here
@@ -459,7 +425,7 @@ class MainWindow(QtWidgets.QMainWindow):
 						(editMenu, "Invert Selection", self.props.invert_selection, "CTRL+I"), \
 						(editMenu, "Merge Selected", self.props.merge_traces, "CTRL+M"), \
 						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
-						(editMenu, "Play/Pause", self.props.play_pause, "CTRL+P"), \
+						(editMenu, "Play/Pause", self.props.audio_widget.play_pause, "SPACE"), \
 						)
 		
 		for submenu, name, func, shortcut in button_data:

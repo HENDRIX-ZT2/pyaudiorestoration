@@ -1,6 +1,3 @@
-import numpy as np
-import soundfile as sf
-
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QBuffer, QIODevice, Qt
 from PyQt5.QtWidgets import QApplication, QFormLayout, QLineEdit, QHBoxLayout, QPushButton, QSlider, QVBoxLayout, QWidget
@@ -31,22 +28,16 @@ class AudioWidget(QWidget):
 		self.playButton.clicked.connect(self.play_pause)
 		self.stopButton.clicked.connect(self.stop)
 		
-		buttonLayout = QVBoxLayout()
-		buttonLayout.addWidget(self.playButton)
-		buttonLayout.addWidget(self.stopButton)
-		buttonLayout.addWidget(self.volumeSlider)
-		buttonLayout.addStretch()
-		
-		horizontalLayout = QHBoxLayout(self)
-		horizontalLayout.addLayout(buttonLayout)
+		layout = QHBoxLayout(self)
+		layout.addWidget(self.playButton)
+		layout.addWidget(self.stopButton)
+		layout.addWidget(self.volumeSlider)
+		layout.addStretch()
 	
-		
 	def stop(self):
 		if self.output:
 			if self.output.state() != QAudio.StoppedState:
 				self.output.stop()
-				self.playButton.setIcon(QIcon("icons/play.png"))
-				
 
 	def set_data(self, mono_sig, sr):
 		# if not self.format:
@@ -59,17 +50,23 @@ class AudioWidget(QWidget):
 		self.format.setByteOrder(QAudioFormat.LittleEndian)
 		self.format.setSampleType(QAudioFormat.Float)
 		self.output = QAudioOutput(self.format, self)
+		self.output.stateChanged.connect(self.audio_state_changed)
 		#change the content without stopping playback
 		p = self.buffer.pos()
 		if self.buffer.isOpen():
 			self.buffer.close()
 		
-		print("pos",p)
-			
 		self.data = mono_sig.tobytes()
 		self.buffer.setData(self.data)
 		self.buffer.open(QIODevice.ReadWrite)
 		self.buffer.seek(p)
+		
+	def audio_state_changed(self, new_state):
+		#adjust the button icon
+		if new_state != QAudio.ActiveState:
+			self.playButton.setIcon(QIcon("icons/play.png"))
+		else:
+			self.playButton.setIcon(QIcon("icons/pause.png"))
 		
 	def cursor(self, t):
 		#seek towards the time t
@@ -87,14 +84,11 @@ class AudioWidget(QWidget):
 			#(un)pause the audio output, keeps the buffer intact
 			if self.output.state() == QAudio.ActiveState:
 				self.output.suspend()
-				self.playButton.setIcon(QIcon("icons/play.png"))
 			elif self.output.state() == QAudio.SuspendedState:
 				self.output.resume()
-				self.playButton.setIcon(QIcon("icons/pause.png"))
 			else:
 				self.buffer.seek(0)
 				self.output.start(self.buffer)
-				self.playButton.setIcon(QIcon("icons/pause.png"))
 			
 	def change_volume(self, value):
 		if self.output:
@@ -103,7 +97,6 @@ class AudioWidget(QWidget):
 	
 
 if __name__ == "__main__":
-
 	app = QApplication([])
 	window = AudioWidget()
 	window.show()

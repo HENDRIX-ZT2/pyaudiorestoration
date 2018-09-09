@@ -63,8 +63,6 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.reffilename = ""
 		self.deltraces = []
 		
-		self.playing = False
-		
 		myFont=QtGui.QFont()
 		myFont.setBold(True)
 

@@ -18,6 +18,7 @@ import spectrum
 import resampling
 import wow_detection
 import qt_theme
+import snd
 
 from scipy.signal import butter, sosfilt, sosfiltfilt, sosfreqz
 def butter_bandpass(lowcut, highcut, fs, order=5):
@@ -120,7 +121,9 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.qgrid.setHorizontalSpacing(3)
 		self.qgrid.setVerticalSpacing(0)
 		
-		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c), (resampling_l, ), (mode_l, self.mode_c), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,), (self.inspector_l,) ]
+		self.audio_widget = snd.AudioWidget()
+		
+		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c), (resampling_l, ), (mode_l, self.mode_c), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,), (self.audio_widget,), (self.inspector_l,), ]
 		for i, line in enumerate(buttons):
 			for j, element in enumerate(line):
 				#we want to stretch that one
@@ -601,6 +604,7 @@ class Canvas(scene.SceneCanvas):
 			self.srcspectrum.update_data(imdata, self.hop, self.sr)
 			self.set_clims(self.vmin, self.vmax)
 			self.lag_line.update()
+			self.props.audio_widget.set_data(signal, self.sr)
 		
 	def on_mouse_wheel(self, event):
 		#coords of the click on the vispy canvas
@@ -648,6 +652,10 @@ class Canvas(scene.SceneCanvas):
 
 	def on_mouse_press(self, event):
 		#selection
+		b = self.click_spec_conversion(event.pos)
+		#are they in spec_view?
+		if b is not None:
+			self.props.audio_widget.cursor(b[0])
 		if event.button == 2:
 			closest_lag_sample = self.get_closest_lag_sample( event.pos )
 			if closest_lag_sample:

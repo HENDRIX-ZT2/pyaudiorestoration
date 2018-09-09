@@ -18,6 +18,7 @@ import spectrum
 import resampling
 import wow_detection
 import qt_theme
+import snd
 
 def to_mel(val):
 	### just to set the image size correctly	
@@ -156,11 +157,13 @@ class ObjectWidget(QtWidgets.QWidget):
 		myFont2.setStyleHint(QtGui.QFont.TypeWriter)
 		self.inspector_l.setFont(myFont2)
 		
+		self.audio_widget = snd.AudioWidget()
+		
 		self.qgrid = QtWidgets.QGridLayout()
 		self.qgrid.setHorizontalSpacing(3)
 		self.qgrid.setVerticalSpacing(0)
 		
-		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c), (show_l, self.show_c), (cmap_l,self.cmap_c), (tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (self.autoalign_b, ), (resampling_l, ), (mode_l, self.mode_c), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,), (self.inspector_l,) ]
+		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c), (show_l, self.show_c), (cmap_l,self.cmap_c), (tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (self.autoalign_b, ), (resampling_l, ), (mode_l, self.mode_c), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,), (self.audio_widget,), (self.inspector_l,) ]
 		for i, line in enumerate(buttons):
 			for j, element in enumerate(line):
 				#we want to stretch that one
@@ -976,6 +979,7 @@ class Canvas(scene.SceneCanvas):
 			self.set_clims(self.vmin, self.vmax)
 			self.master_speed.update()
 			self.master_reg_speed.update()
+			self.props.audio_widget.set_data(signal, self.sr)
 		
 	def on_mouse_wheel(self, event):
 		#coords of the click on the vispy canvas
@@ -1022,6 +1026,11 @@ class Canvas(scene.SceneCanvas):
 			self.speed_view.camera.zoom((1, (1 + self.speed_view.camera.zoom_factor) ** (-event.delta[1] * 30)), c)
 
 	def on_mouse_press(self, event):
+		#audio cursor
+		b = self.click_spec_conversion(event.pos)
+		#are they in spec_view?
+		if b is not None:
+			self.props.audio_widget.cursor(b[0])
 		#selection, single or multi
 		if event.button == 2:
 			closest_line = self.get_closest_line( event.pos )

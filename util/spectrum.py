@@ -246,23 +246,24 @@ class SpectrumCanvas(scene.SceneCanvas):
 	
 	def compute_spectra(self, files, fft_size, fft_overlap, ):
 		for filename, spec, fft_storage in zip(files, self.spectra, self.fft_storages):
-			soundob = sf.SoundFile(filename)
-				
 			#set this for the tracers etc.
 			self.fft_size = fft_size
 			self.hop = fft_size // fft_overlap
-			self.sr = soundob.samplerate
-			k = (self.fft_size, self.hop)
-			if k not in fft_storage:
-				print("storing new fft",self.fft_size)
-				signal = soundob.read(always_2d=True, dtype='float32')[:,0]
-				#now store this for retrieval later
-				fft_storage[k] = fourier.stft(signal, self.fft_size, self.hop, "hann", self.num_cores)
-			
-			#retrieve the FFT data
-			imdata = fft_storage[k]
-			self.num_ffts = imdata.shape[1]
-			spec.update_data(imdata, self.hop, self.sr)
+			if filename:
+				soundob = sf.SoundFile(filename)
+					
+				self.sr = soundob.samplerate
+				k = (self.fft_size, self.hop)
+				if k not in fft_storage:
+					print("storing new fft",self.fft_size)
+					signal = soundob.read(always_2d=True, dtype='float32')[:,0]
+					#now store this for retrieval later
+					fft_storage[k] = fourier.stft(signal, self.fft_size, self.hop, "hann", self.num_cores)
+				
+				#retrieve the FFT data
+				imdata = fft_storage[k]
+				self.num_ffts = imdata.shape[1]
+				spec.update_data(imdata, self.hop, self.sr)
 		
 		#has the file changed?
 		if self.filenames != files:
@@ -271,7 +272,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 			#(re)set the spec_view
 			self.speed_view.camera.rect = (0, -5, self.num_ffts * self.hop / self.sr, 10)
 			self.spec_view.camera.rect = (0, 0, self.num_ffts * self.hop / self.sr, to_mel(self.sr//2))
-			self.props.audio_widget.set_data(signal, self.sr)
+			if filename:
+				self.props.audio_widget.set_data(signal, self.sr)
 		self.set_clims(self.vmin, self.vmax)
 			
 	#fast stuff that does not require rebuilding everything

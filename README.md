@@ -17,11 +17,11 @@ You need to have installed:
 - [vispy](vispy.org)
 - [pyFFTW](https://github.com/pyFFTW/pyFFTW) (_optional_ speedup) Note for python 3.6 users on windows - to install pyFFTW, download the correct .whl file from [ ![Download](https://api.bintray.com/packages/hgomersall/generic/PyFFTW-development-builds/images/download.svg) ](https://bintray.com/hgomersall/generic/PyFFTW-development-builds/_latestVersion#files)  (scroll down!) and install it with `pip install PATH_TO_FILE.whl`.
 
-The bundled python platform [Anaconda](https://www.anaconda.com/download/) will have most of these dependencies installed by default. Best install the missing ones with `pip` (eg. in the Windows commandline, type `pip install vispy`).
+Install the missing dependencies with python's package manager, `pip` (eg. in the Windows commandline, type `pip install vispy`).
 
 Click the `Clone or Download` button at the right, then `Download ZIP`. Unzip to a folder of your choice. Assuming you have python configured as an environment variable and your commandline is in the same folder as the script, start it with
 
-`python pyrespeeder_gui.py` or `python pytapesynch_gui.py` or `python difeq.py`
+`python pyrespeeder_gui.py` or `python pytapesynch_gui.py` or `python difeq_gui.py`
 
 Otherwise, specify the full paths to `python.exe` and the script.
 

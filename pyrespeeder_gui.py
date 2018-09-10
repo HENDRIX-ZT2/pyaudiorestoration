@@ -9,16 +9,9 @@ import numpy as np
 import soundfile as sf
 from vispy import scene, color
 from PyQt5 import QtGui, QtCore, QtWidgets
-import wave, sys, pyaudio
 
 #custom modules
-import vispy_ext
-import fourier
-import spectrum
-import resampling
-import wow_detection
-import qt_theme
-import snd
+from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd
 
 def to_mel(val):
 	### just to set the image size correctly	
@@ -212,7 +205,7 @@ class ObjectWidget(QtWidgets.QWidget):
 					return
 				
 				#Cleanup of old data
-				self.parent.canvas.fft_storage = {}
+				self.parent.canvas.fft_storages = ({},)
 				self.delete_traces(not_only_selected=True)
 				for channel in self.channel_checkboxes:
 					self.channel_layout.removeWidget(channel)
@@ -361,7 +354,7 @@ class ObjectWidget(QtWidgets.QWidget):
 				else:
 					speed_curve = self.parent.canvas.master_speed.get_linspace()
 					print("Using measured speed")
-				self.resampling_thread.settings = (self.filename, speed_curve, self.mode_c.currentText(), self.sinc_quality_s.value(), channels)
+				self.resampling_thread.settings = ((self.filename,), speed_curve, self.mode_c.currentText(), self.sinc_quality_s.value(), channels)
 				self.resampling_thread.start()
 			
 	def update_param_hard(self, option):
@@ -380,7 +373,60 @@ class ObjectWidget(QtWidgets.QWidget):
 	def invert_selection(self):
 		for trace in self.parent.canvas.lines+self.parent.canvas.regs:
 			trace.toggle()
+
+class BaseMarker:
+	"""Stores and visualizes a trace fragment, including its speed offset."""
+	def __init__(self, vispy_canvas, container, color_def, color_sel):
+		self.selected = False
+		self.vispy_canvas = vispy_canvas
+		self.visuals = []
+		self.color_def = color_def
+		self.color_sel = color_sel
+		self.spec_center = (0,0)
+		self.speed_center = (0,0)
+		self.container = container
+		self.parents = (self.vispy_canvas.speed_view.scene, self.vispy_canvas.spec_view.scene)
 		
+	def initialize(self):
+		"""Called when first created, or revived via undo."""
+		self.show()
+		self.container.append(self)
+		
+	def show(self):
+		for v, p in zip(self.visuals, self.parents): v.parent = p
+		
+	def hide(self):
+		for v, p in zip(self.visuals, self.parents): v.parent = None
+		self.deselect()
+		
+	def deselect(self):
+		"""Deselect this line, ie. restore its colors to their original state"""
+		self.selected = False
+		for v in self.visuals: v.set_data(color = self.color_def)
+		
+	def select(self):
+		"""Toggle this line's selection state"""
+		self.selected = True
+		for v in self.visuals: v.set_data(color = self.color_sel)
+		
+	def toggle(self):
+		"""Toggle this line's selection state"""
+		if self.selected:
+			self.deselect()
+		else:
+			self.select()
+		
+	def select_handle(self, multi=False):
+		if not multi:
+			for trace in self.vispy_canvas.regs+self.vispy_canvas.lines:
+				trace.deselect()
+		self.toggle()
+		
+	def remove(self):
+		for v in self.visuals: v.parent = None
+		#note: this has to search the list
+		self.container.remove(self)
+	
 class MainWindow(QtWidgets.QMainWindow):
 
 	def __init__(self):
@@ -390,7 +436,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.setWindowTitle('pyrespeeder')
 		try:
 			scriptDir = os.path.dirname(os.path.realpath(__file__))
-			self.setWindowIcon(QtGui.QIcon(os.path.join(scriptDir,'icon.png')))
+			self.setWindowIcon(QtGui.QIcon(os.path.join(scriptDir,'icons/pyrespeeder.png')))
 		except: pass
 		
 		self.setAcceptDrops(True)
@@ -435,7 +481,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			submenu.addAction(button)
 		
 	def update_settings_hard(self):
-		self.canvas.set_file_or_fft_settings(self.props.filename,
+		self.canvas.set_file_or_fft_settings((self.props.filename,),
 								 fft_size = int(self.props.fft_c.currentText()),
 								 fft_overlap = int(self.props.overlap_c.currentText()))
 		#also force a soft update here
@@ -582,20 +628,20 @@ class MasterRegLine:
 		np.power(2, out[:,1], out[:,1])
 		return out
 		
-class RegLine:
+class RegLine(BaseMarker):
 	"""Stores a single sinc regression's data and displays it"""
 	def __init__(self, vispy_canvas, t0, t1, amplitude, omega, phase, offset):
 	
-		self.selected = False
-	
-		self.vispy_canvas = vispy_canvas
-		
+		color_def = (1, 1, 1, .5)
+		color_sel = (0, 1, 0, 1)
+		BaseMarker.__init__(self, vispy_canvas, vispy_canvas.regs, color_def, color_sel)
 		#the extents on which this regression operated
 		self.t0 = t0
 		self.t1 = t1
 		#here, the reg values are most accurate
 		self.t_center = (t0+ t1)/2
 		self.speed_center = np.array( (self.t_center, 0) )
+		self.spec_center = np.array( (self.t_center, 2000) )
 		
 		#the following is more or less duped in the tracer - resolve?
 		speed_curve = vispy_canvas.master_speed.get_linspace()
@@ -629,82 +675,38 @@ class RegLine:
 		#self.phase = self.phase % (2*np.pi)
 		
 		#create the speed curve visualization
-		self.data = np.zeros((len(clipped_times), 2), dtype=np.float32)
-		self.data[:, 0] = clipped_times
-		self.data[:, 1] = self.amplitude * np.sin(self.omega * clipped_times + self.phase)# + self.offset
+		self.speed_data = np.stack( (clipped_times, self.amplitude * np.sin(self.omega * clipped_times + self.phase)), axis=-1)
 		#sine_on_hz = np.power(2, sine + np.log2(2000))
-		self.line_speed = scene.Line(pos=self.data, color=(0, 0, 1, .5), method='gl')
+		self.visuals.append( scene.Line(pos=self.speed_data, color=(0, 0, 1, .5), method='gl') )
 		self.initialize()
-		
-	def initialize(self):
-		"""Called when first created, or revived via undo."""
-		self.show()
-		self.vispy_canvas.regs.append(self)
-		self.vispy_canvas.master_speed.update()
+		self.vispy_canvas.master_reg_speed.update()
 		
 	def set_offset(self, a, b):
 		#user manipulation: custom amplitude for sample
 		self.amplitude *= (b/a)
-		self.data[:, 1]*= (b/a)
-		self.line_speed.set_data(pos=self.data)
-		
-	def deselect(self):
-		"""Deselect this line, ie. restore its colors to their original state"""
-		self.selected = False
-		self.line_speed.set_data(color = (1, 1, 1, .5))
+		self.speed_data[:, 1]*= (b/a)
+		self.visuals[0].set_data(pos=self.speed_data)
 		
 	def select(self):
 		"""Deselect this line, ie. restore its colors to their original state"""
 		self.selected = True
-		self.line_speed.set_data(color = (0, 1, 0, 1))
+		self.visuals[0].set_data(color = self.color_sel)
 		#set the offset in the ui
 		self.vispy_canvas.props.phase_s.setValue(self.offset)
-		
-	def toggle(self):
-		"""Toggle this line's selection state"""
-		if self.selected:
-			self.deselect()
-		else:
-			self.select()
-			
-	def select_handle(self, multi=False):
-		"""Toggle this line's selection state, and update the phase offset ui value"""
-		if not multi:
-			for trace in self.vispy_canvas.regs+self.vispy_canvas.lines:
-				trace.deselect()
-		self.toggle()
-			
-	def show(self):
-		self.line_speed.parent = self.vispy_canvas.speed_view.scene
-		
-	def hide(self):
-		self.line_speed.parent = None
-		self.deselect()
-		
-	def remove(self):
-		self.hide()
-		#note: this has to search the list
-		self.vispy_canvas.regs.remove(self)
-		
 		
 	def update_phase(self, v):
 		"""Adjust this regressions's phase offset according to the UI input."""
 		if self.selected: self.offset = v
 		
-class TraceLine:
+class TraceLine(BaseMarker):
 	"""Stores and visualizes a trace fragment, including its speed offset."""
 	def __init__(self, vispy_canvas, times, freqs, offset=None):
 		
-		self.selected = False
-		
-		self.vispy_canvas = vispy_canvas
-		
+		color_def = (1, 1, 1, .5)
+		color_sel = (0, 1, 0, 1)
+		BaseMarker.__init__(self, vispy_canvas, vispy_canvas.lines, color_def, color_sel)
 		self.times = np.asarray(times)
 		self.freqs = np.asarray(freqs)
-		
-		mean_freqs = np.mean(self.freqs)
-		mean_times = np.mean(self.times)
-		
 		
 		#note: the final, output speed curve output should be linscale and centered on 1
 		self.speed = np.log2(freqs)
@@ -712,10 +714,8 @@ class TraceLine:
 		#we don't want to overwrite existing offsets loaded from files
 		if offset is None:
 			if not vispy_canvas.auto_align:
-				#print("no align")
 				offset = 0
 			else:
-				#print("Setting automatic offset")
 				#create the array for sampling
 				out = np.ones((len(times), len(self.vispy_canvas.lines)), dtype=np.float32)
 				#lerp and sample all lines, use NAN for missing parts
@@ -726,271 +726,65 @@ class TraceLine:
 				mean_with_nans = np.nanmean(out, axis=1)
 				offset = np.nanmean(mean_with_nans-self.speed)
 				offset = 0 if np.isnan(offset) else offset
-			
 		self.offset = offset
 		self.speed += offset
 		
-		self.spec_center = np.array( (mean_times, mean_freqs) )
+		#calculate the centers
+		mean_times = np.mean(self.times)
+		self.spec_center = np.array( (mean_times, np.mean(self.freqs)) )
 		self.speed_center = np.array( (mean_times, np.mean(self.speed)) )
 		
-		data = np.ones((len(times), 3), dtype=np.float32)*-2
-		data[:, 0] = times
-		data[:, 1] = freqs
+		#create the speed curve visualization
+		self.speed_data = np.stack( (self.times, self.speed), axis=-1)
+		self.visuals.append( scene.Line(pos=self.speed_data, color=color_def, method='gl') )
 		
 		#create the spectral visualization
-		self.line_spec = scene.Line(pos=data, color=(1, 1, 1, 1), method='gl')
+		#could also do a stack here; note the z coordinate!
+		spec_data = np.stack( (self.times, self.freqs, np.ones(len(self.times), dtype=np.float32)*-2), axis=-1)
+		self.visuals.append( scene.Line(pos=spec_data, color=color_def, method='gl') )
 		#the data is in Hz, so to visualize correctly, it has to be mel'ed
-		self.line_spec.transform = vispy_canvas.spectrum.mel_transform
+		self.visuals[1].transform = vispy_canvas.spectra[0].mel_transform
 		
-		#create the speed curve visualization
-		self.speed_data = np.ones((len(times), 2), dtype=np.float32)
-		self.speed_data[:, 0] = self.times
-		self.speed_data[:, 1] = self.speed
-		self.line_speed = scene.Line(pos=self.speed_data, color=(1, 1, 1, .5), method='gl')
 		self.initialize()
+		self.vispy_canvas.master_speed.update()
 
-		
-	def initialize(self):
-		"""Called when first created, or revived via undo."""
-		self.show()
-		self.line_spec.parent = self.vispy_canvas.spec_view.scene
-		self.line_speed.parent = self.vispy_canvas.speed_view.scene
-		self.vispy_canvas.lines.append(self)
-		
-	def show(self):
-		self.line_speed.parent = self.vispy_canvas.speed_view.scene
-		
-	def hide(self):
-		self.line_speed.parent = None
-		self.deselect()
-		
 	def set_offset(self, a, b):
 		offset = b-a
-		#print("offset",offset)
 		self.offset += offset
 		self.speed_center[1] += offset
 		self.speed += offset
-		#print("new center",self.center)
 		self.speed_data[:, 1] = self.speed
-		self.line_speed.set_data(pos = self.speed_data)
+		self.visuals[0].set_data(pos = self.speed_data)
 	
-	
-	def deselect(self):
-		"""Deselect this line, ie. restore its colors to their original state"""
-		self.selected = False
-		self.line_speed.set_data(color = (1, 1, 1, .5))
-		self.line_spec.set_data(color = (1, 1, 1, 1))
 		
-	def select(self):
-		"""Toggle this line's selection state"""
-		self.selected = True
-		self.line_speed.set_data(color = (0, 1, 0, 1))
-		self.line_spec.set_data(color = (0, 1, 0, 1))
-		
-	def toggle(self):
-		"""Toggle this line's selection state"""
-		if self.selected:
-			self.deselect()
-		else:
-			self.select()
-		
-	def select_handle(self, multi=False):
-		if not multi:
-			for trace in self.vispy_canvas.regs+self.vispy_canvas.lines:
-				trace.deselect()
-		self.toggle()
-		
-	def remove(self):
-		self.line_speed.parent = None
-		self.line_spec.parent = None
-		#note: this has to search the list
-		self.vispy_canvas.lines.remove(self)
 
-class Canvas(scene.SceneCanvas):
-	"""This class wraps the vispy canvas and controls all the visualization, as well as the interaction with it."""
+class Canvas(spectrum.SpectrumCanvas):
 
 	def __init__(self):
-		
-		#some default dummy values
-		self.props = None
-		self.filename = ""
-		self.vmin = -80
-		self.vmax = -40
+		spectrum.SpectrumCanvas.__init__(self, spectra_colors=(None,), y_axis='Octaves',)
+		self.unfreeze()
 		self.auto_align = True
 		self.trace_mode = "Center of Gravity"
 		self.adapt_mode = "Linear"
 		self.rpm = "Unknown"
+		self.tolerance = 5
 		self.show_regs = True
 		self.show_lines = True
-		self.num_cores = os.cpu_count()
 		
-		self.tolerance = 5
-		self.fft_size = 1024
-		self.hop = 256
-		self.sr = 44100
-		self.num_ffts = 0
-		
-		scene.SceneCanvas.__init__(self, keys="interactive", size=(1024, 512), bgcolor="#353535")
-		
-		self.unfreeze()
-		
-		grid = self.central_widget.add_grid(margin=10)
-		grid.spacing = 0
-		
-		#speed chart
-		self.speed_yaxis = scene.AxisWidget(orientation='left', axis_label='Octaves', axis_font_size=8, axis_label_margin=35, tick_label_margin=5)
-		self.speed_yaxis.width_max = 55
-		
-		#spectrum
-		self.spec_yaxis = vispy_ext.ExtAxisWidget(orientation='left', axis_label='Hz', axis_font_size=8, axis_label_margin=35, tick_label_margin=5, scale_type="logarithmic")
-		self.spec_yaxis.width_max = 55
-		
-		self.spec_xaxis = scene.AxisWidget(orientation='bottom', axis_label='sec', axis_font_size=8, axis_label_margin=35, tick_label_margin=5)
-		self.spec_xaxis.height_max = 55
-
-		top_padding = grid.add_widget(row=0)
-		top_padding.height_max = 10
-		
-		right_padding = grid.add_widget(row=1, col=2, row_span=1)
-		right_padding.width_max = 70
-		
-		#create the color bar display
-		self.colorbar_display = scene.ColorBarWidget(label="Gain [dB]", clim=(self.vmin, self.vmax), cmap="viridis", orientation="right", border_width=1, label_color="white")
-		self.colorbar_display.label.font_size = 8
-		self.colorbar_display.ticks[0].font_size = 8
-		self.colorbar_display.ticks[1].font_size = 8
-		
-		grid.add_widget(self.speed_yaxis, row=1, col=0)
-		grid.add_widget(self.spec_yaxis, row=2, col=0)
-		grid.add_widget(self.spec_xaxis, row=3, col=1)
-		colorbar_column = grid.add_widget(self.colorbar_display, row=2, col=2)
-		
-		self.speed_view = grid.add_view(row=1, col=1, border_color='white')
-		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, -0.1, 10, 0.2), )
-		self.speed_view.height_min = 150
-		self.spec_view = grid.add_view(row=2, col=1, border_color='white')
-		self.spec_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0, 10, 10), )
-		#link them, but use custom logic to only link the x view
-		self.spec_view.camera.link(self.speed_view.camera)
-		
-		self.speed_yaxis.link_view(self.speed_view)
-		self.spec_xaxis.link_view(self.spec_view)
-		self.spec_yaxis.link_view(self.spec_view)
-		
-			
 		self.lines = []
 		self.regs = []
-		self.fft_storage = {}
-		
 		self.master_speed = MasterSpeedLine(self)
 		self.master_reg_speed = MasterRegLine(self)
-		self.spectrum = spectrum.Spectrum(self.spec_view)
-		
-		#nb. this is a vispy.util.event.EventEmitter object
-		#can this be linked somewhere to the camera? base_camera connects a few events, too
-		self.spec_view.transforms.changed.connect(self.spectrum.update_frustum)
 		
 		self.freeze()
 		
-	#fast stuff that does not require rebuilding everything
-	def set_colormap(self, cmap):
-		self.spectrum.set_cmap(cmap)
-		self.colorbar_display.cmap = cmap
-		
-	#fast stuff that does not require rebuilding everything
-	def set_clims(self, vmin, vmax):
-		self.spectrum.set_clims(vmin, vmax)
-		self.colorbar_display.clim = (vmin, vmax)
-	
 	#called if either  the file or FFT settings have changed
-	def set_file_or_fft_settings(self, filename, fft_size = 256, fft_overlap = 1):
-		if filename:
-			soundob = sf.SoundFile(filename)
-				
-			#set this for the tracers etc.
-			self.fft_size = fft_size
-			self.hop = fft_size // fft_overlap
-			self.sr = soundob.samplerate
-			
-			#store the FFTs for fast shuffling around
-			#TODO: analyze the RAM consumption of this
-			#TODO: perform FFT at minimal hop and get shorter hops via stride operation ::x
-			k = (self.fft_size, self.hop)
-			if k not in self.fft_storage:
-				print("storing new fft",self.fft_size)
-				signal = soundob.read(always_2d=True, dtype='float32')[:,0]
-				#this will automatically zero-pad the last fft
-				#get the magnitude spectrum
-				#avoid divide by 0 error in log10
-				#change to dB scale later, for the tracers
-				#imdata = 20 * np.log10(imdata)
-				#clamping the data to 0,1 range happens in the vertex shader
-				
-				#now store this for retrieval later
-				self.fft_storage[k] = fourier.stft(signal, self.fft_size, self.hop, "hann", self.num_cores)
-			
-			#retrieve the FFT data
-			imdata = self.fft_storage[k]
-			self.num_ffts = imdata.shape[1]
-
-			#has the file changed?
-			if self.filename != filename:
-				print("file has changed!")
-				self.filename = filename
-				#(re)set the spec_view
-				#only the camera dimension is mel'ed, as the image gets it from its transform
-				self.speed_view.camera.rect = (0, -0.1, self.num_ffts * self.hop / self.sr, 0.2)
-				self.spec_view.camera.rect = (0, 0, self.num_ffts * self.hop / self.sr, to_mel(self.sr//2))
-			self.spectrum.update_data(imdata, self.hop, self.sr)
-			self.set_clims(self.vmin, self.vmax)
+	def set_file_or_fft_settings(self, files, fft_size = 256, fft_overlap = 1):
+		if files:
+			self.compute_spectra(files, fft_size, fft_overlap)
 			self.master_speed.update()
 			self.master_reg_speed.update()
-			self.props.audio_widget.set_data(signal, self.sr)
 		
-	def on_mouse_wheel(self, event):
-		#coords of the click on the vispy canvas
-		click = np.array([event.pos[0],event.pos[1],0,1])
-		
-		#colorbar scroll
-		if self.click_on_widget(click, self.colorbar_display):
-			y_pos = self.colorbar_display._colorbar.transform.imap(click)[1]
-			d = int(event.delta[1])
-			#now split Y in three parts
-			lower = self.colorbar_display.size[1]/3
-			upper = lower*2
-			if y_pos < lower:
-				self.vmax += d
-			elif lower < y_pos < upper:
-				self.vmin += d
-				self.vmax -= d
-			elif upper < y_pos:
-				self.vmin += d
-			self.set_clims(self.vmin, self.vmax)
-				
-		#spec & speed X axis scroll
-		if self.click_on_widget(click, self.spec_xaxis):
-			#the center of zoom should be assigned a new x coordinate
-			grid_space = self.spec_view.transform.imap(click)
-			scene_space = self.spec_view.scene.transform.imap(grid_space)
-			c = (scene_space[0], self.spec_view.camera.center[1])
-			self.spec_view.camera.zoom(((1 + self.spec_view.camera.zoom_factor) ** (-event.delta[1] * 30), 1), c)
-
-		#spec Y axis scroll
-		if self.click_on_widget(click, self.spec_yaxis):
-			#the center of zoom should be assigned a new y coordinate
-			grid_space = self.spec_view.transform.imap(click)
-			scene_space = self.spec_view.scene.transform.imap(grid_space)
-			c = (self.spec_view.camera.center[0], scene_space[1])
-			self.spec_view.camera.zoom((1, (1 + self.spec_view.camera.zoom_factor) ** (-event.delta[1] * 30)), c)
-		
-		#speed Y axis scroll
-		if self.click_on_widget(click, self.speed_yaxis):
-			#the center of zoom should be assigned a new y coordinate
-			grid_space = self.speed_view.transform.imap(click)
-			scene_space = self.speed_view.scene.transform.imap(grid_space)
-			c = (self.speed_view.camera.center[0], scene_space[1])
-			self.speed_view.camera.zoom((1, (1 + self.speed_view.camera.zoom_factor) ** (-event.delta[1] * 30)), c)
-
 	def on_mouse_press(self, event):
 		#audio cursor
 		b = self.click_spec_conversion(event.pos)
@@ -1008,21 +802,9 @@ class Canvas(scene.SceneCanvas):
 					closest_line.select_handle()
 					event.handled = True
 	
-	def on_mouse_move(self, event):
-		#update the inspector label
-		click = self.click_spec_conversion(event.pos)
-		self.props.inspector_l.setText("\n        -.- Hz\n-:--:--:--- h:m:s:ms")
-		if click is not None:
-			t, f = click[0:2]
-			if t >= 0 and  self.sr/2 > f >= 0:
-				m, s = divmod(t, 60)
-				s, ms = divmod(s*1000, 1000)
-				h, m = divmod(m, 60)
-				self.props.inspector_l.setText("\n   % 8.1f Hz\n%d:%02d:%02d:%03d h:m:s:ms" % (f, h, m, s, ms))
-				
 	def on_mouse_release(self, event):
 		#coords of the click on the vispy canvas
-		if self.filename and (event.trail() is not None) and event.button == 1 and "Control" in event.modifiers:
+		if self.filenames and (event.trail() is not None) and event.button == 1 and "Control" in event.modifiers:
 			last_click = event.trail()[0]
 			click = event.pos
 			if last_click is not None:
@@ -1043,7 +825,7 @@ class Canvas(scene.SceneCanvas):
 						self.master_reg_speed.update()
 					else:
 						if self.trace_mode in ("Center of Gravity", "Peak", "Correlation", "Freehand Draw"):
-							times, freqs = wow_detection.trace_handle(self.trace_mode, self.fft_storage[(self.fft_size, self.hop)], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1, adaptation_mode = self.adapt_mode, tolerance = self.tolerance, trail = [self.click_spec_conversion(click) for click in event.trail()])
+							times, freqs = wow_detection.trace_handle(self.trace_mode, self.fft_storages[0][(self.fft_size, self.hop)], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1, adaptation_mode = self.adapt_mode, tolerance = self.tolerance, trail = [self.click_spec_conversion(click) for click in event.trail()])
 						if len(freqs) and np.nan not in freqs:
 							TraceLine(self, times, freqs)
 							self.master_speed.update()
@@ -1060,55 +842,15 @@ class Canvas(scene.SceneCanvas):
 					self.master_speed.update()
 					self.master_reg_speed.update()
 
-
 	def get_closest_line(self, click):
 		if click is not None:
-			#first, check in speed view
-			c = self.click_speed_conversion(click)
-			if c is not None:
-				if self.show_regs and self.show_lines:
-					A = np.array([line.speed_center for line in self.lines] + [reg.speed_center for reg in self.regs])
-				elif self.show_regs and not self.show_lines:
-					A = np.array([reg.speed_center for reg in self.regs])
-				elif not self.show_regs and self.show_lines:
-					A = np.array([line.speed_center for line in self.lines])
-			else:
-				#then, check in spectral view, and only true lines, no regs here
-				if self.show_lines:
-					c = self.click_spec_conversion(click)
-					A = np.array([line.spec_center for line in self.lines])
-			#returns the line (if any exists) whose center (including any offsets) is closest to pt
-			if c is not None and len(A):
-				#actually, we don't need the euclidean distance here, just a relative distance metric, so we can avoid the sqrt and just take the squared distance
-				#ind = np.linalg.norm(A-(c[0], c[1]), axis = 1).argmin()
-				ind = np.sum((A-c[0:2])**2, axis = 1).argmin()
-				if self.show_regs and self.show_lines:
-					return (self.lines+self.regs)[ind]
-				elif self.show_regs and not self.show_lines:
-					return self.regs[ind]
-				elif not self.show_regs and self.show_lines:
-					return self.lines[ind]
-	
-	def click_on_widget(self, click, wid):
-		grid_space = wid.transform.imap(click)
-		dim = wid.size
-		return (0 < grid_space[0] < dim[0]) and (0 < grid_space[1] < dim[1])
-	
-	def click_speed_conversion(self, click):
-		#in the grid on the canvas
-		grid_space = self.speed_view.transform.imap(click)
-		#is the mouse over the spectrum spec_view area?
-		if self.click_on_widget(click, self.speed_view):
-			return self.speed_view.scene.transform.imap(grid_space)
-				
-	def click_spec_conversion(self, click):
-		#in the grid on the canvas
-		grid_space = self.spec_view.transform.imap(click)
-		#is the mouse over the spectrum spec_view area?
-		if self.click_on_widget(click, self.spec_view):
-			scene_space = self.spec_view.scene.transform.imap(grid_space)
-			return self.spectrum.mel_transform.imap(scene_space)
-		
+			if self.show_regs and self.show_lines:
+				return self.get_closest(self.lines+self.regs, click)
+			elif self.show_regs and not self.show_lines:
+				return self.get_closest(self.regs, click)
+			elif not self.show_regs and self.show_lines:
+				return self.get_closest(self.lines, click)
+
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
 	appQt = QtWidgets.QApplication([])

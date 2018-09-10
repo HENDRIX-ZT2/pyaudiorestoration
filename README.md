@@ -21,9 +21,7 @@ The bundled python platform [Anaconda](https://www.anaconda.com/download/) will 
 
 Click the `Clone or Download` button at the right, then `Download ZIP`. Unzip to a folder of your choice. Assuming you have python configured as an environment variable and your commandline is in the same folder as the script, start it with
 
-`python pyrespeeder_gui.py`
-`python pytapesynch_gui.py`
-`python difeq.py`
+`python pyrespeeder_gui.py` or `python pytapesynch_gui.py` or `python difeq.py`
 
 Otherwise, specify the full paths to `python.exe` and the script.
 

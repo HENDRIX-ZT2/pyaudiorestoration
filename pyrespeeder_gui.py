@@ -1,9 +1,3 @@
-# -*- coding: utf-8 -*-
-# -----------------------------------------------------------------------------
-# Copyright (c) 2015, Vispy Development Team. All Rights Reserved.
-# Distributed under the (new) BSD License. See LICENSE.txt for more info.
-# -----------------------------------------------------------------------------
-
 import os
 import numpy as np
 import soundfile as sf
@@ -11,15 +5,7 @@ from vispy import scene, color
 from PyQt5 import QtGui, QtCore, QtWidgets
 
 #custom modules
-from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd
-
-def to_mel(val):
-	### just to set the image size correctly	
-	return np.log(val / 700 + 1) * 1127
-
-def to_Hz(val):
-	### just to set the image size correctly	
-	return (np.exp(val / 1127) - 1) * 700
+from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets
 	
 class ResamplingThread(QtCore.QThread):
 	notifyProgress = QtCore.pyqtSignal(int)
@@ -31,8 +17,6 @@ class ObjectWidget(QtWidgets.QWidget):
 	"""
 	Widget for editing OBJECT parameters
 	"""
-	file_or_fft_settings_changed = QtCore.pyqtSignal(name='objectChanged')
-	settings_soft_changed = QtCore.pyqtSignal(name='objectChanged2')
 
 	def __init__(self, parent=None):
 		super(ObjectWidget, self).__init__(parent)
@@ -42,142 +26,21 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.filename = ""
 		self.deltraces = []
 		
-		myFont=QtGui.QFont()
-		myFont.setBold(True)
-
-		display_l = QtWidgets.QLabel("Display")
-		display_l.setFont(myFont)
-		
-		fft_l = QtWidgets.QLabel("FFT Size")
-		self.fft_c = QtWidgets.QComboBox(self)
-		self.fft_c.addItems(("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768", "65536", "131072"))
-		self.fft_c.setToolTip("This determines the frequency resolution.")
-		self.fft_c.currentIndexChanged.connect(self.update_param_hard)
-		self.fft_c.setCurrentIndex(5)
-		
-		overlap_l = QtWidgets.QLabel("FFT Overlap")
-		self.overlap_c = QtWidgets.QComboBox(self)
-		self.overlap_c.addItems(("1", "2", "4", "8", "16", "32"))
-		self.overlap_c.setToolTip("Increase to improve temporal resolution.")
-		self.overlap_c.currentIndexChanged.connect(self.update_param_hard)
-		self.overlap_c.setCurrentIndex(2)
-		
-		cmap_l = QtWidgets.QLabel("Colors")
-		self.cmap_c = QtWidgets.QComboBox(self)
-		self.cmap_c.addItems(sorted(color.colormap.get_colormaps().keys()))
-		self.cmap_c.setCurrentText("viridis")
-		self.cmap_c.currentIndexChanged.connect(self.update_param_soft)
-
-		tracing_l = QtWidgets.QLabel("\nTracing")
-		tracing_l.setFont(myFont)
-		trace_l = QtWidgets.QLabel("Mode")
-		self.trace_c = QtWidgets.QComboBox(self)
-		self.trace_c.addItems(("Center of Gravity","Peak","Correlation","Freehand Draw", "Sine Regression"))
-		self.trace_c.currentIndexChanged.connect(self.update_other_settings)
-		
-		tolerance_l = QtWidgets.QLabel("Tolerance")
-		self.tolerance_s = QtWidgets.QDoubleSpinBox()
-		self.tolerance_s.setRange(.01, 5)
-		self.tolerance_s.setSingleStep(.05)
-		self.tolerance_s.setValue(.1)
-		self.tolerance_s.setToolTip("Intervall to consider in the trace, in semitones.")
-		self.tolerance_s.valueChanged.connect(self.update_other_settings)
-		
-		adapt_l = QtWidgets.QLabel("Adaptation")
-		self.adapt_c = QtWidgets.QComboBox(self)
-		self.adapt_c.addItems(("Average", "Linear", "Constant", "None"))
-		self.adapt_c.setToolTip("Used to predict the next frequencies when tracing.")
-		self.adapt_c.currentIndexChanged.connect(self.update_other_settings)
-		
-		rpm_l = QtWidgets.QLabel("Source RPM")
-		self.rpm_c = QtWidgets.QComboBox(self)
-		self.rpm_c.setEditable(True)
-		self.rpm_c.addItems(("Unknown","33.333","45","78"))
-		self.rpm_c.currentIndexChanged.connect(self.update_other_settings)
-		self.rpm_c.setToolTip("This helps avoid bad values in the sine regression. \nIf you don't know the source, measure the duration of one wow cycle. \nRPM = 60/cycle length")
-		
-		show_l = QtWidgets.QLabel("Show")
-		self.show_c = QtWidgets.QComboBox(self)
-		self.show_c.addItems(("Both","Traces","Regressions"))
-		self.show_c.currentIndexChanged.connect(self.update_show_settings)
-		
-		self.autoalign_b = QtWidgets.QCheckBox("Auto-Align")
-		self.autoalign_b.setChecked(True)
-		self.autoalign_b.stateChanged.connect(self.update_other_settings)
-		self.autoalign_b.setToolTip("Should new traces be aligned with existing ones?")
-		
-		
-		resampling_l = QtWidgets.QLabel("\nResampling")
-		resampling_l.setFont(myFont)
-		mode_l = QtWidgets.QLabel("Mode")
-		self.mode_c = QtWidgets.QComboBox(self)
-		self.mode_c.addItems(("Linear", "Sinc"))
-		self.mode_c.currentIndexChanged.connect(self.toggle_resampling_quality)
-		self.sinc_quality_l = QtWidgets.QLabel("Quality")
-		self.sinc_quality_s = QtWidgets.QSpinBox()
-		self.sinc_quality_s.setRange(1, 100)
-		self.sinc_quality_s.setSingleStep(1)
-		self.sinc_quality_s.setValue(50)
-		self.sinc_quality_s.setToolTip("Number of input samples that contribute to each output sample.\nMore samples = more quality, but slower. Only for sinc mode.")
-		self.toggle_resampling_quality()
-		
-		self.progressBar = QtWidgets.QProgressBar(self)
-		self.progressBar.setRange(0,100)
-		self.progressBar.setAlignment(QtCore.Qt.AlignCenter)
-		
-		
-		phase_l = QtWidgets.QLabel("Phase Offset")
-		self.phase_s = QtWidgets.QSpinBox()
-		self.phase_s.setRange(-20, 20)
-		self.phase_s.setSingleStep(1)
-		self.phase_s.setValue(0)
-		self.phase_s.valueChanged.connect(self.update_phase_offset)
-		self.phase_s.setToolTip("Adjust the phase of the selected sine regression to match the surrounding regions.")
-		
-		self.mygroupbox = QtWidgets.QGroupBox('Channels')
-		self.mygroupbox.setToolTip("Only selected channels will be resampled.")
-		self.channel_layout = QtWidgets.QVBoxLayout()
-		self.channel_layout.setSpacing(0)
-		self.mygroupbox.setLayout(self.channel_layout)
-		self.scroll = QtWidgets.QScrollArea()
-		self.scroll.setWidget(self.mygroupbox)
-		self.scroll.setWidgetResizable(True)
-		
-		self.inspector_l = QtWidgets.QLabel("\n        -.- Hz\n-:--:--:--- h:m:s:ms")
-		myFont2=QtGui.QFont("Monospace")
-		myFont2.setStyleHint(QtGui.QFont.TypeWriter)
-		self.inspector_l.setFont(myFont2)
-		
+		self.display_widget = widgets.DisplayWidget(self.parent.canvas)
+		self.tracing_widget = widgets.TracingWidget(self.parent.canvas)
+		self.resampling_widget = widgets.ResamplingWidget()
 		self.audio_widget = snd.AudioWidget()
+		self.inspector_widget = widgets.InspectorWidget()
 		
-		self.qgrid = QtWidgets.QGridLayout()
-		self.qgrid.setHorizontalSpacing(3)
-		self.qgrid.setVerticalSpacing(0)
-		
-		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c), (show_l, self.show_c), (cmap_l,self.cmap_c), (tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (self.autoalign_b, ), (resampling_l, ), (mode_l, self.mode_c), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,), (self.audio_widget,), (self.inspector_l,) ]
-		for i, line in enumerate(buttons):
-			for j, element in enumerate(line):
-				#we want to stretch that one
-				if 1 == len(line):
-					self.qgrid.addWidget(line[j], i, j, 1, 2)
-				else:
-					self.qgrid.addWidget(line[j], i, j)
-		
-		self.resampling_thread = ResamplingThread()
-		self.resampling_thread.notifyProgress.connect(self.onProgress)
-		
-		
-		for i in range(2):
-			self.qgrid.setColumnStretch(i, 1)
-		vbox = QtWidgets.QVBoxLayout()
-		vbox.addLayout(self.qgrid)
-		vbox.addStretch(1.0)
+		buttons = [self.display_widget, self.tracing_widget, self.resampling_widget, self.audio_widget, self.inspector_widget ]
 
-		self.channel_checkboxes = [ ]
+		vbox = QtWidgets.QVBoxLayout()
+		for w in buttons: vbox.addWidget(w)
+		vbox.addStretch(1.0)
 		self.setLayout(vbox)
-		
-	def onProgress(self, i):
-		self.progressBar.setValue(i)
+
+		self.resampling_thread = ResamplingThread()
+		self.resampling_thread.notifyProgress.connect(self.resampling_widget.onProgress)
 		
 	def open_audio(self):
 		#just a wrapper around load_audio so we can access that via drag & drop and button
@@ -205,30 +68,18 @@ class ObjectWidget(QtWidgets.QWidget):
 					return
 				
 				#Cleanup of old data
-				self.parent.canvas.fft_storages = ({},)
+				self.parent.canvas.init_fft_storages()
 				self.delete_traces(not_only_selected=True)
-				for channel in self.channel_checkboxes:
-					self.channel_layout.removeWidget(channel)
-					channel.deleteLater()
-				self.channel_checkboxes = []
-				
-				#fill the channel UI
-				channel_names = ("Front Left", "Front Right", "Center", "LFE", "Back Left", "Back Right")
-				num_channels = soundob.channels
-				for i in range(0, num_channels):
-					name = channel_names[i] if i < 6 else str(i)
-					self.channel_checkboxes.append(QtWidgets.QCheckBox(name))
-					# set the startup option to just resample channel 0
-					if i == 0:
-						self.channel_checkboxes[-1].setChecked(True)
-					else:
-						self.channel_checkboxes[-1].setChecked(False)
-					self.channel_checkboxes[-1].stateChanged.connect(self.update_other_settings)
-					self.channel_layout.addWidget( self.channel_checkboxes[-1] )
+				self.resampling_widget.refill(soundob.channels)
 				
 				#finally - proceed with spectrum stuff elsewhere
 				self.parent.setWindowTitle('pyrespeeder '+os.path.basename(self.filename))
-				self.file_or_fft_settings_changed.emit()
+
+				self.parent.canvas.set_file_or_fft_settings((filename,),
+													 fft_size = self.display_widget.fft_size,
+													 fft_overlap = self.display_widget.fft_overlap)
+				# also force a cmap update here
+				self.display_widget.update_cmap()
 				
 				#read any saved traces or regressions
 				data = resampling.read_trace(self.filename)
@@ -296,57 +147,9 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.parent.canvas.master_reg_speed.update()
 		self.deltraces = []
 			
-	def update_phase_offset(self):
-		v = self.phase_s.value()
-		for reg in self.parent.canvas.regs:
-			reg.update_phase(v)
-		self.parent.canvas.master_reg_speed.update()
-	
-	def toggle_resampling_quality(self):
-		b = (self.mode_c.currentText() == "Sinc")
-		self.sinc_quality_l.setVisible(b)
-		self.sinc_quality_s.setVisible(b)
-		
-	def update_other_settings(self):
-		self.parent.canvas.trace_mode = self.trace_c.currentText()
-		self.parent.canvas.tolerance = self.tolerance_s.value()
-		self.parent.canvas.adapt_mode = self.adapt_c.currentText()
-		self.parent.canvas.auto_align = self.autoalign_b.isChecked()
-		self.parent.canvas.rpm = self.rpm_c.currentText()
-		
-	def update_show_settings(self):
-		show = self.show_c.currentText()
-		if show == "Traces":
-			self.parent.canvas.show_regs = False
-			self.parent.canvas.show_lines = True
-			self.parent.canvas.master_speed.show()
-			for trace in self.parent.canvas.lines:
-				trace.show()
-			self.parent.canvas.master_reg_speed.hide()
-			for reg in self.parent.canvas.regs:
-				reg.hide()
-		elif show == "Regressions":
-			self.parent.canvas.show_regs = True
-			self.parent.canvas.show_lines = False
-			self.parent.canvas.master_speed.hide()
-			for trace in self.parent.canvas.lines:
-				trace.hide()
-			self.parent.canvas.master_reg_speed.show()
-			for reg in self.parent.canvas.regs:
-				reg.show()
-		elif show == "Both":
-			self.parent.canvas.show_regs = True
-			self.parent.canvas.show_lines = True
-			self.parent.canvas.master_speed.show()
-			for trace in self.parent.canvas.lines:
-				trace.show()
-			self.parent.canvas.master_reg_speed.show()
-			for reg in self.parent.canvas.regs:
-				reg.show()
-				
 	def run_resample(self):
 		if self.filename and self.parent.canvas.lines:
-			channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
+			channels = self.resampling_widget.channels
 			if channels:
 				if self.parent.canvas.regs:
 					speed_curve = self.parent.canvas.master_reg_speed.get_linspace()
@@ -354,18 +157,9 @@ class ObjectWidget(QtWidgets.QWidget):
 				else:
 					speed_curve = self.parent.canvas.master_speed.get_linspace()
 					print("Using measured speed")
-				self.resampling_thread.settings = ((self.filename,), speed_curve, self.mode_c.currentText(), self.sinc_quality_s.value(), channels)
+				self.resampling_thread.settings = ((self.filename,), speed_curve, self.resampling_widget.mode, self.resampling_widget.sinc_quality, channels)
 				self.resampling_thread.start()
 			
-	def update_param_hard(self, option):
-		self.file_or_fft_settings_changed.emit()
-		
-	def update_param_soft(self, option):
-		self.settings_soft_changed.emit()
-		
-	def foo(self):
-		print("foo")
-		
 	def select_all(self):
 		for trace in self.parent.canvas.lines+self.parent.canvas.regs:
 			trace.select()
@@ -373,6 +167,80 @@ class ObjectWidget(QtWidgets.QWidget):
 	def invert_selection(self):
 		for trace in self.parent.canvas.lines+self.parent.canvas.regs:
 			trace.toggle()
+
+class MainWindow(QtWidgets.QMainWindow):
+
+	def __init__(self):
+		QtWidgets.QMainWindow.__init__(self)		
+		
+		self.resize(720, 400)
+		self.setWindowTitle('pyrespeeder')
+		try:
+			scriptDir = os.path.dirname(os.path.realpath(__file__))
+			self.setWindowIcon(QtGui.QIcon(os.path.join(scriptDir,'icons/pyrespeeder.png')))
+		except: pass
+		
+		self.setAcceptDrops(True)
+		splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+
+		self.canvas = Canvas()
+		self.canvas.create_native()
+		self.canvas.native.setParent(self)
+
+		self.props = ObjectWidget(parent=self)
+		splitter.addWidget(self.canvas.native)
+		splitter.addWidget(self.props)
+
+		self.canvas.props = self.props
+		self.setCentralWidget(splitter)
+		
+		mainMenu = self.menuBar() 
+		fileMenu = mainMenu.addMenu('File')
+		editMenu = mainMenu.addMenu('Edit')
+		#viewMenu = mainMenu.addMenu('View')
+		#helpMenu = mainMenu.addMenu('Help')
+		
+		button_data = ( (fileMenu, "Open", self.props.open_audio, "CTRL+O"), \
+						(fileMenu, "Save", self.props.save_traces, "CTRL+S"), \
+						(fileMenu, "Resample", self.props.run_resample, "CTRL+R"), \
+						(fileMenu, "Exit", self.close, ""), \
+						(editMenu, "Undo", self.props.restore_traces, "CTRL+Z"), \
+						# (editMenu, "Redo", self.props.foo, "CTRL+Y"), \
+						(editMenu, "Select All", self.props.select_all, "CTRL+A"), \
+						(editMenu, "Invert Selection", self.props.invert_selection, "CTRL+I"), \
+						(editMenu, "Merge Selected", self.props.merge_traces, "CTRL+M"), \
+						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
+						(editMenu, "Play/Pause", self.props.audio_widget.play_pause, "SPACE"), \
+						)
+		
+		for submenu, name, func, shortcut in button_data:
+			button = QtWidgets.QAction(name, self)
+			button.triggered.connect(func)
+			if shortcut: button.setShortcut(shortcut)
+			submenu.addAction(button)
+		
+	def dragEnterEvent(self, event):
+		if event.mimeData().hasUrls:
+			event.accept()
+		else:
+			event.ignore()
+
+	def dragMoveEvent(self, event):
+		if event.mimeData().hasUrls:
+			event.setDropAction(QtCore.Qt.CopyAction)
+			event.accept()
+		else:
+			event.ignore()
+
+	def dropEvent(self, event):
+		if event.mimeData().hasUrls:
+			event.setDropAction(QtCore.Qt.CopyAction)
+			event.accept()
+			for url in event.mimeData().urls():
+				self.props.load_audio( str(url.toLocalFile()) )
+				return
+		else:
+			event.ignore()
 
 class BaseMarker:
 	"""Stores and visualizes a trace fragment, including its speed offset."""
@@ -427,92 +295,6 @@ class BaseMarker:
 		#note: this has to search the list
 		self.container.remove(self)
 	
-class MainWindow(QtWidgets.QMainWindow):
-
-	def __init__(self):
-		QtWidgets.QMainWindow.__init__(self)		
-		
-		self.resize(720, 400)
-		self.setWindowTitle('pyrespeeder')
-		try:
-			scriptDir = os.path.dirname(os.path.realpath(__file__))
-			self.setWindowIcon(QtGui.QIcon(os.path.join(scriptDir,'icons/pyrespeeder.png')))
-		except: pass
-		
-		self.setAcceptDrops(True)
-		splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-
-		self.canvas = Canvas()
-		self.canvas.create_native()
-		self.canvas.native.setParent(self)
-
-		self.props = ObjectWidget(parent=self)
-		splitter.addWidget(self.canvas.native)
-		splitter.addWidget(self.props)
-
-		self.canvas.props = self.props
-		self.setCentralWidget(splitter)
-		self.props.file_or_fft_settings_changed.connect(self.update_settings_hard)
-		self.props.settings_soft_changed.connect(self.update_settings_soft)
-		
-		mainMenu = self.menuBar() 
-		fileMenu = mainMenu.addMenu('File')
-		editMenu = mainMenu.addMenu('Edit')
-		#viewMenu = mainMenu.addMenu('View')
-		#helpMenu = mainMenu.addMenu('Help')
-		
-		button_data = ( (fileMenu, "Open", self.props.open_audio, "CTRL+O"), \
-						(fileMenu, "Save", self.props.save_traces, "CTRL+S"), \
-						(fileMenu, "Resample", self.props.run_resample, "CTRL+R"), \
-						(fileMenu, "Exit", self.close, ""), \
-						(editMenu, "Undo", self.props.restore_traces, "CTRL+Z"), \
-						# (editMenu, "Redo", self.props.foo, "CTRL+Y"), \
-						(editMenu, "Select All", self.props.select_all, "CTRL+A"), \
-						(editMenu, "Invert Selection", self.props.invert_selection, "CTRL+I"), \
-						(editMenu, "Merge Selected", self.props.merge_traces, "CTRL+M"), \
-						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
-						(editMenu, "Play/Pause", self.props.audio_widget.play_pause, "SPACE"), \
-						)
-		
-		for submenu, name, func, shortcut in button_data:
-			button = QtWidgets.QAction(name, self)
-			button.triggered.connect(func)
-			if shortcut: button.setShortcut(shortcut)
-			submenu.addAction(button)
-		
-	def update_settings_hard(self):
-		self.canvas.set_file_or_fft_settings((self.props.filename,),
-								 fft_size = int(self.props.fft_c.currentText()),
-								 fft_overlap = int(self.props.overlap_c.currentText()))
-		#also force a soft update here
-		self.update_settings_soft()
-		
-	def dragEnterEvent(self, event):
-		if event.mimeData().hasUrls:
-			event.accept()
-		else:
-			event.ignore()
-
-	def dragMoveEvent(self, event):
-		if event.mimeData().hasUrls:
-			event.setDropAction(QtCore.Qt.CopyAction)
-			event.accept()
-		else:
-			event.ignore()
-
-	def dropEvent(self, event):
-		if event.mimeData().hasUrls:
-			event.setDropAction(QtCore.Qt.CopyAction)
-			event.accept()
-			for url in event.mimeData().urls():
-				self.props.load_audio( str(url.toLocalFile()) )
-				return
-		else:
-			event.ignore()
-
-	def update_settings_soft(self):
-		self.canvas.set_colormap(self.props.cmap_c.currentText())	
-
 class MasterSpeedLine:
 	"""Stores and displays the average, ie. master speed curve."""
 	def __init__(self, vispy_canvas):
@@ -692,7 +474,7 @@ class RegLine(BaseMarker):
 		self.selected = True
 		self.visuals[0].set_data(color = self.color_sel)
 		#set the offset in the ui
-		self.vispy_canvas.props.phase_s.setValue(self.offset)
+		self.vispy_canvas.props.tracing_widget.phase_s.setValue(self.offset)
 		
 	def update_phase(self, v):
 		"""Adjust this regressions's phase offset according to the UI input."""
@@ -700,7 +482,7 @@ class RegLine(BaseMarker):
 		
 class TraceLine(BaseMarker):
 	"""Stores and visualizes a trace fragment, including its speed offset."""
-	def __init__(self, vispy_canvas, times, freqs, offset=None):
+	def __init__(self, vispy_canvas, times, freqs, offset=None, auto_align=False):
 		
 		color_def = (1, 1, 1, .5)
 		color_sel = (0, 1, 0, 1)
@@ -713,7 +495,7 @@ class TraceLine(BaseMarker):
 		self.speed-= np.mean(self.speed)
 		#we don't want to overwrite existing offsets loaded from files
 		if offset is None:
-			if not vispy_canvas.auto_align:
+			if not auto_align:
 				offset = 0
 			else:
 				#create the array for sampling
@@ -756,26 +538,17 @@ class TraceLine(BaseMarker):
 		self.speed_data[:, 1] = self.speed
 		self.visuals[0].set_data(pos = self.speed_data)
 	
-		
-
 class Canvas(spectrum.SpectrumCanvas):
 
 	def __init__(self):
 		spectrum.SpectrumCanvas.__init__(self, spectra_colors=(None,), y_axis='Octaves',)
 		self.unfreeze()
-		self.auto_align = True
-		self.trace_mode = "Center of Gravity"
-		self.adapt_mode = "Linear"
-		self.rpm = "Unknown"
-		self.tolerance = 5
 		self.show_regs = True
 		self.show_lines = True
-		
 		self.lines = []
 		self.regs = []
 		self.master_speed = MasterSpeedLine(self)
 		self.master_reg_speed = MasterRegLine(self)
-		
 		self.freeze()
 		
 	#called if either  the file or FFT settings have changed
@@ -815,19 +588,23 @@ class Canvas(spectrum.SpectrumCanvas):
 					t0, t1 = sorted((a[0], b[0]))
 					f0, f1 = sorted((a[1], b[1]))
 					t0 = max(0, t0)
+					mode = self.props.tracing_widget.mode
+					adapt = self.props.tracing_widget.adapt
+					tolerance = self.props.tracing_widget.tolerance
+					rpm = self.props.tracing_widget.rpm
+					auto_align = self.props.tracing_widget.auto_align
 					#maybe query it here from the button instead of the other way
-					if self.trace_mode == "Sine Regression":
-						amplitude, omega, phase, offset = wow_detection.trace_sine_reg(self.master_speed.get_linspace(), t0, t1, self.rpm)
+					if mode == "Sine Regression":
+						amplitude, omega, phase, offset = wow_detection.trace_sine_reg(self.master_speed.get_linspace(), t0, t1, rpm)
 						if amplitude == 0:
 							print("fallback")
-							amplitude, omega, phase, offset = wow_detection.trace_sine_reg(self.master_reg_speed.get_linspace(), t0, t1, self.rpm)
+							amplitude, omega, phase, offset = wow_detection.trace_sine_reg(self.master_reg_speed.get_linspace(), t0, t1, rpm)
 						RegLine(self, t0, t1, amplitude, omega, phase, offset)
 						self.master_reg_speed.update()
 					else:
-						if self.trace_mode in ("Center of Gravity", "Peak", "Correlation", "Freehand Draw"):
-							times, freqs = wow_detection.trace_handle(self.trace_mode, self.fft_storages[0][(self.fft_size, self.hop)], fft_size = self.fft_size, hop = self.hop, sr = self.sr, fL = f0, fU = f1, t0 = t0, t1 = t1, adaptation_mode = self.adapt_mode, tolerance = self.tolerance, trail = [self.click_spec_conversion(click) for click in event.trail()])
+						times, freqs = wow_detection.trace_handle(mode, self.fft_storages[0][(self.fft_size, self.hop)], self.fft_size, self.hop, self.sr, f0, f1, t0, t1,  tolerance, adapt, trail = [self.click_spec_conversion(click) for click in event.trail()])
 						if len(freqs) and np.nan not in freqs:
-							TraceLine(self, times, freqs)
+							TraceLine(self, times, freqs, auto_align=auto_align)
 							self.master_speed.update()
 					return
 				

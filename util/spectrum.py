@@ -57,12 +57,9 @@ class Spectrum():
 		for i in reversed(range(num_pieces_new, num_pieces_old)):
 			self.pieces[i].parent = None
 			self.pieces.pop(i)
-			# print("removing",i)
 		#add new pieces
 		for i in range(num_pieces_old, num_pieces_new):
 			self.pieces.append(SpectrumPiece(self.empty, self.parent.scene, self.overlay))
-			# print("adding",i)
-
 		#spectra may only be of a certain size, so split them
 		for i, (x, y) in enumerate([(x, y) for x in range(0, num_ffts, self.MAX_TEXTURE_SIZE) for y in range(0, num_bins, self.MAX_TEXTURE_SIZE)]):
 			imdata_piece = imdata[y:y+self.MAX_TEXTURE_SIZE, x:x+self.MAX_TEXTURE_SIZE]
@@ -234,8 +231,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.spec_yaxis.link_view(self.spec_view)
 		
 		self.spectra = [Spectrum(self.spec_view, overlay=color) for color in spectra_colors]
-		self.fft_storages = [{} for color in spectra_colors]
-		
+		self.init_fft_storages()
 		#nb. this is a vispy.util.event.EventEmitter object
 		#can this be linked somewhere to the camera? base_camera connects a few events, too
 		for spe in self.spectra:
@@ -243,6 +239,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 		
 		self.freeze()
 		
+	def init_fft_storages(self,):
+		self.fft_storages = [{} for x in self.spectra]
 	
 	def compute_spectra(self, files, fft_size, fft_overlap, ):
 		for filename, spec, fft_storage in zip(files, self.spectra, self.fft_storages):
@@ -335,14 +333,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 	def on_mouse_move(self, event):
 		#update the inspector label
 		click = self.click_spec_conversion(event.pos)
-		self.props.inspector_l.setText("\n        -.- Hz\n-:--:--:--- h:m:s:ms")
-		if click is not None:
-			t, f = click[0:2]
-			if t >= 0 and  self.sr/2 > f >= 0:
-				m, s = divmod(t, 60)
-				s, ms = divmod(s*1000, 1000)
-				h, m = divmod(m, 60)
-				self.props.inspector_l.setText("\n   % 8.1f Hz\n%d:%02d:%02d:%03d h:m:s:ms" % (f, h, m, s, ms))
+		self.props.inspector_widget.update_text(click, self.sr)
 				
 	def get_closest(self, items, click,):
 		if click is not None:

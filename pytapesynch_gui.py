@@ -1,9 +1,3 @@
-# -*- coding: utf-8 -*-
-# -----------------------------------------------------------------------------
-# Copyright (c) 2015, Vispy Development Team. All Rights Reserved.
-# Distributed under the (new) BSD License. See LICENSE.txt for more info.
-# -----------------------------------------------------------------------------
-
 import os
 import numpy as np
 import soundfile as sf
@@ -12,7 +6,7 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 from scipy.signal import butter, sosfilt, sosfiltfilt, sosfreqz
 
 #custom modules
-from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd
+from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets
 
 def butter_bandpass(lowcut, highcut, fs, order=5):
 	nyq = 0.5 * fs
@@ -26,14 +20,6 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
 	y = sosfiltfilt(sos, data)
 	return y
 	
-def to_mel(val):
-	### just to set the image size correctly	
-	return np.log(val / 700 + 1) * 1127
-
-def to_Hz(val):
-	### just to set the image size correctly	
-	return (np.exp(val / 1127) - 1) * 700
-	
 class ResamplingThread(QtCore.QThread):
 	notifyProgress = QtCore.pyqtSignal(int)
 	def run(self):
@@ -44,8 +30,8 @@ class ObjectWidget(QtWidgets.QWidget):
 	"""
 	Widget for editing OBJECT parameters
 	"""
-	file_or_fft_settings_changed = QtCore.pyqtSignal(name='objectChanged')
-	settings_soft_changed = QtCore.pyqtSignal(name='objectChanged2')
+	# file_or_fft_settings_changed = QtCore.pyqtSignal(name='objectChanged')
+	# settings_soft_changed = QtCore.pyqtSignal(name='objectChanged2')
 
 	def __init__(self, parent=None):
 		super(ObjectWidget, self).__init__(parent)
@@ -56,87 +42,21 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.reffilename = ""
 		self.deltraces = []
 		
-		myFont=QtGui.QFont()
-		myFont.setBold(True)
-
-		display_l = QtWidgets.QLabel("Display")
-		display_l.setFont(myFont)
 		
-		fft_l = QtWidgets.QLabel("FFT Size")
-		self.fft_c = QtWidgets.QComboBox(self)
-		self.fft_c.addItems(("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768", "65536", "131072"))
-		self.fft_c.setToolTip("This determines the frequency resolution.")
-		self.fft_c.currentIndexChanged.connect(self.update_param_hard)
-		self.fft_c.setCurrentIndex(5)
-		
-		overlap_l = QtWidgets.QLabel("FFT Overlap")
-		self.overlap_c = QtWidgets.QComboBox(self)
-		self.overlap_c.addItems(("1", "2", "4", "8", "16", "32"))
-		self.overlap_c.setToolTip("Increase to improve temporal resolution.")
-		self.overlap_c.currentIndexChanged.connect(self.update_param_hard)
-		self.overlap_c.setCurrentIndex(2)
-	
-		resampling_l = QtWidgets.QLabel("\nResampling")
-		resampling_l.setFont(myFont)
-		mode_l = QtWidgets.QLabel("Mode")
-		self.mode_c = QtWidgets.QComboBox(self)
-		self.mode_c.addItems(("Linear", "Sinc"))
-		self.mode_c.currentIndexChanged.connect(self.toggle_resampling_quality)
-		self.sinc_quality_l = QtWidgets.QLabel("Quality")
-		self.sinc_quality_s = QtWidgets.QSpinBox()
-		self.sinc_quality_s.setRange(1, 100)
-		self.sinc_quality_s.setSingleStep(1)
-		self.sinc_quality_s.setValue(50)
-		self.sinc_quality_s.setToolTip("Number of input samples that contribute to each output sample.\nMore samples = more quality, but slower. Only for sinc mode.")
-		self.toggle_resampling_quality()
-		
-		self.progressBar = QtWidgets.QProgressBar(self)
-		self.progressBar.setRange(0,100)
-		self.progressBar.setAlignment(QtCore.Qt.AlignCenter)
-		
-		self.mygroupbox = QtWidgets.QGroupBox('Channels')
-		self.mygroupbox.setToolTip("Only selected channels will be resampled.")
-		self.channel_layout = QtWidgets.QVBoxLayout()
-		self.channel_layout.setSpacing(0)
-		self.mygroupbox.setLayout(self.channel_layout)
-		self.scroll = QtWidgets.QScrollArea()
-		self.scroll.setWidget(self.mygroupbox)
-		self.scroll.setWidgetResizable(True)
-		
-		self.inspector_l = QtWidgets.QLabel("\n        -.- Hz\n-:--:--:--- h:m:s:ms")
-		myFont2=QtGui.QFont("Monospace")
-		myFont2.setStyleHint(QtGui.QFont.TypeWriter)
-		self.inspector_l.setFont(myFont2)
-		
-		self.qgrid = QtWidgets.QGridLayout()
-		self.qgrid.setHorizontalSpacing(3)
-		self.qgrid.setVerticalSpacing(0)
-		
+		self.display_widget = widgets.DisplayWidget(self.parent.canvas)
+		self.resampling_widget = widgets.ResamplingWidget()
 		self.audio_widget = snd.AudioWidget()
-		
-		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c), (resampling_l, ), (mode_l, self.mode_c), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,), (self.audio_widget,), (self.inspector_l,), ]
-		for i, line in enumerate(buttons):
-			for j, element in enumerate(line):
-				#we want to stretch that one
-				if 1 == len(line):
-					self.qgrid.addWidget(line[j], i, j, 1, 2)
-				else:
-					self.qgrid.addWidget(line[j], i, j)
-		
-		self.resampling_thread = ResamplingThread()
-		self.resampling_thread.notifyProgress.connect(self.onProgress)
-		
-		for i in range(2):
-			self.qgrid.setColumnStretch(i, 1)
-		vbox = QtWidgets.QVBoxLayout()
-		vbox.addLayout(self.qgrid)
-		vbox.addStretch(1.0)
+		self.inspector_widget = widgets.InspectorWidget()
+		buttons = [self.display_widget, self.resampling_widget, self.audio_widget, self.inspector_widget ]
 
-		self.channel_checkboxes = [ ]
+		vbox = QtWidgets.QVBoxLayout()
+		for w in buttons: vbox.addWidget(w)
+		vbox.addStretch(1.0)
 		self.setLayout(vbox)
-		
-	def onProgress(self, i):
-		self.progressBar.setValue(i)
+
+		self.resampling_thread = ResamplingThread()
+		self.resampling_thread.notifyProgress.connect(self.resampling_widget.onProgress)
+
 		
 	def open_audio(self):
 		#just a wrapper around load_audio so we can access that via drag & drop and button
@@ -162,31 +82,17 @@ class ObjectWidget(QtWidgets.QWidget):
 			return
 				
 		#Cleanup of old data
-		self.parent.canvas.fft_storages = ({}, {})
-		# self.parent.canvas.ref_fft_storage = {}
+		self.parent.canvas.init_fft_storages()
 		self.delete_traces(not_only_selected=True)
-		for channel in self.channel_checkboxes:
-			self.channel_layout.removeWidget(channel)
-			channel.deleteLater()
-		self.channel_checkboxes = []
-		
-		#fill the channel UI
-		channel_names = ("Front Left", "Front Right", "Center", "LFE", "Back Left", "Back Right")
-		num_channels = soundob.channels
-		for i in range(0, num_channels):
-			name = channel_names[i] if i < 6 else str(i)
-			self.channel_checkboxes.append(QtWidgets.QCheckBox(name))
-			# set the startup option to just resample channel 0
-			if i == 0:
-				self.channel_checkboxes[-1].setChecked(True)
-			else:
-				self.channel_checkboxes[-1].setChecked(False)
-			# self.channel_checkboxes[-1].stateChanged.connect(self.update_other_settings)
-			self.channel_layout.addWidget( self.channel_checkboxes[-1] )
+		self.resampling_widget.refill(soundob.channels)
 		
 		#finally - proceed with spectrum stuff elsewhere
 		self.parent.setWindowTitle('pytapesynch '+os.path.basename(self.reffilename))
-		self.file_or_fft_settings_changed.emit()
+
+		self.parent.canvas.set_file_or_fft_settings((self.reffilename, self.srcfilename),
+													 fft_size = self.display_widget.fft_size,
+													 fft_overlap = self.display_widget.fft_overlap)
+											 
 		data = resampling.read_lag(self.reffilename)
 		for a0, a1, b0, b1, d in data:
 			LagSample(self.parent.canvas, (a0, a1), (b0, b1), d)
@@ -234,33 +140,24 @@ class ObjectWidget(QtWidgets.QWidget):
 		#this means a file was loaded, so clear the undo stack
 		if not_only_selected:
 			self.deltraces= []
-			
-	def toggle_resampling_quality(self):
-		b = (self.mode_c.currentText() == "Sinc")
-		self.sinc_quality_l.setVisible(b)
-		self.sinc_quality_s.setVisible(b)
 	
 	def run_resample(self):
 		if self.srcfilename and self.parent.canvas.lag_samples:
-			channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
+			channels = self.resampling_widget.channels
 			if channels and self.parent.canvas.lag_samples:
 				lag_curve = self.parent.canvas.lag_line.data
-				self.resampling_thread.settings = ((self.srcfilename,), lag_curve, self.mode_c.currentText(), self.sinc_quality_s.value(), channels)
+				self.resampling_thread.settings = ((self.srcfilename,), lag_curve, self.resampling_widget.mode, self.resampling_widget.sinc_quality, channels)
 				self.resampling_thread.start()
-
+		
 	def run_resample_batch(self):
 		if self.srcfilename and self.parent.canvas.lag_samples:
-			reffilenames = QtWidgets.QFileDialog.getOpenFileNames(self, 'Open Files for Batch Resampling', 'c:\\', "Audio files (*.flac *.wav)")[0]
-			channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
+			filenames = QtWidgets.QFileDialog.getOpenFileNames(self, 'Open Files for Batch Resampling', 'c:\\', "Audio files (*.flac *.wav)")[0]
+			channels = self.resampling_widget.channels
 			if channels and self.parent.canvas.lag_samples:
 				lag_curve = self.parent.canvas.lag_line.data
-				self.resampling_thread.settings = (reffilenames, lag_curve, self.mode_c.currentText(), self.sinc_quality_s.value(), channels)
+				self.resampling_thread.settings = (filenames, lag_curve, self.resampling_widget.mode, self.resampling_widget.sinc_quality, channels)
 				self.resampling_thread.start()
-				
-	def update_param_hard(self, option):
-		self.file_or_fft_settings_changed.emit()
-
-		
+					
 class MainWindow(QtWidgets.QMainWindow):
 
 	def __init__(self):
@@ -286,8 +183,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		self.canvas.props = self.props
 		self.setCentralWidget(splitter)
-		self.props.file_or_fft_settings_changed.connect(self.update_settings_hard)
-		# self.props.settings_soft_changed.connect(self.update_settings_soft)
 		
 		mainMenu = self.menuBar() 
 		fileMenu = mainMenu.addMenu('File')
@@ -313,11 +208,6 @@ class MainWindow(QtWidgets.QMainWindow):
 			button.triggered.connect(func)
 			if shortcut: button.setShortcut(shortcut)
 			submenu.addAction(button)
-		
-	def update_settings_hard(self):
-		self.canvas.set_file_or_fft_settings( (self.props.reffilename, self.props.srcfilename),
-								 fft_size = int(self.props.fft_c.currentText()),
-								 fft_overlap = int(self.props.overlap_c.currentText()))
 		
 	def dragEnterEvent(self, event):
 		if event.mimeData().hasUrls:
@@ -375,8 +265,7 @@ class LagLine:
 			self.data[:, 0] = (0, 999)
 			self.data[:, 1] = (0, 0)
 		self.line_speed.set_data(pos=self.data)
-		
-		
+				
 class LagSample():
 	"""Stores a single sinc regression's data and displays it"""
 	def __init__(self, vispy_canvas, a, b, d=None):
@@ -527,7 +416,6 @@ class Canvas(spectrum.SpectrumCanvas):
 						self.lag_line.data =out
 						self.lag_line.line_speed.set_data(pos=out)
 							
-
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
 	appQt = QtWidgets.QApplication([])

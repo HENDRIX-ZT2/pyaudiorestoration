@@ -158,38 +158,15 @@ class ObjectWidget(QtWidgets.QWidget):
 				self.resampling_thread.settings = (filenames, lag_curve, self.resampling_widget.mode, self.resampling_widget.sinc_quality, channels)
 				self.resampling_thread.start()
 					
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(widgets.MainWindow):
 
 	def __init__(self):
-		QtWidgets.QMainWindow.__init__(self)		
-		
-		self.resize(720, 400)
-		self.setWindowTitle('pytapesynch')
-		try:
-			scriptDir = os.path.dirname(os.path.realpath(__file__))
-			self.setWindowIcon(QtGui.QIcon(os.path.join(scriptDir,'icons/pyrespeeder.png')))
-		except: pass
-		
-		self.setAcceptDrops(True)
-		splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-
-		self.canvas = Canvas()
-		self.canvas.create_native()
-		self.canvas.native.setParent(self)
-
-		self.props = ObjectWidget(parent=self)
-		splitter.addWidget(self.canvas.native)
-		splitter.addWidget(self.props)
-
-		self.canvas.props = self.props
-		self.setCentralWidget(splitter)
-		
+		widgets.MainWindow.__init__(self, "pytapesynch", ObjectWidget, Canvas)
 		mainMenu = self.menuBar() 
 		fileMenu = mainMenu.addMenu('File')
 		editMenu = mainMenu.addMenu('Edit')
 		#viewMenu = mainMenu.addMenu('View')
 		#helpMenu = mainMenu.addMenu('Help')
-		
 		button_data = ( (fileMenu, "Open", self.props.open_audio, "CTRL+O"), \
 						(fileMenu, "Save", self.props.save_traces, "CTRL+S"), \
 						(fileMenu, "Resample", self.props.run_resample, "CTRL+R"), \
@@ -202,35 +179,7 @@ class MainWindow(QtWidgets.QMainWindow):
 						# (editMenu, "Invert Selection", self.props.invert_selection, "CTRL+I"), \
 						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
 						)
-		
-		for submenu, name, func, shortcut in button_data:
-			button = QtWidgets.QAction(name, self)
-			button.triggered.connect(func)
-			if shortcut: button.setShortcut(shortcut)
-			submenu.addAction(button)
-		
-	def dragEnterEvent(self, event):
-		if event.mimeData().hasUrls:
-			event.accept()
-		else:
-			event.ignore()
-
-	def dragMoveEvent(self, event):
-		if event.mimeData().hasUrls:
-			event.setDropAction(QtCore.Qt.CopyAction)
-			event.accept()
-		else:
-			event.ignore()
-
-	def dropEvent(self, event):
-		if event.mimeData().hasUrls:
-			event.setDropAction(QtCore.Qt.CopyAction)
-			event.accept()
-			for url in event.mimeData().urls():
-				self.props.load_audio( str(url.toLocalFile()) )
-				return
-		else:
-			event.ignore()
+		self.add_to_menu(button_data)
 
 class LagLine:
 	"""Stores and displays the average, ie. master speed curve."""
@@ -256,6 +205,10 @@ class LagLine:
 			times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
 			lag = np.interp(times, sample_times, sample_lags)
 			
+			#quadratic interpolation does not give usable results
+			# interolator = scipy.interpolate.interp1d(sample_times, sample_lags, kind='quadratic', bounds_error=False, fill_value="extrapolate")
+			# lag = interolator(times)
+				
 			#create the speed curve visualization, boost it a bit to distinguish from the raw curves
 			self.data = np.zeros((len(times), 2), dtype=np.float32)
 			self.data[:, 0] = times
@@ -282,6 +235,7 @@ class LagSample():
 		self.f = (a[1]+b[1])/2
 		self.height= abs(a[1]-b[1])
 		self.spec_center = (self.t, self.f)
+		self.speed_center = (self.t, self.d)
 		self.rect = scene.Rectangle(center=(self.t, self.f), width=self.width, height=self.height, radius=0, parent=vispy_canvas.spec_view.scene)
 		self.rect.color = (1, 1, 1, .5)
 		self.rect.transform = vispy_canvas.spectra[-1].mel_transform

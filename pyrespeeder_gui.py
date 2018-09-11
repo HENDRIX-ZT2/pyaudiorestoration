@@ -168,38 +168,15 @@ class ObjectWidget(QtWidgets.QWidget):
 		for trace in self.parent.canvas.lines+self.parent.canvas.regs:
 			trace.toggle()
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(widgets.MainWindow):
 
 	def __init__(self):
-		QtWidgets.QMainWindow.__init__(self)		
-		
-		self.resize(720, 400)
-		self.setWindowTitle('pyrespeeder')
-		try:
-			scriptDir = os.path.dirname(os.path.realpath(__file__))
-			self.setWindowIcon(QtGui.QIcon(os.path.join(scriptDir,'icons/pyrespeeder.png')))
-		except: pass
-		
-		self.setAcceptDrops(True)
-		splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-
-		self.canvas = Canvas()
-		self.canvas.create_native()
-		self.canvas.native.setParent(self)
-
-		self.props = ObjectWidget(parent=self)
-		splitter.addWidget(self.canvas.native)
-		splitter.addWidget(self.props)
-
-		self.canvas.props = self.props
-		self.setCentralWidget(splitter)
-		
+		widgets.MainWindow.__init__(self, "pyrespeeder", ObjectWidget, Canvas)
 		mainMenu = self.menuBar() 
 		fileMenu = mainMenu.addMenu('File')
 		editMenu = mainMenu.addMenu('Edit')
 		#viewMenu = mainMenu.addMenu('View')
 		#helpMenu = mainMenu.addMenu('Help')
-		
 		button_data = ( (fileMenu, "Open", self.props.open_audio, "CTRL+O"), \
 						(fileMenu, "Save", self.props.save_traces, "CTRL+S"), \
 						(fileMenu, "Resample", self.props.run_resample, "CTRL+R"), \
@@ -212,35 +189,7 @@ class MainWindow(QtWidgets.QMainWindow):
 						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
 						(editMenu, "Play/Pause", self.props.audio_widget.play_pause, "SPACE"), \
 						)
-		
-		for submenu, name, func, shortcut in button_data:
-			button = QtWidgets.QAction(name, self)
-			button.triggered.connect(func)
-			if shortcut: button.setShortcut(shortcut)
-			submenu.addAction(button)
-		
-	def dragEnterEvent(self, event):
-		if event.mimeData().hasUrls:
-			event.accept()
-		else:
-			event.ignore()
-
-	def dragMoveEvent(self, event):
-		if event.mimeData().hasUrls:
-			event.setDropAction(QtCore.Qt.CopyAction)
-			event.accept()
-		else:
-			event.ignore()
-
-	def dropEvent(self, event):
-		if event.mimeData().hasUrls:
-			event.setDropAction(QtCore.Qt.CopyAction)
-			event.accept()
-			for url in event.mimeData().urls():
-				self.props.load_audio( str(url.toLocalFile()) )
-				return
-		else:
-			event.ignore()
+		self.add_to_menu(button_data)
 
 class BaseMarker:
 	"""Stores and visualizes a trace fragment, including its speed offset."""

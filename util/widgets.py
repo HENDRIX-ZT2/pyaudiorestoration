@@ -265,3 +265,59 @@ class InspectorWidget(QtWidgets.QLabel):
 				s, ms = divmod(s*1000, 1000)
 				h, m = divmod(m, 60)
 				self.setText("\n   % 8.1f Hz\n%d:%02d:%02d:%03d h:m:s:ms" % (f, h, m, s, ms))
+				
+
+class MainWindow(QtWidgets.QMainWindow):
+
+	def __init__(self, name, object_widget, canvas_widget):
+		QtWidgets.QMainWindow.__init__(self)		
+		
+		self.resize(720, 400)
+		self.setWindowTitle(name)
+		try:
+			base_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+			self.setWindowIcon(QtGui.QIcon(os.path.join(base_dir,'icons/'+name+'.png')))
+		except: pass
+		
+		self.setAcceptDrops(True)
+
+		self.canvas = canvas_widget()
+		self.canvas.create_native()
+		self.canvas.native.setParent(self)
+		self.props = object_widget(parent=self)
+		self.canvas.props = self.props
+
+		splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+		splitter.addWidget(self.canvas.native)
+		splitter.addWidget(self.props)
+		self.setCentralWidget(splitter)
+		
+	def add_to_menu(self, button_data):
+		for submenu, name, func, shortcut in button_data:
+			button = QtWidgets.QAction(name, self)
+			button.triggered.connect(func)
+			if shortcut: button.setShortcut(shortcut)
+			submenu.addAction(button)
+		
+	def dragEnterEvent(self, event):
+		if event.mimeData().hasUrls:
+			event.accept()
+		else:
+			event.ignore()
+
+	def dragMoveEvent(self, event):
+		if event.mimeData().hasUrls:
+			event.setDropAction(QtCore.Qt.CopyAction)
+			event.accept()
+		else:
+			event.ignore()
+
+	def dropEvent(self, event):
+		if event.mimeData().hasUrls:
+			event.setDropAction(QtCore.Qt.CopyAction)
+			event.accept()
+			for url in event.mimeData().urls():
+				self.props.load_audio( str(url.toLocalFile()) )
+				return
+		else:
+			event.ignore()

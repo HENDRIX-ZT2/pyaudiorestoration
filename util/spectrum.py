@@ -102,6 +102,8 @@ class Spectrum():
 		self.delta+=d
 		for image in self.pieces:
 			t = image.transform.transforms[0].translate
+			image.bb.left+=d
+			image.bb.right+=d
 			t[0]+=d
 			image.transform.transforms[0].translate = t
 
@@ -242,8 +244,10 @@ class SpectrumCanvas(scene.SceneCanvas):
 	def init_fft_storages(self,):
 		self.fft_storages = [{} for x in self.spectra]
 	
-	def compute_spectra(self, files, fft_size, fft_overlap, ):
-		for filename, spec, fft_storage in zip(files, self.spectra, self.fft_storages):
+	def compute_spectra(self, files, fft_size, fft_overlap, channels=None):
+		if channels is None:
+			channels = [0 for file in files]
+		for filename, spec, fft_storage, channel in zip(files, self.spectra, self.fft_storages, channels):
 			#set this for the tracers etc.
 			self.fft_size = fft_size
 			self.hop = fft_size // fft_overlap
@@ -251,16 +255,16 @@ class SpectrumCanvas(scene.SceneCanvas):
 				soundob = sf.SoundFile(filename)
 					
 				self.sr = soundob.samplerate
-				k = (self.fft_size, self.hop)
+				k = (self.fft_size, self.hop, channel)
 				if k not in fft_storage:
 					print("storing new fft",self.fft_size)
-					signal = soundob.read(always_2d=True, dtype='float32')[:,0]
+					signal = soundob.read(always_2d=True, dtype='float32')[:,channel]
 					#now store this for retrieval later
 					fft_storage[k] = fourier.stft(signal, self.fft_size, self.hop, "hann", self.num_cores)
 				
 				#retrieve the FFT data
 				imdata = fft_storage[k]
-				self.num_ffts = imdata.shape[1]
+				self.num_ffts = max(self.num_ffts, imdata.shape[1])
 				spec.update_data(imdata, self.hop, self.sr)
 		
 		#has the file changed?

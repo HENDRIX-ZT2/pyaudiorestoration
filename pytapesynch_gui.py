@@ -4,6 +4,7 @@ import soundfile as sf
 from vispy import scene, color
 from PyQt5 import QtGui, QtCore, QtWidgets
 from scipy.signal import butter, sosfilt, sosfiltfilt, sosfreqz
+from scipy import interpolate
 
 #custom modules
 from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets
@@ -196,23 +197,35 @@ class LagLine:
 		
 	def update(self):
 		if self.vispy_canvas.lag_samples:
-		
-			self.vispy_canvas.lag_samples.sort(key=lambda tup: tup.t)
-			sample_times = [sample.t for sample in self.vispy_canvas.lag_samples]
-			sample_lags = [sample.d for sample in self.vispy_canvas.lag_samples]
-			
-			num = self.vispy_canvas.num_ffts
-			times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
-			lag = np.interp(times, sample_times, sample_lags)
-			
-			#quadratic interpolation does not give usable results
-			# interolator = scipy.interpolate.interp1d(sample_times, sample_lags, kind='quadratic', bounds_error=False, fill_value="extrapolate")
-			# lag = interolator(times)
+			try:
+				self.vispy_canvas.lag_samples.sort(key=lambda tup: tup.t)
+				sample_times = [sample.t for sample in self.vispy_canvas.lag_samples]
+				sample_lags = [sample.d for sample in self.vispy_canvas.lag_samples]
 				
-			#create the speed curve visualization, boost it a bit to distinguish from the raw curves
-			self.data = np.zeros((len(times), 2), dtype=np.float32)
-			self.data[:, 0] = times
-			self.data[:, 1] = lag
+				num = self.vispy_canvas.num_ffts
+				times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
+				# lag = np.interp(times, sample_times, sample_lags)
+				lag = interpolate.interp1d(sample_times, sample_lags, fill_value="extrapolate")(times)
+
+				#quadratic interpolation does not give usable results
+				# interolator = scipy.interpolate.interp1d(sample_times, sample_lags, kind='quadratic', bounds_error=False, fill_value="extrapolate")
+				# lag = interolator(times)
+				
+				#using bezier splines; probably needs to be done segment by segment
+				# tck,u = interpolate.splprep([times,lag],k=2,s=0)
+				# # u=np.linspace(0,1,num=10000,endpoint=True)
+				# out = interpolate.splev(u,tck)
+				# x=out[0]
+				# y=out[1]
+				# #create the speed curve visualization, boost it a bit to distinguish from the raw curves
+				# self.data = np.zeros((len(x), 2), dtype=np.float32)
+				# self.data[:, 0] = x
+				# self.data[:, 1] = y
+				#create the speed curve visualization, boost it a bit to distinguish from the raw curves
+				self.data = np.zeros((len(times), 2), dtype=np.float32)
+				self.data[:, 0] = times
+				self.data[:, 1] = lag
+			except: pass
 		else:
 			self.data = np.zeros((2, 2), dtype=np.float32)
 			self.data[:, 0] = (0, 999)

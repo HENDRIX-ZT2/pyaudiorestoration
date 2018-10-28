@@ -226,7 +226,7 @@ def run(filenames, speed_curve=None, resampling_mode = "Linear", sinc_quality=50
 		elif lag_curve is not None:
 			sampletimes = lag_curve[:,0]*sr
 			lags = lag_curve[:,1]*sr
-			samples_out = np.interp(samples_in, sampletimes, sampletimes-lags)
+			samples_out = np.interp(np.arange( len(signal[:,0])+lags[-1] ), sampletimes, sampletimes-lags)
 			
 		dur = time() - start_time
 		print("Preparation took",dur)
@@ -240,7 +240,7 @@ def run(filenames, speed_curve=None, resampling_mode = "Linear", sinc_quality=50
 					outfile.write( sinc_core(samples_out, samples_in, signal[:,channel], np.empty(len(samples_out), "float32"), np.hanning(2*sinc_quality), sinc_quality ) )
 				elif resampling_mode == "Linear":
 					outfile.write( np.interp(samples_out, samples_in, signal[:,channel]) )
-			if prog_sig: prog_sig.notifyProgress.emit(progress/len(use_channels)*100)
+			if prog_sig: prog_sig.notifyProgress.emit((progress+1)/len(use_channels)*100)
 		if prog_sig: prog_sig.notifyProgress.emit(100)
 		dur = time() - start_time
 		print("Resampling took",dur)

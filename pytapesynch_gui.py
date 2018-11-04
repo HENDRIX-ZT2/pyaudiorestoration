@@ -106,24 +106,49 @@ class ObjectWidget(QtWidgets.QWidget):
 	def improve_lag(self):
 		for lag in self.parent.canvas.lag_samples:
 			if lag.selected:
+				#prepare some values
 				sr = self.parent.canvas.sr
-				raw_lag = lag.d*sr
+				raw_lag = int(lag.d*sr)
 				ref_t0 = int(sr*lag.a[0])
 				ref_t1 = int(sr*lag.b[0])
-				src_t0 = int(sr*lag.a[0]+lag.d)
-				src_t1 = src_t0+ref_t1-ref_t0
+				src_t0 = ref_t0-raw_lag
+				src_t1 = ref_t1-raw_lag
 				freqs = sorted((lag.a[1], lag.b[1]))
 				lower = max(freqs[0], 1)
 				upper = min(freqs[1], sr//2-1)
+				ref_pad_l = 0
+				ref_pad_r = 0
+				src_pad_l = 0
+				src_pad_r = 0
 				# channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
+				
+				#trim and pad both sources
 				ref_ob = sf.SoundFile(self.reffilename)
-				ref_sig = ref_ob.read(always_2d=True, dtype='float32')[ref_t0:ref_t1,0]
+				ref_sig = ref_ob.read(always_2d=True, dtype='float32')[:,0]
+				if ref_t0 < 0:
+					ref_pad_l = abs(ref_t0)
+					ref_t0 = 0
+				if ref_t1 > len(ref_sig):
+					ref_pad_r = ref_t1 - len(ref_sig)
+				ref_sig = np.pad( ref_sig[ref_t0:ref_t1], (ref_pad_l, ref_pad_r), "constant", constant_values = 0)
+				
 				src_ob = sf.SoundFile(self.srcfilename)
-				src_sig = src_ob.read(always_2d=True, dtype='float32')[src_t0:src_t1,0]
+				src_sig = src_ob.read(always_2d=True, dtype='float32')[:,0]
+				if src_t0 < 0:
+					src_pad_l = abs(src_t0)
+					src_t0 = 0
+				if src_t1 > len(src_sig):
+					src_pad_r = src_t1 - len(src_sig)
+				src_sig = np.pad( src_sig[src_t0:src_t1], (src_pad_l, src_pad_r), "constant", constant_values = 0)
+				# with sf.SoundFile(self.reffilename+"2.wav", 'w+', sr, 1, subtype='FLOAT') as outfile: outfile.write( ref_sig )
+				# with sf.SoundFile(self.srcfilename+"2.wav", 'w+', sr, 1, subtype='FLOAT') as outfile: outfile.write( src_sig )
+				
+				#correlate both sources
 				res = np.correlate(butter_bandpass_filter(ref_sig, lower, upper, sr, order=3), butter_bandpass_filter(src_sig, lower, upper, sr, order=3), mode="same")
-				i_peak = np.argmax(res)
-				#interpolate the most accurate fit
-				result = wow_detection.parabolic(res, i_peak)[0] -(len(ref_sig)//2)
+				#interpolate to get the most accurate fit
+				i_peak = wow_detection.parabolic(res, np.argmax(res))[0]
+				result = raw_lag + i_peak - len(ref_sig)//2
+				#update the lag marker
 				lag.d = result/sr
 				lag.select()
 				self.parent.canvas.lag_line.update()
@@ -341,47 +366,47 @@ class Canvas(spectrum.SpectrumCanvas):
 						self.spectra[1].translate(d)
 					elif "Shift" in event.modifiers:
 						LagSample(self, a, b)
-					elif "Alt" in event.modifiers:
-						print()
-						print("Start")
-						#first get the time range for both
-						#apply bandpass
-						#split into pieces and look up the delay for each
-						#correlate all the pieces
-						sr = self.sr
-						dur = int(0.2 *sr)
-						times = sorted((a[0], b[0]))
-						ref_t0 = int(sr*times[0])
-						ref_t1 = int(sr*times[1])
-						# src_t0 = int(sr*lag.a[0]+lag.d)
-						# src_t1 = src_t0+ref_t1-ref_t0
-						freqs = sorted((a[1], b[1]))
-						lower = max(freqs[0], 1)
-						upper = min(freqs[1], sr//2-1)
-						# channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
-						ref_ob = sf.SoundFile(self.props.reffilename)
-						ref_sig = ref_ob.read(always_2d=True, dtype='float32')
-						src_ob = sf.SoundFile(self.props.srcfilename)
-						src_sig = src_ob.read(always_2d=True, dtype='float32')
-						sample_times = np.arange(ref_t0, ref_t1, dur//32)
-						data = self.lag_line.data
-						sample_lags = np.interp(sample_times, data[:, 0]*sr, data[:, 1]*sr)
+					# elif "Alt" in event.modifiers:
+						# print()
+						# print("Start")
+						# #first get the time range for both
+						# #apply bandpass
+						# #split into pieces and look up the delay for each
+						# #correlate all the pieces
+						# sr = self.sr
+						# dur = int(0.2 *sr)
+						# times = sorted((a[0], b[0]))
+						# ref_t0 = int(sr*times[0])
+						# ref_t1 = int(sr*times[1])
+						# # src_t0 = int(sr*lag.a[0]+lag.d)
+						# # src_t1 = src_t0+ref_t1-ref_t0
+						# freqs = sorted((a[1], b[1]))
+						# lower = max(freqs[0], 1)
+						# upper = min(freqs[1], sr//2-1)
+						# # channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
+						# ref_ob = sf.SoundFile(self.props.reffilename)
+						# ref_sig = ref_ob.read(always_2d=True, dtype='float32')
+						# src_ob = sf.SoundFile(self.props.srcfilename)
+						# src_sig = src_ob.read(always_2d=True, dtype='float32')
+						# sample_times = np.arange(ref_t0, ref_t1, dur//32)
+						# data = self.lag_line.data
+						# sample_lags = np.interp(sample_times, data[:, 0]*sr, data[:, 1]*sr)
 						
-						#could do a stack
-						out = np.zeros((len(sample_times), 2), dtype=np.float32)
-						out[:, 0] = sample_times/sr
-						for i, (x, d) in enumerate(zip(sample_times, sample_lags)):
+						# #could do a stack
+						# out = np.zeros((len(sample_times), 2), dtype=np.float32)
+						# out[:, 0] = sample_times/sr
+						# for i, (x, d) in enumerate(zip(sample_times, sample_lags)):
 							
-							ref_s = butter_bandpass_filter(ref_sig[x:x+dur,0], lower, upper, sr, order=3)
-							src_s = butter_bandpass_filter(src_sig[x-int(d):x-int(d)+dur,0], lower, upper, sr, order=3)
-							res = np.correlate(ref_s*np.hanning(dur), src_s*np.hanning(dur), mode="same")
-							i_peak = np.argmax(res)
-							#interpolate the most accurate fit
-							result = wow_detection.parabolic(res, i_peak)[0] -(len(ref_s)//2)
-							# print("extra accuracy (smp)",int(d)+result)
-							out[i, 1] = (int(d)+result)/sr
-						self.lag_line.data =out
-						self.lag_line.line_speed.set_data(pos=out)
+							# ref_s = butter_bandpass_filter(ref_sig[x:x+dur,0], lower, upper, sr, order=3)
+							# src_s = butter_bandpass_filter(src_sig[x-int(d):x-int(d)+dur,0], lower, upper, sr, order=3)
+							# res = np.correlate(ref_s*np.hanning(dur), src_s*np.hanning(dur), mode="same")
+							# i_peak = np.argmax(res)
+							# #interpolate the most accurate fit
+							# result = wow_detection.parabolic(res, i_peak)[0] -(len(ref_s)//2)
+							# # print("extra accuracy (smp)",int(d)+result)
+							# out[i, 1] = (int(d)+result)/sr
+						# self.lag_line.data =out
+						# self.lag_line.line_speed.set_data(pos=out)
 							
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':

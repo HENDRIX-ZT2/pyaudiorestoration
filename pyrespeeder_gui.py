@@ -551,7 +551,7 @@ class Canvas(spectrum.SpectrumCanvas):
 						RegLine(self, t0, t1, amplitude, omega, phase, offset)
 						self.master_reg_speed.update()
 					else:
-						times, freqs = wow_detection.trace_handle(mode, self.fft_storages[0][(self.fft_size, self.hop)], self.fft_size, self.hop, self.sr, f0, f1, t0, t1,  tolerance, adapt, trail = [self.click_spec_conversion(click) for click in event.trail()])
+						times, freqs = wow_detection.trace_handle(mode, self.fft_storages[0][(self.fft_size, self.hop, 0)], self.fft_size, self.hop, self.sr, f0, f1, t0, t1,  tolerance, adapt, trail = [self.click_spec_conversion(click) for click in event.trail()])
 						if len(freqs) and np.nan not in freqs:
 							TraceLine(self, times, freqs, auto_align=auto_align)
 							self.master_speed.update()

@@ -31,8 +31,6 @@ class ObjectWidget(QtWidgets.QWidget):
 	"""
 	Widget for editing OBJECT parameters
 	"""
-	# file_or_fft_settings_changed = QtCore.pyqtSignal(name='objectChanged')
-	# settings_soft_changed = QtCore.pyqtSignal(name='objectChanged2')
 
 	def __init__(self, parent=None):
 		super(ObjectWidget, self).__init__(parent)
@@ -191,18 +189,12 @@ class MainWindow(widgets.MainWindow):
 		mainMenu = self.menuBar() 
 		fileMenu = mainMenu.addMenu('File')
 		editMenu = mainMenu.addMenu('Edit')
-		#viewMenu = mainMenu.addMenu('View')
-		#helpMenu = mainMenu.addMenu('Help')
 		button_data = ( (fileMenu, "Open", self.props.open_audio, "CTRL+O"), \
 						(fileMenu, "Save", self.props.save_traces, "CTRL+S"), \
 						(fileMenu, "Resample", self.props.run_resample, "CTRL+R"), \
 						(fileMenu, "Batch Resample", self.props.run_resample_batch, "CTRL+B"), \
 						(fileMenu, "Exit", self.close, ""), \
 						(editMenu, "Improve", self.props.improve_lag, "CTRL+I"), \
-						# (editMenu, "Undo", self.props.restore_traces, "CTRL+Z"), \
-						# (editMenu, "Redo", self.props.foo, "CTRL+Y"), \
-						# (editMenu, "Select All", self.props.select_all, "CTRL+A"), \
-						# (editMenu, "Invert Selection", self.props.invert_selection, "CTRL+I"), \
 						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
 						)
 		self.add_to_menu(button_data)

@@ -227,6 +227,10 @@ def run(filenames, speed_curve=None, resampling_mode = "Linear", sinc_quality=50
 			sampletimes = lag_curve[:,0]*sr
 			lags = lag_curve[:,1]*sr
 			samples_out = np.interp(np.arange( len(signal[:,0])+lags[-1] ), sampletimes, sampletimes-lags)
+			# with lerped speed curve
+			# speeds = np.diff(lag_curve[:,1])/np.diff(lag_curve[:,0])+1
+			# sampletimes = (lag_curve[:-1,0]+np.diff(lag_curve[:,0])/2)*sr
+			# samples_out = prepare_linear_or_sinc(sampletimes, speeds)
 			
 		dur = time() - start_time
 		print("Preparation took",dur)

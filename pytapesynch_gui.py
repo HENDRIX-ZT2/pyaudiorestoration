@@ -104,55 +104,57 @@ class ObjectWidget(QtWidgets.QWidget):
 	def improve_lag(self):
 		for lag in self.parent.canvas.lag_samples:
 			if lag.selected:
-				#prepare some values
-				sr = self.parent.canvas.sr
-				raw_lag = int(lag.d*sr)
-				ref_t0 = int(sr*lag.a[0])
-				ref_t1 = int(sr*lag.b[0])
-				src_t0 = ref_t0-raw_lag
-				src_t1 = ref_t1-raw_lag
-				freqs = sorted((lag.a[1], lag.b[1]))
-				lower = max(freqs[0], 1)
-				upper = min(freqs[1], sr//2-1)
-				ref_pad_l = 0
-				ref_pad_r = 0
-				src_pad_l = 0
-				src_pad_r = 0
-				# channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
-				
-				#trim and pad both sources
-				ref_ob = sf.SoundFile(self.reffilename)
-				ref_sig = ref_ob.read(always_2d=True, dtype='float32')[:,0]
-				if ref_t0 < 0:
-					ref_pad_l = abs(ref_t0)
-					ref_t0 = 0
-				if ref_t1 > len(ref_sig):
-					ref_pad_r = ref_t1 - len(ref_sig)
-				ref_sig = np.pad( ref_sig[ref_t0:ref_t1], (ref_pad_l, ref_pad_r), "constant", constant_values = 0)
-				
-				src_ob = sf.SoundFile(self.srcfilename)
-				src_sig = src_ob.read(always_2d=True, dtype='float32')[:,0]
-				if src_t0 < 0:
-					src_pad_l = abs(src_t0)
-					src_t0 = 0
-				if src_t1 > len(src_sig):
-					src_pad_r = src_t1 - len(src_sig)
-				src_sig = np.pad( src_sig[src_t0:src_t1], (src_pad_l, src_pad_r), "constant", constant_values = 0)
-				# with sf.SoundFile(self.reffilename+"2.wav", 'w+', sr, 1, subtype='FLOAT') as outfile: outfile.write( ref_sig )
-				# with sf.SoundFile(self.srcfilename+"2.wav", 'w+', sr, 1, subtype='FLOAT') as outfile: outfile.write( src_sig )
-				
-				#correlate both sources
-				res = np.correlate(butter_bandpass_filter(ref_sig, lower, upper, sr, order=3), butter_bandpass_filter(src_sig, lower, upper, sr, order=3), mode="same")
-				#interpolate to get the most accurate fit
-				i_peak = wow_detection.parabolic(res, np.argmax(res))[0]
-				result = raw_lag + i_peak - len(ref_sig)//2
-				#update the lag marker
-				lag.d = result/sr
-				lag.select()
-				self.parent.canvas.lag_line.update()
-				print("raw accuracy (smp)",raw_lag)
-				print("extra accuracy (smp)",result)
-			
+				try:
+					#prepare some values
+					sr = self.parent.canvas.sr
+					raw_lag = int(lag.d*sr)
+					ref_t0 = int(sr*lag.a[0])
+					ref_t1 = int(sr*lag.b[0])
+					src_t0 = ref_t0-raw_lag
+					src_t1 = ref_t1-raw_lag
+					freqs = sorted((lag.a[1], lag.b[1]))
+					lower = max(freqs[0], 1)
+					upper = min(freqs[1], sr//2-1)
+					ref_pad_l = 0
+					ref_pad_r = 0
+					src_pad_l = 0
+					src_pad_r = 0
+					# channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
+					
+					#trim and pad both sources
+					ref_ob = sf.SoundFile(self.reffilename)
+					ref_sig = ref_ob.read(always_2d=True, dtype='float32')[:,0]
+					if ref_t0 < 0:
+						ref_pad_l = abs(ref_t0)
+						ref_t0 = 0
+					if ref_t1 > len(ref_sig):
+						ref_pad_r = ref_t1 - len(ref_sig)
+					ref_sig = np.pad( ref_sig[ref_t0:ref_t1], (ref_pad_l, ref_pad_r), "constant", constant_values = 0)
+					
+					src_ob = sf.SoundFile(self.srcfilename)
+					src_sig = src_ob.read(always_2d=True, dtype='float32')[:,0]
+					if src_t0 < 0:
+						src_pad_l = abs(src_t0)
+						src_t0 = 0
+					if src_t1 > len(src_sig):
+						src_pad_r = src_t1 - len(src_sig)
+					src_sig = np.pad( src_sig[src_t0:src_t1], (src_pad_l, src_pad_r), "constant", constant_values = 0)
+					# with sf.SoundFile(self.reffilename+"2.wav", 'w+', sr, 1, subtype='FLOAT') as outfile: outfile.write( ref_sig )
+					# with sf.SoundFile(self.srcfilename+"2.wav", 'w+', sr, 1, subtype='FLOAT') as outfile: outfile.write( src_sig )
+					
+					#correlate both sources
+					res = np.correlate(butter_bandpass_filter(ref_sig, lower, upper, sr, order=3), butter_bandpass_filter(src_sig, lower, upper, sr, order=3), mode="same")
+					#interpolate to get the most accurate fit
+					i_peak = wow_detection.parabolic(res, np.argmax(res))[0]
+					result = raw_lag + i_peak - len(ref_sig)//2
+					#update the lag marker
+					lag.d = result/sr
+					lag.select()
+					self.parent.canvas.lag_line.update()
+					print("raw accuracy (smp)",raw_lag)
+					print("extra accuracy (smp)",result)
+				except:
+					print("Refining error!")
 	def delete_traces(self, not_only_selected=False):
 		self.deltraces= []
 		for trace in reversed(self.parent.canvas.lag_samples):

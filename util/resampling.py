@@ -160,7 +160,8 @@ def sinc_core(positions, samples_in2, signal, output, win_func, NT ):
 		#we need anti-aliasing when sampling rate is bigger than before, ie. exceeding the nyquist frequency
 		#could skip this calculation and get it from the speed curve instead?
 		if i+1 != block_len:
-			period_to = positions[i+1]-p
+			period_to = max(0.000000000001, positions[i+1]-p)
+			#period to must not be 0, crashes if jit is enabled
 		fc = min(1/period_to, 1)
 		
 		#use a Hann window to reduce the prominent sinc ringing of a rectangular window

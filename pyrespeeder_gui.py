@@ -3,9 +3,27 @@ import numpy as np
 import soundfile as sf
 from vispy import scene, color
 from PyQt5 import QtGui, QtCore, QtWidgets
+from scipy.signal import butter, filtfilt
 
 #custom modules
 from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets
+
+def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
+	"""Performs a low, high or bandpass filter if low & highcut are in range"""
+	nyq = 0.5 * fs
+	low = lowcut / nyq
+	high = highcut / nyq
+	low_in_range = 0 < low < 1
+	high_in_range = 0 < high < 1
+	if low_in_range and high_in_range:
+		b, a = butter(order, [low, high], btype='band')
+	elif low_in_range and not high_in_range:
+		b, a = butter(order, low, btype='high')
+	elif not low_in_range and high_in_range:
+		b, a = butter(order, high, btype='low')
+	else:
+		return data
+	return filtfilt(b, a, data)
 	
 class ResamplingThread(QtCore.QThread):
 	notifyProgress = QtCore.pyqtSignal(int)
@@ -254,6 +272,7 @@ class MasterSpeedLine:
 		self.data = np.zeros((2, 2), dtype=np.float32)
 		self.data[:, 0] = (0, 999)
 		self.data[:, 1] = (0, 0)
+		self.bands = (0, 9999999)
 		self.line_speed = scene.Line(pos=self.data, color=(1, 0, 0, .5), method='gl')
 		self.line_speed.parent = self.vispy_canvas.speed_view.scene
 		
@@ -282,7 +301,11 @@ class MasterSpeedLine:
 			#lerp over nan areas
 			nans, x = wow_detection.nan_helper(mean_with_nans)
 			mean_with_nans[nans]= np.interp(x(nans), x(~nans), mean_with_nans[~nans])
-			self.data[:, 1] = mean_with_nans
+			
+			#bandpass filter the output
+			fs = self.vispy_canvas.sr / self.vispy_canvas.hop
+			lowcut, highcut = sorted(self.bands)
+			self.data[:, 1] = butter_bandpass_filter(mean_with_nans, lowcut, highcut, fs, order=3)
 		self.line_speed.set_data(pos=self.data)
 
 	def get_linspace(self):

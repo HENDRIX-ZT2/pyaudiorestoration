@@ -9,7 +9,7 @@ except:
 	print("Warning: pyfftw is not installed. Run 'pip install pyfftw' to speed up spectrogram generation.")
 
 
-def stft(x, n_fft=1024, step=512, window='hann', num_cores=1):
+def stft(x, n_fft=1024, step=512,  window='hann', num_cores=1, windowlen=None,):
 	"""Compute the STFT
 
 	Parameters
@@ -35,22 +35,36 @@ def stft(x, n_fft=1024, step=512, window='hann', num_cores=1):
 	--------
 	fft_freqs
 	"""
+	
+	n_fft = int(n_fft)
+	if windowlen:
+		#smaller winlen than n_fft, needs padding
+		if windowlen > n_fft:
+			raise ValueError('if given, windowlen must be smaller than n_fft')
+		def segment():
+			return np.pad( w * x[i*step : i*step+windowlen], pad_width, mode="edge")
+	else:
+		#just continue with business as usual, no extra padding
+		windowlen = n_fft
+		def segment():
+			return w * x[i*step : i*step+windowlen]
+	pad_width = (n_fft-windowlen)//2
+	
 	if x.ndim != 1:
 		raise ValueError('x must be 1D')
 	if window is not None:
 		if window not in ('hann',):
 			raise ValueError('window must be "hann" or None')
-		w = np.hanning(n_fft)
+		w = np.hanning(windowlen)
 	else:
-		w = np.ones(n_fft)
-	n_fft = int(n_fft)
+		w = np.ones(windowlen)
 	step = max(n_fft // 2, 1) if step is None else int(step)
 
 	# Pad both sides with half fft size so that frames are centered
 	x = np.pad(x, int(n_fft // 2), mode="reflect")
 		
 	n_freqs = n_fft // 2 + 1
-	n_estimates = (len(x) - n_fft) // step + 1
+	n_estimates = (len(x) - windowlen) // step + 1
 	result = np.empty((n_freqs, n_estimates), "float32")
 	
 	#don't force fftw, fallback to numpy fft if pyFFTW import fails
@@ -61,7 +75,7 @@ def stft(x, n_fft=1024, step=512, window='hann', num_cores=1):
 		fft_ob = pyfftw.builders.rfft(fft_in, threads=num_cores, planner_effort="FFTW_ESTIMATE", overwrite_input=True)
 		for i in range(n_estimates):
 			#set the data on the FFT input
-			fft_ob.input_array[:] = w * x[i*step : i*step+n_fft]
+			fft_ob.input_array[:] = segment()
 			result[:, i] = abs(fft_ob() / n_fft)+.0000001
 		# pyfftw.interfaces.cache.enable()
 		# for i in range(n_estimates):
@@ -69,7 +83,7 @@ def stft(x, n_fft=1024, step=512, window='hann', num_cores=1):
 	except:
 		print("Fallback to numpy fftpack!")
 		for i in range(n_estimates):
-			result[:, i] = abs(np.fft.rfft(w * x[i*step : i*step+n_fft]) / n_fft)+.0000001
+			result[:, i] = abs(np.fft.rfft( segment() ) / n_fft)+.0000001
 	return result
 
 

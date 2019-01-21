@@ -152,11 +152,28 @@ class TracingWidget(QtWidgets.QWidget):
 		self.adapt_c.addItems(("Average", "Linear", "Constant", "None"))
 		self.adapt_c.setToolTip("Used to predict the next frequencies when tracing.")
 		
+		band0_l = QtWidgets.QLabel("Highpass")
+		self.band0_s = QtWidgets.QDoubleSpinBox()
+		self.band0_s.setRange(0, 10000)
+		self.band0_s.setSingleStep(.1)
+		self.band0_s.setValue(0)
+		self.band0_s.setToolTip("Cull wow below this frequency from the final speed curve.")
+		self.band0_s.valueChanged.connect(self.update_bands)
+		
+		
+		band1_l = QtWidgets.QLabel("Lowpass")
+		self.band1_s = QtWidgets.QDoubleSpinBox()
+		self.band1_s.setRange(.01, 10000)
+		self.band1_s.setSingleStep(.1)
+		self.band1_s.setValue(20)
+		self.band1_s.setToolTip("Cull flutter above this frequency from the final speed curve.")
+		self.band1_s.valueChanged.connect(self.update_bands)
+		
 		self.autoalign_b = QtWidgets.QCheckBox("Auto-Align")
 		self.autoalign_b.setChecked(True)
 		self.autoalign_b.setToolTip("Should new traces be aligned with existing ones?")
 		
-		buttons = ((tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (self.autoalign_b, ))
+		buttons = ((tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (band0_l, self.band0_s), (band1_l, self.band1_s), (self.autoalign_b, ))
 		vbox(self, grid(buttons))
 
 	@property
@@ -174,6 +191,10 @@ class TracingWidget(QtWidgets.QWidget):
 	@property
 	def rpm(self): return self.rpm_c.currentText()
 	
+	def update_bands(self):
+		self.canvas.master_speed.bands = (self.band0_s.value(), self.band1_s.value())
+		self.canvas.master_speed.update()
+		
 	def update_phase_offset(self):
 		v = self.phase_s.value()
 		for reg in self.canvas.regs:

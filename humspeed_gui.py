@@ -10,7 +10,7 @@ from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from util import qt_theme, fourier
 
-def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L", start=None, end=None):
+def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L"):
 	print("reading",filename)
 	soundob = sf.SoundFile(filename)
 	sig = soundob.read(always_2d=True)
@@ -23,18 +23,14 @@ def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L", star
 		if channel == num_channels:
 			print("not enough channels for L/R comparison  - fallback to mono")
 			break
-		signal = sig[:,channel]
-		
 		#get the magnitude spectrum
-		#avoid divide by 0 error in log
-		imdata = 20 * np.log10(fourier.stft(signal, fft_size, hop, "hann"))
+		imdata = 20 * np.log10(fourier.stft(sig[:,channel], fft_size, hop, "hann"))
 		spec = np.mean(imdata, axis=1)
 		spectra.append(spec)
-	#pad the data so we can compare this in a stereo setting if required
-	if len(spectra) < 2:
-		spectra.append(spectra[0])
-	# return np.mean(spectra, axis=0), sr
-	return spectra, sr
+	if len(spectra) > 1:
+		return np.mean(spectra, axis=0), sr
+	else:
+		return spectra[0], sr
 	
 def parabolic(f, x):
 	"""Helper function to refine a peak position in an array"""
@@ -43,13 +39,12 @@ def parabolic(f, x):
 	return (xv, yv)
 	
 def get_spectrum(file_src, channel_mode, fft_size):
-	print("Comparing channels:",channel_mode)
+	print("Analyzing channels:",channel_mode)
 	#get the averaged spectrum for this audio file
 	hop = fft_size*2
-	spectra_src, sr_src = spectrum_from_audio(file_src, fft_size, hop, channel_mode)
-
-	freqs = fourier.fft_freqs(fft_size, sr_src)
-	return freqs, np.mean(spectra_src, axis=0), sr_src
+	spectrum, sr = spectrum_from_audio(file_src, fft_size, hop, channel_mode)
+	freqs = fourier.fft_freqs(fft_size, sr)
+	return freqs, spectrum, sr
 	
 class MainWindow(QtWidgets.QMainWindow):
 	def __init__(self, parent=None):
@@ -65,7 +60,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.fft_size = 131072
 		self.marker_freqs = []
 		self.marker_dBs = []
-		self.percentages = []
+		self.ratios = []
 		self.hum_freqs = []
 		
 		self.cb = QtWidgets.QApplication.clipboard()
@@ -77,8 +72,6 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.ax.set_ylabel('Volume (dB)')
 		
 		# the range is not automatically fixed
-		# self.fig.patch.set_facecolor(SECONDARY.getRgb())
-		# self.ax.set_facecolor(SECONDARY.getRgb())
 		self.fig.patch.set_facecolor((53/255, 53/255, 53/255))
 		self.ax.set_facecolor((35/255, 35/255, 35/255))
 		# this is the Canvas Widget that displays the `figure`
@@ -151,7 +144,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.hum_freqs = np.arange(base_hum, base_hum+base_hum*num_harmonies+1, base_hum)
 		self.marker_freqs = []
 		self.marker_dBs = []
-		self.percentages = []
+		self.ratios = []
 		for hum_freq in self.hum_freqs:
 			self.track_to(hum_freq)
 			self.plot()
@@ -174,20 +167,16 @@ class MainWindow(QtWidgets.QMainWindow):
 			if event.button == 3:
 				self.marker_freqs = []
 				self.marker_dBs = []
-				self.percentages = []
+				self.ratios = []
 				self.track_to(event.xdata)
 				self.plot()
 					
 	def track_to(self, xpos):
 		if self.freqs is not None:
 			# a constant around the click; maybe make this into a log2-based value?
-			WIDTH = self.s_tolerance.value()
-			
-			l_ratio = 1-WIDTH/100
-			r_ratio = 1+WIDTH/100
-			# print(l_ratio,r_ratio)
-			# constant highest frequency for hum harmonies
-			# MAX_FREQ = 500
+			tolerance = self.s_tolerance.value()
+			l_ratio = 1-tolerance/100
+			r_ratio = 1+tolerance/100
 			
 			#get the closest index to the click's x position in the frequency array
 			
@@ -201,29 +190,23 @@ class MainWindow(QtWidgets.QMainWindow):
 			# convert to frequency
 			freq = interp_index * self.sr / self.fft_size
 			
-			#store coordinate
-			self.marker_freqs.append( freq )
-			self.marker_dBs.append( dB )
-			
-			# # get base hum frequency
-			# base_hum = self.s_base_hum.value()
-			
-			# # get harmonies
-			# hum_freqs = np.arange(base_hum, MAX_FREQ, base_hum)
-			
 			# find closest index and hum freq
 			closest_index = np.argmin(np.abs(self.hum_freqs-freq))
 			closest_hum = self.hum_freqs[closest_index]
 			
-			# # todo: tolerance should be a lot smaller
-			# # is it close enough?
-			# if abs(closest_hum-freq) > base_hum:
-				# self.l_result.setText("hum was not close enough")
-				# return
-			# print("good", closest_hum, freq)
+			# todo: tolerance should be a lot smaller
 			# get percentage
 			percent = ((closest_hum / freq) -1) * 100
-			self.percentages.append(closest_hum / freq)
+			# is it close enough?
+			if abs(percent) > tolerance:
+				self.l_result.setText("hum was not close enough")
+				return
+			
+			#store data
+			self.marker_freqs.append( freq )
+			self.marker_dBs.append( dB )
+			self.ratios.append(closest_hum / freq)
+			
 			# format as string
 			percent_str = "%.3f" % percent
 			
@@ -235,10 +218,10 @@ class MainWindow(QtWidgets.QMainWindow):
 			self.cb.setText(percent_str, mode=self.cb.Clipboard)
 	
 	def resample(self,):
-		if self.file_src and self.percentages:
+		if self.file_src and self.ratios:
 			print("Resampling...")
 			# get input
-			ratio = self.percentages[-1]
+			ratio = self.ratios[-1]
 			soundob = sf.SoundFile(self.file_src)
 			sig = soundob.read(always_2d=True)
 			sr = soundob.samplerate
@@ -259,11 +242,9 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.ax.set_xlabel('Frequency (Hz)')
 		self.ax.set_ylabel('Volume (dB)')
 		if self.freqs is not None:
-			#take the average
-			# self.ax.semilogx(self.freqs, self.spectrum, basex=2, linewidth=0.5, alpha=0.5)
-			# self.ax.semilogx(self.marker_freqs, self.marker_dBs, 'b+', ms=14)
+			#cutoff view at 500Hz
 			end = np.argmin(np.abs(self.freqs-500))
-			self.ax.plot(self.freqs[:end], self.spectrum[:end], linewidth=0.5, alpha=0.5)
+			self.ax.plot(self.freqs[:end], self.spectrum[:end], linewidth=0.5, alpha=0.85)
 			self.ax.plot(self.marker_freqs, self.marker_dBs, 'b+', ms=14)
 		# refresh canvas
 		self.canvas.draw()

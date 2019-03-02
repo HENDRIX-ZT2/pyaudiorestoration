@@ -142,6 +142,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.s_base_hum.valueChanged.connect(self.on_hum_param_changed)
 		self.s_num_harmonies.valueChanged.connect(self.on_hum_param_changed)
 		self.s_tolerance.valueChanged.connect(self.on_hum_param_changed)
+		self.c_channels.currentIndexChanged.connect(self.update_spectrum)
 		
 	def on_hum_param_changed(self,):
 		
@@ -159,8 +160,11 @@ class MainWindow(QtWidgets.QMainWindow):
 		file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', os.path.dirname(self.file_src), "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
 		if file_src:
 			self.file_src = file_src
-			channel_mode = self.c_channels.currentText()
-			self.freqs, self.spectrum, self.sr = get_spectrum(file_src, channel_mode, self.fft_size)
+			self.update_spectrum()
+	
+	def update_spectrum(self,):
+		if self.file_src:
+			self.freqs, self.spectrum, self.sr = get_spectrum(self.file_src, self.c_channels.currentText(), self.fft_size)
 			self.on_hum_param_changed()
 			self.plot()
 	

@@ -11,6 +11,7 @@ You need to have installed:
 - python 3.6.6
 - numpy
 - numba
+- [resampy](https://resampy.readthedocs.io/)
 - [pysoundfile](https://pysoundfile.readthedocs.io/)
 - scipy
 - pyQt5

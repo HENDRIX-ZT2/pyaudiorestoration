@@ -3,12 +3,13 @@ A set of tools to restore audio quality from a variety of old analog sources, su
 
 ### Features
 - Wow & Flutter Removal
+- Speed matching to hum frequency
 - EQ matching with differential EQ
 - Spectral Alignment
 
 ### Installation
 You need to have installed:
-- python 3.6.6
+- python 3.6
 - numpy
 - numba
 - [resampy](https://resampy.readthedocs.io/)
@@ -20,7 +21,9 @@ You need to have installed:
 
 Install the missing dependencies with python's package manager, `pip` (eg. in the Windows commandline, type `pip install vispy`).
 
-Click the `Clone or Download` button at the right, then `Download ZIP`. Unzip to a folder of your choice. Assuming you have python configured as an environment variable and your commandline is in the same folder as the script, start it with
+Click the `Clone or Download` button at the right, then `Download ZIP`. Unzip to a folder of your choice. Assuming you have configured python path as an environment variable during installation, you can run the programs by double clicking the .bat files.
+
+These are just shortcuts that are equivalent to typing the following in the command line:
 
 `python pyrespeeder_gui.py` or `python pytapesynch_gui.py` or `python difeq_gui.py`
 

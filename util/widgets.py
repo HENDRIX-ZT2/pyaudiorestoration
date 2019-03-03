@@ -290,7 +290,7 @@ class InspectorWidget(QtWidgets.QLabel):
 
 class MainWindow(QtWidgets.QMainWindow):
 
-	def __init__(self, name, object_widget, canvas_widget):
+	def __init__(self, name, object_widget, canvas_widget, accept_drag=True):
 		QtWidgets.QMainWindow.__init__(self)		
 		
 		self.resize(720, 400)
@@ -300,7 +300,8 @@ class MainWindow(QtWidgets.QMainWindow):
 			self.setWindowIcon(QtGui.QIcon(os.path.join(base_dir,'icons/'+name+'.png')))
 		except: pass
 		
-		self.setAcceptDrops(True)
+		if accept_drag:
+			self.setAcceptDrops(True)
 
 		self.canvas = canvas_widget()
 		self.canvas.create_native()

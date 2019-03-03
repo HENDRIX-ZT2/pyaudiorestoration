@@ -187,7 +187,7 @@ class ObjectWidget(QtWidgets.QWidget):
 class MainWindow(widgets.MainWindow):
 
 	def __init__(self):
-		widgets.MainWindow.__init__(self, "pytapesynch", ObjectWidget, Canvas)
+		widgets.MainWindow.__init__(self, "pytapesynch", ObjectWidget, Canvas, accept_drag=False)
 		mainMenu = self.menuBar() 
 		fileMenu = mainMenu.addMenu('File')
 		editMenu = mainMenu.addMenu('Edit')

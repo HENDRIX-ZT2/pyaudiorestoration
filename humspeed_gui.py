@@ -2,7 +2,12 @@ import numpy as np
 import soundfile as sf
 import os
 import sys
-import resampy
+try:
+	import resampy
+except:
+	print("Resampy is not installed")
+	print("In the commandline, run: pip install resampy")
+	resampy = None
 from PyQt5 import QtWidgets, QtGui, QtCore
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
@@ -219,6 +224,8 @@ class MainWindow(QtWidgets.QMainWindow):
 	
 	def resample(self,):
 		if self.file_src and self.ratios:
+			if resampy is None:
+				print("Can't resample without resampy!")
 			print("Resampling...")
 			# get input
 			ratio = self.ratios[-1]

@@ -201,7 +201,8 @@ class MainWindow(QtWidgets.QMainWindow):
 			
 			# todo: tolerance should be a lot smaller
 			# get percentage
-			percent = ((closest_hum / freq) -1) * 100
+			ratio = closest_hum / freq
+			percent = (ratio-1) * 100
 			# is it close enough?
 			if abs(percent) > tolerance:
 				self.l_result.setText("hum was not close enough")
@@ -210,7 +211,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			#store data
 			self.marker_freqs.append( freq )
 			self.marker_dBs.append( dB )
-			self.ratios.append(closest_hum / freq)
+			self.ratios.append( ratio )
 			
 			# format as string
 			percent_str = "%.3f" % percent
@@ -229,6 +230,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			print("Resampling...")
 			# get input
 			ratio = self.ratios[-1]
+			percentage = (ratio-1) * 100
 			soundob = sf.SoundFile(self.file_src)
 			sig = soundob.read(always_2d=True)
 			sr = soundob.samplerate
@@ -238,7 +240,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			
 			print("Saving...")
 			# store output
-			outfilename = self.file_src.rsplit('.', 1)[0]+'_resampled.wav'
+			outfilename = self.file_src.rsplit('.', 1)[0]+'_resampled_'+"%.3f" % percentage +'.wav'
 			with sf.SoundFile(outfilename, 'w+', sr, soundob.channels, subtype='FLOAT') as outfile:
 				outfile.write( res )
 			print("Done!")

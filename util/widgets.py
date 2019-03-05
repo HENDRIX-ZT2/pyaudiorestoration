@@ -169,11 +169,23 @@ class TracingWidget(QtWidgets.QWidget):
 		self.band1_s.setToolTip("Cull flutter above this frequency from the final speed curve.")
 		self.band1_s.valueChanged.connect(self.update_bands)
 		
+		target_l = QtWidgets.QLabel("Target Frequency")
+		self.target_s = QtWidgets.QDoubleSpinBox()
+		self.target_s.setRange(0, 30000)
+		self.target_s.setSingleStep(.1)
+		self.target_s.setValue(0)
+		self.target_s.setToolTip("The selected traces' mean frequency.")
+		
+		# target_l = QtWidgets.QLabel("Target Frequency")
+		self.target_b = QtWidgets.QPushButton("Set Freq")
+		self.target_b.clicked.connect(self.update_target)
+		self.target_b.setToolTip("Set mean frequency to selected traces.")
+		
 		self.autoalign_b = QtWidgets.QCheckBox("Auto-Align")
 		self.autoalign_b.setChecked(True)
 		self.autoalign_b.setToolTip("Should new traces be aligned with existing ones?")
 		
-		buttons = ((tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (band0_l, self.band0_s), (band1_l, self.band1_s), (self.autoalign_b, ))
+		buttons = ((tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (band0_l, self.band0_s), (band1_l, self.band1_s), (target_l, self.target_s), (self.target_b, ), (self.autoalign_b, ))
 		vbox(self, grid(buttons))
 
 	@property
@@ -201,6 +213,13 @@ class TracingWidget(QtWidgets.QWidget):
 			reg.update_phase(v)
 		self.canvas.master_reg_speed.update()
 	
+	def update_target(self):
+		f = self.target_s.value()
+		for reg in self.canvas.lines:
+			reg.lock_to(f)
+		self.canvas.master_speed.update()
+
+		
 class ResamplingWidget(QtWidgets.QWidget):
 	def __init__(self, ):
 		QtWidgets.QWidget.__init__(self,)
@@ -268,11 +287,26 @@ class ResamplingWidget(QtWidgets.QWidget):
 	
 	@property
 	def mode(self, ): return self.mode_c.currentText()
+
+A4 = 440
+C0 = A4*np.power(2, -4.75)
+note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 	
+def pitch(freq):
+	try:
+		h = round(12*np.log2(freq/C0))
+		octave = int(h // 12)
+		n = int(h % 12)
+		if -1 < octave < 10:
+			return note_names[n] + str(octave)
+	except:
+		pass
+	return "-"
+
 class InspectorWidget(QtWidgets.QLabel):
 	def __init__(self, ):
 		QtWidgets.QLabel.__init__(self, )
-		self.def_text = "\n        -.- Hz\n-:--:--:--- h:m:s:ms"
+		self.def_text = "\n          - Note\n        -.- Hz\n-:--:--:--- h:m:s:ms"
 		myFont2=QtGui.QFont("Monospace")
 		myFont2.setStyleHint(QtGui.QFont.TypeWriter)
 		self.setFont(myFont2)
@@ -285,7 +319,7 @@ class InspectorWidget(QtWidgets.QLabel):
 				m, s = divmod(t, 60)
 				s, ms = divmod(s*1000, 1000)
 				h, m = divmod(m, 60)
-				self.setText("\n   % 8.1f Hz\n%d:%02d:%02d:%03d h:m:s:ms" % (f, h, m, s, ms))
+				self.setText("\n%11s Note\n   % 8.1f Hz\n%d:%02d:%02d:%03d h:m:s:ms" % (pitch(f), f, h, m, s, ms))
 				
 
 class MainWindow(QtWidgets.QMainWindow):

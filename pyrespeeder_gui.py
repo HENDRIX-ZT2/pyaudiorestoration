@@ -219,6 +219,7 @@ class BaseMarker:
 		self.color_sel = color_sel
 		self.spec_center = (0,0)
 		self.speed_center = (0,0)
+		self.offset = None
 		self.container = container
 		self.parents = (self.vispy_canvas.speed_view.scene, self.vispy_canvas.spec_view.scene)
 		
@@ -243,6 +244,16 @@ class BaseMarker:
 		"""Toggle this line's selection state"""
 		self.selected = True
 		for v in self.visuals: v.set_data(color = self.color_sel)
+		
+		# to set the offset properly, we need to know
+		# we have a current mean Hz + offset
+		# and a target mean Hz
+		
+		# offset works in log2 scale
+		# offset +1 halfes the final frequency
+		# offset -1 doubles the final frequency
+		target_freq = self.spec_center[1]/(2**self.offset)
+		self.vispy_canvas.props.tracing_widget.target_s.setValue(target_freq)
 		
 	def toggle(self):
 		"""Toggle this line's selection state"""
@@ -502,6 +513,21 @@ class TraceLine(BaseMarker):
 		self.initialize()
 		self.vispy_canvas.master_speed.update()
 
+	def lock_to(self, f):
+		if self.selected:
+			# print("lock_to")
+			# print(f, np.log2(f))
+			# print(self.spec_center[1], np.log2(self.spec_center[1]))
+			# print()
+			offset = np.log2(self.spec_center[1]) - np.log2(f)
+			
+			old_offset = self.offset
+			self.offset = offset
+			self.speed_center[1] += offset - old_offset
+			self.speed += offset - old_offset
+			self.speed_data[:, 1] = self.speed
+			self.visuals[0].set_data(pos = self.speed_data)
+		
 	def set_offset(self, a, b):
 		offset = b-a
 		self.offset += offset

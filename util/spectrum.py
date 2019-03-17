@@ -265,7 +265,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 				
 				#retrieve the FFT data
 				imdata = fft_storage[k]
-				self.num_ffts = max(self.num_ffts, imdata.shape[1])
+				self.num_ffts = imdata.shape[1]
 				spec.update_data(imdata, self.hop, self.sr)
 		
 		#has the file changed?

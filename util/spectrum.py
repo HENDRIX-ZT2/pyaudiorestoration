@@ -80,6 +80,7 @@ class Spectrum():
 			self.pieces[i].bb.left = x_start
 			self.pieces[i].bb.right = x_start+x_len
 			self.pieces[i].update()
+			self.pieces[i].show()
 	
 	def set_clims(self, vmin, vmax):
 		for image in self.pieces:
@@ -272,7 +273,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 			print("file has changed!")
 			self.filenames = files
 			#(re)set the spec_view
-			self.speed_view.camera.rect = (0, -5, self.num_ffts * self.hop / self.sr, 10)
+			self.speed_view.camera.rect = (0, -1, self.num_ffts * self.hop / self.sr, 2)
 			self.spec_view.camera.rect = (0, 0, self.num_ffts * self.hop / self.sr, to_mel(self.sr//2))
 			if filename:
 				self.props.audio_widget.set_data(signal, self.sr)

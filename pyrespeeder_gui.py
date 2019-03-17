@@ -127,35 +127,29 @@ class ObjectWidget(QtWidgets.QWidget):
 		if not_only_selected:
 			self.deltraces= []
 		
-	def merge_traces(self):
-		#TODO: the offset handling is hacky here
-		#it should be possible without the extra correction step in the end
-	
+	def merge_selected_traces(self):
 		self.deltraces= []
 		t0 = 999999
 		t1 = 0
-		offset = 0
+		means = []
+		offsets = []
 		for trace in reversed(self.parent.canvas.lines):
 			if trace.selected:
 				self.deltraces.append(trace)
 				t0 = min(t0, trace.speed_data[0, 0])
 				t1 = max(t1, trace.speed_data[-1, 0])
-				offset += trace.offset
+				means.append(trace.spec_center[1])
+				offsets.append(trace.offset)
 		if self.deltraces:
 			for trace in self.deltraces:
 				trace.remove()
-			offset /= len(self.deltraces)
 			sr = self.parent.canvas.sr
 			hop = self.parent.canvas.hop
 			i0 = int(t0*sr/hop)
 			i1 = int(t1*sr/hop)
 			data = self.parent.canvas.master_speed.data[i0:i1]
-			freqs = np.power(2, data[:,1]+10)
-			y0 = self.parent.canvas.master_speed.data[i0,1]
-			line = TraceLine(self.parent.canvas, data[:,0], freqs, offset)
-			y1 = line.speed_data[0,1]
-			d = y0-y1
-			line.set_offset(0, d)
+			freqs = np.power(2, data[:,1]+np.log2(np.mean(means)))
+			line = TraceLine(self.parent.canvas, data[:,0], freqs, np.mean(offsets))
 			self.parent.canvas.master_speed.update()
 			
 	def restore_traces(self):
@@ -203,7 +197,7 @@ class MainWindow(widgets.MainWindow):
 						# (editMenu, "Redo", self.props.foo, "CTRL+Y"), \
 						(editMenu, "Select All", self.props.select_all, "CTRL+A"), \
 						(editMenu, "Invert Selection", self.props.invert_selection, "CTRL+I"), \
-						(editMenu, "Merge Selected", self.props.merge_traces, "CTRL+M"), \
+						(editMenu, "Merge Selected", self.props.merge_selected_traces, "CTRL+M"), \
 						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
 						(editMenu, "Play/Pause", self.props.audio_widget.play_pause, "SPACE"), \
 						)
@@ -241,19 +235,9 @@ class BaseMarker:
 		for v in self.visuals: v.set_data(color = self.color_def)
 		
 	def select(self):
-		"""Toggle this line's selection state"""
+		"""Select this line"""
 		self.selected = True
 		for v in self.visuals: v.set_data(color = self.color_sel)
-		
-		# to set the offset properly, we need to know
-		# we have a current mean Hz + offset
-		# and a target mean Hz
-		
-		# offset works in log2 scale
-		# offset +1 halfes the final frequency
-		# offset -1 doubles the final frequency
-		target_freq = self.spec_center[1]/(2**self.offset)
-		self.vispy_canvas.props.tracing_widget.target_s.setValue(target_freq)
 		
 	def toggle(self):
 		"""Toggle this line's selection state"""
@@ -261,6 +245,19 @@ class BaseMarker:
 			self.deselect()
 		else:
 			self.select()
+		
+		# TODO: evaluate performance penalty of looping here!
+		
+		# go over all selected markers
+		target_freqs = [ marker.spec_center[1]/(2**marker.offset) for marker in self.container if marker.selected]
+		# to set the offset properly, we need to know
+		# we have a current mean Hz + offset
+		# and a target mean Hz
+		
+		# offset works in log2 scale
+		# offset +1 halfes the final frequency
+		# offset -1 doubles the final frequency
+		self.vispy_canvas.props.tracing_widget.target_s.setValue(np.mean(target_freqs))
 		
 	def select_handle(self, multi=False):
 		if not multi:
@@ -444,7 +441,6 @@ class RegLine(BaseMarker):
 		#sine_on_hz = np.power(2, sine + np.log2(2000))
 		self.visuals.append( scene.Line(pos=self.speed_data, color=(0, 0, 1, .5), method='gl') )
 		self.initialize()
-		self.vispy_canvas.master_reg_speed.update()
 		
 	def set_offset(self, a, b):
 		#user manipulation: custom amplitude for sample
@@ -511,7 +507,6 @@ class TraceLine(BaseMarker):
 		self.visuals[1].transform = vispy_canvas.spectra[0].mel_transform
 		
 		self.initialize()
-		self.vispy_canvas.master_speed.update()
 
 	def lock_to(self, f):
 		if self.selected:
@@ -553,8 +548,6 @@ class Canvas(spectrum.SpectrumCanvas):
 	def set_file_or_fft_settings(self, files, fft_size = 256, fft_overlap = 1):
 		if files:
 			self.compute_spectra(files, fft_size, fft_overlap)
-			self.master_speed.update()
-			self.master_reg_speed.update()
 		
 	def on_mouse_press(self, event):
 		#audio cursor

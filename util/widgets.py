@@ -176,7 +176,6 @@ class TracingWidget(QtWidgets.QWidget):
 		self.target_s.setValue(0)
 		self.target_s.setToolTip("The selected traces' mean frequency.")
 		
-		# target_l = QtWidgets.QLabel("Target Frequency")
 		self.target_b = QtWidgets.QPushButton("Set Freq")
 		self.target_b.clicked.connect(self.update_target)
 		self.target_b.setToolTip("Set mean frequency to selected traces.")

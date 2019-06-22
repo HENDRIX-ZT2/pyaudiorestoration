@@ -81,7 +81,6 @@ class MainWindow(QtWidgets.QMainWindow):
 			event.accept()
 			for url in event.mimeData().urls():
 				self.load_audio( str(url.toLocalFile()) )
-				return
 		else:
 			event.ignore()
 			

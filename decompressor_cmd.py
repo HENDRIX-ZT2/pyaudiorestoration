@@ -1,21 +1,10 @@
 import numpy as np
 import soundfile as sf
 import matplotlib.pyplot as plt
-from scipy.signal import butter, sosfiltfilt
 import sys
 import os
 
-def butter_bandpass(lowcut, highcut, fs, order=5):
-	nyq = 0.5 * fs
-	low = lowcut / nyq
-	high = highcut / nyq
-	sos = butter(order, [low, high], analog=False, btype='band', output='sos')
-	return sos
-
-def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
-	sos = butter_bandpass(lowcut, highcut, fs, order=order)
-	y = sosfiltfilt(sos, data)
-	return y
+from util import filters
   
 def rms(a):
 	return np.sqrt(np.mean(np.square(a)))
@@ -78,8 +67,8 @@ def process(filename_src, filename_ref):
 	for channel in range(sound_obs[0].channels):
 		print("Matching channel",channel)
 		#bandpass both to avoid distortion and vinyl rumble
-		signal_src_c = butter_bandpass_filter(signal_src[:,channel], lower, upper, sr, order=3)
-		signal_ref_c = butter_bandpass_filter(signal_ref[:,channel], lower, upper, sr, order=3)
+		signal_src_c = filters.butter_bandpass_filter(signal_src[:,channel], lower, upper, sr, order=3)
+		signal_ref_c = filters.butter_bandpass_filter(signal_ref[:,channel], lower, upper, sr, order=3)
 		
 		#get rms for source & ref
 		rms_src = windowed_rms(signal_src_c, hop, sz)

@@ -3,24 +3,11 @@ import numpy as np
 import soundfile as sf
 from vispy import scene, color
 from PyQt5 import QtGui, QtCore, QtWidgets
-from scipy.signal import butter, sosfilt, sosfiltfilt, sosfreqz
 from scipy import interpolate
 
 #custom modules
 from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets
 
-def butter_bandpass(lowcut, highcut, fs, order=5):
-	nyq = 0.5 * fs
-	low = lowcut / nyq
-	high = highcut / nyq
-	sos = butter(order, [low, high], analog=False, btype='band', output='sos')
-	return sos
-
-def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
-	sos = butter_bandpass(lowcut, highcut, fs, order=order)
-	y = sosfiltfilt(sos, data)
-	return y
-	
 class ResamplingThread(QtCore.QThread):
 	notifyProgress = QtCore.pyqtSignal(int)
 	def run(self):
@@ -136,7 +123,7 @@ class ObjectWidget(QtWidgets.QWidget):
 class MainWindow(widgets.MainWindow):
 
 	def __init__(self):
-		widgets.MainWindow.__init__(self, "pytapesynch", ObjectWidget, Canvas)
+		widgets.MainWindow.__init__(self, "pypan", ObjectWidget, Canvas)
 		mainMenu = self.menuBar() 
 		fileMenu = mainMenu.addMenu('File')
 		editMenu = mainMenu.addMenu('Edit')

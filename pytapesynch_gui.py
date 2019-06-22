@@ -3,24 +3,11 @@ import numpy as np
 import soundfile as sf
 from vispy import scene, color
 from PyQt5 import QtGui, QtCore, QtWidgets
-from scipy.signal import butter, sosfilt, sosfiltfilt, sosfreqz
 from scipy import interpolate
 
 #custom modules
-from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets
+from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets, filters
 
-def butter_bandpass(lowcut, highcut, fs, order=5):
-	nyq = 0.5 * fs
-	low = lowcut / nyq
-	high = highcut / nyq
-	sos = butter(order, [low, high], analog=False, btype='band', output='sos')
-	return sos
-
-def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
-	sos = butter_bandpass(lowcut, highcut, fs, order=order)
-	y = sosfiltfilt(sos, data)
-	return y
-	
 class ResamplingThread(QtCore.QThread):
 	notifyProgress = QtCore.pyqtSignal(int)
 	def run(self):
@@ -143,8 +130,11 @@ class ObjectWidget(QtWidgets.QWidget):
 					# with sf.SoundFile(self.srcfilename+"2.wav", 'w+', sr, 1, subtype='FLOAT') as outfile: outfile.write( src_sig )
 					
 					#correlate both sources
-					res = np.correlate(butter_bandpass_filter(ref_sig, lower, upper, sr, order=3), butter_bandpass_filter(src_sig, lower, upper, sr, order=3), mode="same")
+					res = np.correlate(filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3), filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3), mode="same")
 					#interpolate to get the most accurate fit
+					# we are not necessarily interested in the largest positive value if the correlation is negative
+					# todo: add a toggle for this
+					# i_peak = wow_detection.parabolic(res, np.argmax(np.abs(res)))[0]
 					i_peak = wow_detection.parabolic(res, np.argmax(res))[0]
 					result = raw_lag + i_peak - len(ref_sig)//2
 					#update the lag marker
@@ -155,6 +145,11 @@ class ObjectWidget(QtWidgets.QWidget):
 					print("extra accuracy (smp)",result)
 				except:
 					print("Refining error!")
+	
+	def select_all(self):
+		for trace in self.parent.canvas.lag_samples:
+			trace.select()
+			
 	def delete_traces(self, not_only_selected=False):
 		self.deltraces= []
 		for trace in reversed(self.parent.canvas.lag_samples):
@@ -196,6 +191,7 @@ class MainWindow(widgets.MainWindow):
 						(fileMenu, "Resample", self.props.run_resample, "CTRL+R"), \
 						(fileMenu, "Batch Resample", self.props.run_resample_batch, "CTRL+B"), \
 						(fileMenu, "Exit", self.close, ""), \
+						(editMenu, "Select All", self.props.select_all, "CTRL+A"), \
 						(editMenu, "Improve", self.props.improve_lag, "CTRL+I"), \
 						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
 						)
@@ -221,7 +217,7 @@ class LagLine:
 				sample_times = [sample.t for sample in self.vispy_canvas.lag_samples]
 				sample_lags = [sample.d for sample in self.vispy_canvas.lag_samples]
 				
-				num = self.vispy_canvas.num_ffts
+				num = max([spec.num_ffts for spec in self.vispy_canvas.spectra])
 				times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
 				# lag = np.interp(times, sample_times, sample_lags)
 				lag = interpolate.interp1d(sample_times, sample_lags, fill_value="extrapolate")(times)
@@ -391,8 +387,8 @@ class Canvas(spectrum.SpectrumCanvas):
 						# out[:, 0] = sample_times/sr
 						# for i, (x, d) in enumerate(zip(sample_times, sample_lags)):
 							
-							# ref_s = butter_bandpass_filter(ref_sig[x:x+dur,0], lower, upper, sr, order=3)
-							# src_s = butter_bandpass_filter(src_sig[x-int(d):x-int(d)+dur,0], lower, upper, sr, order=3)
+							# ref_s = filters.butter_bandpass_filter(ref_sig[x:x+dur,0], lower, upper, sr, order=3)
+							# src_s = filters.butter_bandpass_filter(src_sig[x-int(d):x-int(d)+dur,0], lower, upper, sr, order=3)
 							# res = np.correlate(ref_s*np.hanning(dur), src_s*np.hanning(dur), mode="same")
 							# i_peak = np.argmax(res)
 							# #interpolate the most accurate fit

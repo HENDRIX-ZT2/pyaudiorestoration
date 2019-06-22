@@ -1,11 +1,7 @@
 import os
 import numpy as np
-import soundfile as sf
-from vispy import scene, color
+from vispy import color
 from PyQt5 import QtGui, QtCore, QtWidgets
-
-#custom modules
-from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd
 
 myFont=QtGui.QFont()
 myFont.setBold(True)
@@ -33,7 +29,7 @@ def vbox(self, grid):
 	vbox.setContentsMargins(0,0,0,0)
 	
 class DisplayWidget(QtWidgets.QWidget):
-	def __init__(self, canvas):
+	def __init__(self, canvas=None):
 		QtWidgets.QWidget.__init__(self,)
 		self.canvas = canvas
 		
@@ -52,23 +48,29 @@ class DisplayWidget(QtWidgets.QWidget):
 		self.overlap_c.setToolTip("Increase to improve temporal resolution.")
 		self.overlap_c.setCurrentIndex(2)
 		
-		show_l = QtWidgets.QLabel("Show")
-		self.show_c = QtWidgets.QComboBox(self)
-		self.show_c.addItems(("Both","Traces","Regressions"))
+		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c)]
 		
-		cmap_l = QtWidgets.QLabel("Colors")
-		self.cmap_c = QtWidgets.QComboBox(self)
-		self.cmap_c.addItems(sorted(color.colormap.get_colormaps().keys()))
-		self.cmap_c.setCurrentText("viridis")
-	
-		buttons = ((display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c), (show_l, self.show_c), (cmap_l,self.cmap_c))
+		if canvas:
+			show_l = QtWidgets.QLabel("Show")
+			self.show_c = QtWidgets.QComboBox(self)
+			self.show_c.addItems(("Both","Traces","Regressions"))
+			
+			cmap_l = QtWidgets.QLabel("Colors")
+			self.cmap_c = QtWidgets.QComboBox(self)
+			self.cmap_c.addItems(sorted(color.colormap.get_colormaps().keys()))
+			self.cmap_c.setCurrentText("viridis")
+		
+			
+			buttons.extend( ((show_l, self.show_c), (cmap_l,self.cmap_c)) )
+			
 		vbox(self, grid(buttons))
 		
-		#only connect in the end
-		self.fft_c.currentIndexChanged.connect(self.update_fft_settings)
-		self.overlap_c.currentIndexChanged.connect(self.update_fft_settings)
-		self.show_c.currentIndexChanged.connect(self.update_show_settings)
-		self.cmap_c.currentIndexChanged.connect(self.update_cmap)
+		if canvas:
+			#only connect in the end
+			self.fft_c.currentIndexChanged.connect(self.update_fft_settings)
+			self.overlap_c.currentIndexChanged.connect(self.update_fft_settings)
+			self.show_c.currentIndexChanged.connect(self.update_show_settings)
+			self.cmap_c.currentIndexChanged.connect(self.update_cmap)
 
 	@property
 	def fft_size(self): return int(self.fft_c.currentText())
@@ -217,6 +219,70 @@ class TracingWidget(QtWidgets.QWidget):
 		for reg in self.canvas.lines:
 			reg.lock_to(f)
 		self.canvas.master_speed.update()
+
+class DropoutWidget(QtWidgets.QWidget):
+	def __init__(self, ):
+		QtWidgets.QWidget.__init__(self,)
+		
+		resampling_l = QtWidgets.QLabel("\nDropouts")
+		resampling_l.setFont(myFont)
+		
+		self.num_bands_l = QtWidgets.QLabel("Bands")
+		self.num_bands_s = QtWidgets.QSpinBox()
+		self.num_bands_s.setRange(1, 6)
+		self.num_bands_s.setSingleStep(1)
+		self.num_bands_s.setValue(3)
+		self.num_bands_s.setToolTip("Number of bands across which the intensity of a dropout is evaluated")
+		
+		self.f_lower_l = QtWidgets.QLabel("Lower")
+		self.f_lower_s = QtWidgets.QSpinBox()
+		self.f_lower_s.setRange(1, 20000)
+		self.f_lower_s.setSingleStep(500)
+		self.f_lower_s.setValue(3000)
+		self.f_lower_s.setSuffix(" Hz")
+		self.f_lower_s.setToolTip("Lower boundary frequency for dropout detection.")
+		
+		self.f_upper_l = QtWidgets.QLabel("Upper")
+		self.f_upper_s = QtWidgets.QSpinBox()
+		self.f_upper_s.setRange(1, 20000)
+		self.f_upper_s.setSingleStep(500)
+		self.f_upper_s.setValue(12000)
+		self.f_upper_s.setSuffix(" Hz")
+		self.f_upper_s.setToolTip("Upper boundary frequency for dropout detection.")
+		
+		self.max_slope_l = QtWidgets.QLabel("Max Slope")
+		self.max_slope_s = QtWidgets.QDoubleSpinBox()
+		self.max_slope_s.setRange(0.0, 10)
+		self.max_slope_s.setSingleStep(.1)
+		self.max_slope_s.setValue(0.5)
+		self.max_slope_s.setSuffix(" dB")
+		self.max_slope_s.setToolTip("Absolute slope between dB to the left and right of a dropout candidate.")
+		
+		self.max_width_l = QtWidgets.QLabel("Max Width")
+		self.max_width_s = QtWidgets.QDoubleSpinBox()
+		self.max_width_s.setRange(0.000001, 2)
+		self.max_width_s.setSingleStep(.01)
+		self.max_width_s.setValue(.02)
+		self.max_width_s.setSuffix(" s")
+		self.max_width_s.setToolTip("Maximum length of a dropout - increase to capture wider dropouts")
+		
+		buttons = ((resampling_l,), (self.num_bands_l, self.num_bands_s), (self.f_upper_l, self.f_upper_s), (self.f_lower_l, self.f_lower_s), (self.max_slope_l, self.max_slope_s), (self.max_width_l, self.max_width_s)  )
+		vbox(self, grid(buttons))
+		
+	@property
+	def f_lower(self): return self.f_lower_s.value()
+	
+	@property
+	def f_upper(self): return self.f_upper_s.value()
+	
+	@property
+	def num_bands(self): return self.num_bands_s.value()
+	
+	@property
+	def max_slope(self): return self.max_slope_s.value()
+	
+	@property
+	def max_width(self): return self.max_width_s.value()
 
 		
 class ResamplingWidget(QtWidgets.QWidget):

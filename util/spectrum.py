@@ -47,11 +47,12 @@ class Spectrum():
 		self.mel_transform = vispy_ext.MelTransform()
 		self.empty = np.zeros((1,1), dtype="float32")
 		self.delta = 0
+		self.num_ffts = 0
 	
 	def update_data(self, imdata, hop, sr):
-		num_bins, num_ffts = imdata.shape
+		num_bins, self.num_ffts = imdata.shape
 		#determine how many pieces we will create
-		num_pieces_new = ((num_ffts-1)//self.MAX_TEXTURE_SIZE +1) * ((num_bins-1)//self.MAX_TEXTURE_SIZE+1)
+		num_pieces_new = ((self.num_ffts-1)//self.MAX_TEXTURE_SIZE +1) * ((num_bins-1)//self.MAX_TEXTURE_SIZE+1)
 		num_pieces_old = len(self.pieces)
 		#we have too many pieces and need to discard some
 		for i in reversed(range(num_pieces_new, num_pieces_old)):
@@ -61,7 +62,7 @@ class Spectrum():
 		for i in range(num_pieces_old, num_pieces_new):
 			self.pieces.append(SpectrumPiece(self.empty, self.parent.scene, self.overlay))
 		#spectra may only be of a certain size, so split them
-		for i, (x, y) in enumerate([(x, y) for x in range(0, num_ffts, self.MAX_TEXTURE_SIZE) for y in range(0, num_bins, self.MAX_TEXTURE_SIZE)]):
+		for i, (x, y) in enumerate([(x, y) for x in range(0, self.num_ffts, self.MAX_TEXTURE_SIZE) for y in range(0, num_bins, self.MAX_TEXTURE_SIZE)]):
 			imdata_piece = imdata[y:y+self.MAX_TEXTURE_SIZE, x:x+self.MAX_TEXTURE_SIZE]
 			num_piece_bins, num_piece_ffts = imdata_piece.shape
 			
@@ -186,6 +187,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.hop = 256
 		self.sr = 44100
 		self.num_ffts = 0
+		self.k = None
 		
 		scene.SceneCanvas.__init__(self, keys="interactive", size=(1024, 512), bgcolor=bgcolor)
 		
@@ -256,15 +258,18 @@ class SpectrumCanvas(scene.SceneCanvas):
 				soundob = sf.SoundFile(filename)
 					
 				self.sr = soundob.samplerate
-				k = (self.fft_size, self.hop, channel)
-				if k not in fft_storage:
+				self.k = (self.fft_size, self.hop, channel)
+				if not channel < soundob.channels:
+					print("Not enough audio channels to load, reverting to first channel")
+					channel = 0
+				if self.k not in fft_storage:
 					print("storing new fft",self.fft_size)
 					signal = soundob.read(always_2d=True, dtype='float32')[:,channel]
 					#now store this for retrieval later
-					fft_storage[k] = fourier.stft(signal, self.fft_size, self.hop, "hann", self.num_cores)
+					fft_storage[self.k] = fourier.stft(signal, self.fft_size, self.hop, "hann", self.num_cores)
 				
 				#retrieve the FFT data
-				imdata = fft_storage[k]
+				imdata = fft_storage[self.k]
 				self.num_ffts = imdata.shape[1]
 				spec.update_data(imdata, self.hop, self.sr)
 		

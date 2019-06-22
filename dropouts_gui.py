@@ -128,7 +128,10 @@ class MainWindow(QtWidgets.QMainWindow):
 			print("Processing",file_name)
 			# load audio
 			file_path = self.names_to_full_paths[file_name]
-			soundob = sf.SoundFile(file_path)
+			try:
+				soundob = sf.SoundFile(file_path)
+			except:
+				print("Could not read",file_name)
 			sr = soundob.samplerate
 			channels = soundob.channels
 			signal = soundob.read(always_2d=True)

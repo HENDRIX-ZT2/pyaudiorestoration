@@ -5,7 +5,7 @@ from vispy import scene, color
 from PyQt5 import QtGui, QtCore, QtWidgets
 
 #custom modules
-from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets, filters
+from util import spectrum, resampling, wow_detection, qt_theme, snd, widgets, filters, io
 	
 class ResamplingThread(QtCore.QThread):
 	notifyProgress = QtCore.pyqtSignal(int)
@@ -59,42 +59,38 @@ class ObjectWidget(QtWidgets.QWidget):
 					if ret == qm.No:
 						return
 				
-				# is the (dropped) file an audio file, ie. can it be read by pysoundfile?
-				try:
-					soundob = sf.SoundFile(filename)
+				signal, sr, channels = io.read_file(file_path)
+				if sr:
 					self.filename = filename
-				except:
-					print(filename+" could not be read, is it a valid audio file?")
-					return
-				
-				#Cleanup of old data
-				self.parent.canvas.init_fft_storages()
-				self.delete_traces(not_only_selected=True)
-				self.resampling_widget.refill(soundob.channels)
-				
-				#finally - proceed with spectrum stuff elsewhere
-				self.parent.setWindowTitle('pyrespeeder '+os.path.basename(self.filename))
+					
+					#Cleanup of old data
+					self.parent.canvas.init_fft_storages()
+					self.delete_traces(not_only_selected=True)
+					self.resampling_widget.refill(channels)
+					
+					#finally - proceed with spectrum stuff elsewhere
+					self.parent.setWindowTitle('pyrespeeder '+os.path.basename(self.filename))
 
-				self.parent.canvas.set_file_or_fft_settings((filename,),
-													 fft_size = self.display_widget.fft_size,
-													 fft_overlap = self.display_widget.fft_overlap)
-				# also force a cmap update here
-				self.display_widget.update_cmap()
-				
-				#read any saved traces or regressions
-				data = resampling.read_trace(self.filename)
-				for offset, times, freqs in data:
-					TraceLine(self.parent.canvas, times, freqs, offset=offset)
-				self.parent.canvas.master_speed.update()
-				data = resampling.read_regs(self.filename)
-				for t0, t1, amplitude, omega, phase, offset in data:
-					RegLine(self.parent.canvas, t0, t1, amplitude, omega, phase, offset)
-				self.parent.canvas.master_reg_speed.update()
+					self.parent.canvas.set_file_or_fft_settings((filename,),
+														 fft_size = self.display_widget.fft_size,
+														 fft_overlap = self.display_widget.fft_overlap)
+					# also force a cmap update here
+					self.display_widget.update_cmap()
+					
+					#read any saved traces or regressions
+					data = io.read_trace(self.filename)
+					for offset, times, freqs in data:
+						TraceLine(self.parent.canvas, times, freqs, offset=offset)
+					self.parent.canvas.master_speed.update()
+					data = io.read_regs(self.filename)
+					for t0, t1, amplitude, omega, phase, offset in data:
+						RegLine(self.parent.canvas, t0, t1, amplitude, omega, phase, offset)
+					self.parent.canvas.master_reg_speed.update()
 				
 	def save_traces(self):
 		#get the data from the traces and regressions and save it
-		resampling.write_trace(self.filename, [ (line.offset, line.times, line.freqs) for line in self.parent.canvas.lines ] )
-		resampling.write_regs(self.filename, [ (reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.parent.canvas.regs ] )
+		io.write_trace(self.filename, [ (line.offset, line.times, line.freqs) for line in self.parent.canvas.lines ] )
+		io.write_regs(self.filename, [ (reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.parent.canvas.regs ] )
 			
 	def delete_traces(self, not_only_selected=False):
 		self.deltraces= []

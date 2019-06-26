@@ -4,7 +4,7 @@ import soundfile as sf
 from vispy import scene, gloo, visuals, color
 from vispy.geometry import Rect
 #custom modules
-from util import vispy_ext, fourier
+from util import vispy_ext, fourier, io
 
 #log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)
 norm_luminance = """
@@ -187,6 +187,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.hop = 256
 		self.sr = 44100
 		self.num_ffts = 0
+		self.channels = 0
 		self.k = None
 		
 		scene.SceneCanvas.__init__(self, keys="interactive", size=(1024, 512), bgcolor=bgcolor)
@@ -255,18 +256,15 @@ class SpectrumCanvas(scene.SceneCanvas):
 			self.fft_size = fft_size
 			self.hop = fft_size // fft_overlap
 			if filename:
-				soundob = sf.SoundFile(filename)
-					
-				self.sr = soundob.samplerate
 				self.k = (self.fft_size, self.hop, channel)
-				if not channel < soundob.channels:
+				if not channel < self.channels:
 					print("Not enough audio channels to load, reverting to first channel")
 					channel = 0
 				if self.k not in fft_storage:
 					print("storing new fft",self.fft_size)
-					signal = soundob.read(always_2d=True, dtype='float32')[:,channel]
 					#now store this for retrieval later
-					fft_storage[self.k] = fourier.stft(signal, self.fft_size, self.hop, "hann", self.num_cores)
+					signal, self.sr, self.channels = io.read_file(filename)
+					fft_storage[self.k] = fourier.stft(signal[:,channel], self.fft_size, self.hop, "hann", self.num_cores)
 				
 				#retrieve the FFT data
 				imdata = fft_storage[self.k]

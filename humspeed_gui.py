@@ -13,23 +13,19 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-from util import qt_theme, fourier
+from util import qt_theme, fourier, io
 
 def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L"):
-	print("reading",filename)
-	soundob = sf.SoundFile(filename)
-	sig = soundob.read(always_2d=True)
-	sr = soundob.samplerate
-	num_channels = sig.shape[1]
+	signal, sr, channels = io.read_file(filename)
 	spectra = []
-	channels = {"L":(0,), "R":(1,), "L+R":(0,1)}
-	for channel in channels[channel_mode]:
+	channel_map = {"L":(0,), "R":(1,), "L+R":(0,1)}
+	for channel in channel_map[channel_mode]:
 		print("channel",channel)
-		if channel == num_channels:
+		if channel == channels:
 			print("not enough channels for L/R comparison  - fallback to mono")
 			break
 		#get the magnitude spectrum
-		imdata = 20 * np.log10(fourier.stft(sig[:,channel], fft_size, hop, "hann"))
+		imdata = 20 * np.log10(fourier.stft(signal[:,channel], fft_size, hop, "hann"))
 		spec = np.mean(imdata, axis=1)
 		spectra.append(spec)
 	if len(spectra) > 1:
@@ -231,19 +227,11 @@ class MainWindow(QtWidgets.QMainWindow):
 			# get input
 			ratio = self.ratios[-1]
 			percentage = (ratio-1) * 100
-			soundob = sf.SoundFile(self.file_src)
-			sig = soundob.read(always_2d=True)
-			sr = soundob.samplerate
-			
+		
+			signal, sr, channels = io.read_file(file_path)
 			# resample, first axis is time!
-			res = resampy.resample(sig, sr*ratio, sr, axis=0, filter='sinc_window', num_zeros=8)
-			
-			print("Saving...")
-			# store output
-			outfilename = self.file_src.rsplit('.', 1)[0]+'_resampled_'+"%.3f" % percentage +'.wav'
-			with sf.SoundFile(outfilename, 'w+', sr, soundob.channels, subtype='FLOAT') as outfile:
-				outfile.write( res )
-			print("Done!")
+			res = resampy.resample(signal, sr*ratio, sr, axis=0, filter='sinc_window', num_zeros=8)
+			io.write_file(file_path, signal, sr, channels, "_resampled_%.3f" % percentage)
 			
 	def plot(self):
 		# discards the old graph

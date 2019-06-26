@@ -6,7 +6,7 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 from scipy import interpolate
 
 #custom modules
-from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets, filters
+from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets, filters, io
 
 class ResamplingThread(QtCore.QThread):
 	notifyProgress = QtCore.pyqtSignal(int)
@@ -53,40 +53,34 @@ class ObjectWidget(QtWidgets.QWidget):
 			
 	def load_audio(self, reffilename, srcfilename):
 
-		# is the (dropped) file an audio file, ie. can it be read by pysoundfile?
-		try:
-			soundob = sf.SoundFile(reffilename)
+		signal, sr, channels = io.read_file(reffilename)
+		if sr:
 			self.reffilename = reffilename
-		except:
-			print(reffilename+" could not be read, is it a valid audio file?")
-			return
-		try:
-			soundob = sf.SoundFile(srcfilename)
-			self.srcfilename = srcfilename
-		except:
-			print(srcfilename+" could not be read, is it a valid audio file?")
-			return
+			
+			signal, sr, channels = io.read_file(srcfilename)
+			if sr:
+				self.srcfilename = srcfilename
+					
+				#Cleanup of old data
+				self.parent.canvas.init_fft_storages()
+				self.delete_traces(not_only_selected=True)
+				self.resampling_widget.refill(channels)
 				
-		#Cleanup of old data
-		self.parent.canvas.init_fft_storages()
-		self.delete_traces(not_only_selected=True)
-		self.resampling_widget.refill(soundob.channels)
-		
-		#finally - proceed with spectrum stuff elsewhere
-		self.parent.setWindowTitle('pytapesynch '+os.path.basename(self.reffilename))
+				#finally - proceed with spectrum stuff elsewhere
+				self.parent.setWindowTitle('pytapesynch '+os.path.basename(self.reffilename))
 
-		self.parent.canvas.set_file_or_fft_settings((self.reffilename, self.srcfilename),
-													 fft_size = self.display_widget.fft_size,
-													 fft_overlap = self.display_widget.fft_overlap)
-											 
-		data = resampling.read_lag(self.reffilename)
-		for a0, a1, b0, b1, d in data:
-			LagSample(self.parent.canvas, (a0, a1), (b0, b1), d)
-		self.parent.canvas.lag_line.update()
+				self.parent.canvas.set_file_or_fft_settings((self.reffilename, self.srcfilename),
+															 fft_size = self.display_widget.fft_size,
+															 fft_overlap = self.display_widget.fft_overlap)
+													 
+				data = io.read_lag(self.reffilename)
+				for a0, a1, b0, b1, d in data:
+					LagSample(self.parent.canvas, (a0, a1), (b0, b1), d)
+				self.parent.canvas.lag_line.update()
 
 	def save_traces(self):
 		#get the data from the traces and regressions and save it
-		resampling.write_lag(self.reffilename, [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d) for lag in self.parent.canvas.lag_samples ] )
+		io.write_lag(self.reffilename, [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d) for lag in self.parent.canvas.lag_samples ] )
 
 	def improve_lag(self):
 		for lag in self.parent.canvas.lag_samples:

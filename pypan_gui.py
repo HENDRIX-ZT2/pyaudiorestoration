@@ -6,20 +6,12 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 from scipy import interpolate
 
 #custom modules
-from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets
+from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets, io
 
-class ResamplingThread(QtCore.QThread):
-	notifyProgress = QtCore.pyqtSignal(int)
-	def run(self):
-		names, lag_curve, resampling_mode, sinc_quality, use_channels = self.settings
-		resampling.run(names, lag_curve= lag_curve, resampling_mode = resampling_mode, sinc_quality=sinc_quality, use_channels=use_channels, prog_sig=self)
-			
 class ObjectWidget(QtWidgets.QWidget):
 	"""
 	Widget for editing OBJECT parameters
 	"""
-	# file_or_fft_settings_changed = QtCore.pyqtSignal(name='objectChanged')
-	# settings_soft_changed = QtCore.pyqtSignal(name='objectChanged2')
 
 	def __init__(self, parent=None):
 		super(ObjectWidget, self).__init__(parent)
@@ -40,10 +32,6 @@ class ObjectWidget(QtWidgets.QWidget):
 		for w in buttons: vbox.addWidget(w)
 		vbox.addStretch(1.0)
 		self.setLayout(vbox)
-
-		self.resampling_thread = ResamplingThread()
-		self.resampling_thread.notifyProgress.connect(self.resampling_widget.onProgress)
-
 		
 	def open_audio(self):
 		#just a wrapper around load_audio so we can access that via drag & drop and button
@@ -52,36 +40,33 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.load_audio(filename)
 			
 	def load_audio(self, filename):
-
-		# is the (dropped) file an audio file, ie. can it be read by pysoundfile?
-		try:
-			soundob = sf.SoundFile(filename)
+		signal, sr, channels = io.read_file(filename)
+		if signal:
+			if channels != 2:
+				print("Must be stereo!")
+				return
 			self.filename = filename
-		except:
-			print(filename+" could not be read, is it a valid audio file?")
-			return
-				
-		#Cleanup of old data
-		self.parent.canvas.init_fft_storages()
-		self.delete_traces(not_only_selected=True)
-		self.resampling_widget.refill(soundob.channels)
-		
-		#finally - proceed with spectrum stuff elsewhere
-		self.parent.setWindowTitle('pytapesynch '+os.path.basename(self.filename))
+			#Cleanup of old data
+			self.parent.canvas.init_fft_storages()
+			self.delete_traces(not_only_selected=True)
+			self.resampling_widget.refill(channels)
+			
+			#finally - proceed with spectrum stuff elsewhere
+			self.parent.setWindowTitle('pytapesynch '+os.path.basename(self.filename))
 
-		self.parent.canvas.set_file_or_fft_settings((self.filename, self.filename),
-													 fft_size = self.display_widget.fft_size,
-													 fft_overlap = self.display_widget.fft_overlap, )
-													 # channels=(0, 1) )
-											 
-		data = resampling.read_lag(self.filename)
-		for a0, a1, b0, b1, d in data:
-			PanSample(self.parent.canvas, (a0, a1), (b0, b1), d)
-		self.parent.canvas.pan_line.update()
+			self.parent.canvas.set_file_or_fft_settings((self.filename, self.filename),
+														 fft_size = self.display_widget.fft_size,
+														 fft_overlap = self.display_widget.fft_overlap, )
+														 # channels=(0, 1) )
+												 
+			data = io.read_lag(self.filename)
+			for a0, a1, b0, b1, d in data:
+				PanSample(self.parent.canvas, (a0, a1), (b0, b1), d)
+			self.parent.canvas.pan_line.update()
 
 	def save_traces(self):
 		#get the data from the traces and regressions and save it
-		resampling.write_lag(self.filename, [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.pan) for lag in self.parent.canvas.pan_samples ] )
+		io.write_lag(self.filename, [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.pan) for lag in self.parent.canvas.pan_samples ] )
 			
 	def delete_traces(self, not_only_selected=False):
 		self.deltraces= []
@@ -100,25 +85,9 @@ class ObjectWidget(QtWidgets.QWidget):
 			channels = self.resampling_widget.channels
 			if channels and self.parent.canvas.pan_samples:
 				lag_curve = self.parent.canvas.pan_line.data
-				
-				soundob = sf.SoundFile(self.filename)
-				sr = soundob.samplerate
-				signal = soundob.read(always_2d=True, dtype='float32')
-				
+				signal, sr, channels = io.read_file(self.filename)
 				af = np.interp(np.arange(len(signal[:,0])), lag_curve[:,0]*sr, lag_curve[:,1])
-				
-				sf.write(self.filename[:-4]+'test.wav', signal[:,1]*af, sr, subtype='FLOAT')
-				# self.resampling_thread.settings = ((self.filename,), lag_curve, self.resampling_widget.mode, self.resampling_widget.sinc_quality, channels)
-				# self.resampling_thread.start()
-		
-	def run_resample_batch(self):
-		if self.filename and self.parent.canvas.pan_samples:
-			filenames = QtWidgets.QFileDialog.getOpenFileNames(self, 'Open Files for Batch Resampling', 'c:\\', "Audio files (*.flac *.wav)")[0]
-			channels = self.resampling_widget.channels
-			if channels and self.parent.canvas.pan_samples:
-				lag_curve = self.parent.canvas.pan_line.data
-				self.resampling_thread.settings = (filenames, lag_curve, self.resampling_widget.mode, self.resampling_widget.sinc_quality, channels)
-				self.resampling_thread.start()
+				io.write_file(self.filename, signal[:,1]*af, sr, 1)
 					
 class MainWindow(widgets.MainWindow):
 
@@ -130,7 +99,6 @@ class MainWindow(widgets.MainWindow):
 		button_data = ( (fileMenu, "Open", self.props.open_audio, "CTRL+O"), \
 						(fileMenu, "Save", self.props.save_traces, "CTRL+S"), \
 						(fileMenu, "Resample", self.props.run_resample, "CTRL+R"), \
-						(fileMenu, "Batch Resample", self.props.run_resample_batch, "CTRL+B"), \
 						(fileMenu, "Exit", self.close, ""), \
 						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
 						)
@@ -282,13 +250,9 @@ class Canvas(spectrum.SpectrumCanvas):
 				#are they in spec_view?
 				if a is not None and b is not None:
 					if "Shift" in event.modifiers:
-						
-						
-						soundob = sf.SoundFile(self.props.filename)
+						signal, sr, channels = io.read_file(filename)
 						fft_size = 4096
 						hop = fft_size//4
-						sr = soundob.samplerate
-						signal = soundob.read(always_2d=True, dtype='float32')
 						#now store this for retrieval later
 						L = fourier.stft(signal[:,0], fft_size, hop, "hann", 1)
 						R = fourier.stft(signal[:,1], fft_size, hop, "hann", 1)

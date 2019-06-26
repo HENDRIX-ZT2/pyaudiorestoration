@@ -8,7 +8,7 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-from util import qt_theme, fourier
+from util import qt_theme, fourier, io
 
 def showdialog(str):
 	msg = QtWidgets.QMessageBox()
@@ -22,22 +22,17 @@ def showdialog(str):
    
 def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L", start=None, end=None):
 	print("reading",filename)
-	soundob = sf.SoundFile(filename)
-	sig = soundob.read(always_2d=True)
-	sr = soundob.samplerate
-	num_channels = sig.shape[1]
+	signal, sr, channels = io.read_file(filename)
 	spectra = []
-	channels = {"L":(0,), "R":(1,), "L+R":(0,1)}
-	for channel in channels[channel_mode]:
+	channel_map = {"L":(0,), "R":(1,), "L+R":(0,1)}
+	for channel in channel_map[channel_mode]:
 		print("channel",channel)
-		if channel == num_channels:
+		if channel == channels:
 			print("not enough channels for L/R comparison  - fallback to mono")
 			break
-		signal = sig[:,channel]
-		
 		#get the magnitude spectrum
 		#avoid divide by 0 error in log
-		imdata = 20 * np.log10(fourier.stft(signal, fft_size, hop, "hann"))
+		imdata = 20 * np.log10(fourier.stft(signal[:,channel], fft_size, hop, "hann"))
 		spec = np.mean(imdata, axis=1)
 		spectra.append(spec)
 	#pad the data so we can compare this in a stereo setting if required

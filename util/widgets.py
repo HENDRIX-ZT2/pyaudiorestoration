@@ -224,8 +224,13 @@ class DropoutWidget(QtWidgets.QWidget):
 	def __init__(self, ):
 		QtWidgets.QWidget.__init__(self,)
 		
-		resampling_l = QtWidgets.QLabel("\nDropouts")
-		resampling_l.setFont(myFont)
+		dropouts_l = QtWidgets.QLabel("\nDropouts")
+		dropouts_l.setFont(myFont)
+		
+		mode_l = QtWidgets.QLabel("Mode")
+		self.mode_c = QtWidgets.QComboBox(self)
+		self.mode_c.addItems(("Heuristic", "MaxMono"))
+		self.mode_c.currentIndexChanged.connect(self.toggle_mode)
 		
 		self.num_bands_l = QtWidgets.QLabel("Bands")
 		self.num_bands_s = QtWidgets.QSpinBox()
@@ -266,9 +271,25 @@ class DropoutWidget(QtWidgets.QWidget):
 		self.max_width_s.setSuffix(" s")
 		self.max_width_s.setToolTip("Maximum length of a dropout - increase to capture wider dropouts")
 		
-		buttons = ((resampling_l,), (self.num_bands_l, self.num_bands_s), (self.f_upper_l, self.f_upper_s), (self.f_lower_l, self.f_lower_s), (self.max_slope_l, self.max_slope_s), (self.max_width_l, self.max_width_s)  )
+		buttons = ((dropouts_l,), (mode_l, self.mode_c,), (self.num_bands_l, self.num_bands_s), (self.f_upper_l, self.f_upper_s), (self.f_lower_l, self.f_lower_s), (self.max_slope_l, self.max_slope_s), (self.max_width_l, self.max_width_s)  )
 		vbox(self, grid(buttons))
 		
+	def toggle_mode(self):
+		b = (self.mode_c.currentText() == "Heuristic")
+		self.num_bands_l.setVisible(b)
+		self.num_bands_s.setVisible(b)
+		self.f_lower_l.setVisible(b)
+		self.f_lower_s.setVisible(b)
+		self.f_upper_l.setVisible(b)
+		self.f_upper_s.setVisible(b)
+		self.max_slope_l.setVisible(b)
+		self.max_slope_s.setVisible(b)
+		self.max_width_l.setVisible(b)
+		self.max_width_s.setVisible(b)
+		
+	@property
+	def mode(self, ): return self.mode_c.currentText()
+	
 	@property
 	def f_lower(self): return self.f_lower_s.value()
 	

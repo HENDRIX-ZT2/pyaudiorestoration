@@ -2,9 +2,11 @@ import numpy as np
 import soundfile as sf
 import os
 import scipy.signal
+import librosa
+
 from PyQt5 import QtWidgets, QtGui, QtCore
 
-from util import qt_theme, fourier, widgets, config, filters
+from util import qt_theme, fourier, widgets, config, filters, io
 	
 def pairwise(iterable):
 	it = iter(iterable)
@@ -114,7 +116,35 @@ class MainWindow(QtWidgets.QMainWindow):
 		fft_size = self.display_widget.fft_size
 		fft_overlap = self.display_widget.fft_overlap
 		hop = fft_size // fft_overlap
+		if self.dropout_widget.mode == "Heuristic":
+			self.process_heuristic(fft_size, hop)
+		else:
+			self.process_max_mono(fft_size, hop)
+			
+	def process_max_mono(self, fft_size, hop):
+		for file_name in self.file_names:
+			file_path = self.names_to_full_paths[file_name]
+			signal, sr, channels = io.read_file(file_path)
+			if channels != 2:
+				print("expects stereo input")
+				break
+
+			n = len(signal)
+			# pad input stereo signal
+			y_pad = librosa.util.fix_length(signal, n + fft_size // 2, axis=0)
+			# take FFT for each channel
+			D_L = librosa.stft(y_pad[:,0], n_fft=fft_size, hop_length=hop)
+			D_R = librosa.stft(y_pad[:,1], n_fft=fft_size, hop_length=hop)
+
+			# take the max of each bin
+			D_out = np.where( np.abs(D_L) > np.abs(D_R), D_L, D_R )
+			# take iFFT
+			y_out = librosa.istft(D_out, length=n, hop_length=hop)
+
+			io.write_file(file_path, y_out, sr, 1)
 		
+	def process_heuristic(self, fft_size, hop):
+		# get params from gui
 		max_width = self.dropout_widget.max_width
 		max_slope = self.dropout_widget.max_slope
 		num_bands = self.dropout_widget.num_bands
@@ -125,16 +155,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		bands = np.logspace(np.log2(f_lower), np.log2(f_upper), num=num_bands, endpoint=True, base=2, dtype=np.uint16)
 		
 		for file_name in self.file_names:
-			print("Processing",file_name)
-			# load audio
 			file_path = self.names_to_full_paths[file_name]
-			try:
-				soundob = sf.SoundFile(file_path)
-			except:
-				print("Could not read",file_name)
-			sr = soundob.samplerate
-			channels = soundob.channels
-			signal = soundob.read(always_2d=True)
+			signal, sr, channels = io.read_file(file_path)
 			
 			# distance to look around current fft
 			# divide by two because we are looking around the center
@@ -196,10 +218,7 @@ class MainWindow(QtWidgets.QMainWindow):
 					# add the extra bits to the signal
 					signal[:,channel] += filters.butter_bandpass_filter(vol_corr, f_lower_band, f_upper_band, sr, order=3)
 			
-			# write the final signal
-			with sf.SoundFile( os.path.splitext(file_path)[0]+"_out.wav", 'w+', sr, channels, subtype='FLOAT') as outfile:
-				outfile.write(signal)
-			print("Finished",file_path)
+			io.write_file(file_path, signal, sr, channels)
 
 if __name__ == '__main__':
 	appQt = QtWidgets.QApplication([])

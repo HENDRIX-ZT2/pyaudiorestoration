@@ -81,8 +81,9 @@ class MainWindow(QtWidgets.QMainWindow):
 		if event.mimeData().hasUrls:
 			event.setDropAction(QtCore.Qt.CopyAction)
 			event.accept()
-			for url in event.mimeData().urls():
-				self.load_audio( str(url.toLocalFile()) )
+			src_files = [str(url.toLocalFile()) for url in event.mimeData().urls()]
+			for audio_path in sorted(src_files):
+				self.load_audio(audio_path)
 		else:
 			event.ignore()
 			

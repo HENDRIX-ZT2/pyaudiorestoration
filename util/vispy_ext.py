@@ -13,6 +13,7 @@ from vispy.scene import PanZoomCamera, AxisWidget#, BaseCamera
 from vispy.scene.widgets import Widget
 #from vispy.visuals.transforms import STTransform
 from vispy.geometry import Rect
+from util import units
 
 class PanZoomCameraExt(PanZoomCamera):
 	""" Camera implementing 2D pan/zoom mouse interaction.
@@ -246,7 +247,6 @@ class ExtAxisVisual(AxisVisual):
 
 		self.ticker = ExtTicker(self, anchors=anchors)
 		self.tick_direction = np.array(tick_direction, float)
-		self.tick_direction = self.tick_direction
 		self.scale_type = scale_type
 		self.axis_color = axis_color
 		self.tick_color = tick_color
@@ -272,6 +272,7 @@ class ExtAxisVisual(AxisVisual):
 			self.pos = pos
 		self.domain = domain
 
+	
 
 class ExtTicker(Ticker):
 
@@ -296,7 +297,8 @@ class ExtTicker(Ticker):
 			# major = MaxNLocator(10).tick_values(*domain)
 			major = _get_ticks_talbot(domain[0], domain[1], n_inches, 2)
 
-			labels = ['%g' % x for x in major]
+			# labels = ['%g' % x for x in major]
+			labels = [units.t_2_m_s_ms(x) % x for x in major]
 			majstep = major[1] - major[0]
 			minor = []
 			minstep = majstep / (minor_num + 1)

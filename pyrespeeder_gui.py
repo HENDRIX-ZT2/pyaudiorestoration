@@ -2,17 +2,11 @@ import os
 import numpy as np
 import soundfile as sf
 from vispy import scene, color
-from PyQt5 import QtGui, QtCore, QtWidgets
+from PyQt5 import QtGui, QtWidgets
 
 #custom modules
-from util import spectrum, resampling, wow_detection, qt_theme, snd, widgets, filters, io
-	
-class ResamplingThread(QtCore.QThread):
-	notifyProgress = QtCore.pyqtSignal(int)
-	def run(self):
-		name, speed_curve, resampling_mode, sinc_quality, use_channels = self.settings
-		resampling.run(name, speed_curve= speed_curve, resampling_mode = resampling_mode, sinc_quality=sinc_quality, use_channels=use_channels, prog_sig=self)
-			
+from util import spectrum, resampling, wow_detection, qt_theme, qt_threads, snd, widgets, filters, io_ops
+		
 class ObjectWidget(QtWidgets.QWidget):
 	"""
 	Widget for editing OBJECT parameters
@@ -29,18 +23,19 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.display_widget = widgets.DisplayWidget(self.parent.canvas)
 		self.tracing_widget = widgets.TracingWidget(self.parent.canvas)
 		self.resampling_widget = widgets.ResamplingWidget()
+		self.progress_widget = widgets.ProgressWidget()
 		self.audio_widget = snd.AudioWidget()
 		self.inspector_widget = widgets.InspectorWidget()
 		
-		buttons = [self.display_widget, self.tracing_widget, self.resampling_widget, self.audio_widget, self.inspector_widget ]
+		buttons = [self.display_widget, self.tracing_widget, self.resampling_widget, self.progress_widget, self.audio_widget, self.inspector_widget ]
 
 		vbox = QtWidgets.QVBoxLayout()
 		for w in buttons: vbox.addWidget(w)
 		vbox.addStretch(1.0)
 		self.setLayout(vbox)
 
-		self.resampling_thread = ResamplingThread()
-		self.resampling_thread.notifyProgress.connect(self.resampling_widget.onProgress)
+		self.resampling_thread = qt_threads.ResamplingThread(self.progress_widget.onProgress)
+		self.parent.canvas.fourier_thread.notifyProgress.connect( self.progress_widget.onProgress )
 		
 	def open_audio(self):
 		#just a wrapper around load_audio so we can access that via drag & drop and button
@@ -59,12 +54,12 @@ class ObjectWidget(QtWidgets.QWidget):
 					if ret == qm.No:
 						return
 				
-				signal, sr, channels = io.read_file(file_path)
+				signal, sr, channels = io_ops.read_file(filename)
 				if sr:
 					self.filename = filename
 					
 					#Cleanup of old data
-					self.parent.canvas.init_fft_storages()
+					self.parent.canvas.init_fft_storage()
 					self.delete_traces(not_only_selected=True)
 					self.resampling_widget.refill(channels)
 					
@@ -78,19 +73,19 @@ class ObjectWidget(QtWidgets.QWidget):
 					self.display_widget.update_cmap()
 					
 					#read any saved traces or regressions
-					data = io.read_trace(self.filename)
+					data = io_ops.read_trace(self.filename)
 					for offset, times, freqs in data:
 						TraceLine(self.parent.canvas, times, freqs, offset=offset)
 					self.parent.canvas.master_speed.update()
-					data = io.read_regs(self.filename)
+					data = io_ops.read_regs(self.filename)
 					for t0, t1, amplitude, omega, phase, offset in data:
 						RegLine(self.parent.canvas, t0, t1, amplitude, omega, phase, offset)
 					self.parent.canvas.master_reg_speed.update()
 				
 	def save_traces(self):
 		#get the data from the traces and regressions and save it
-		io.write_trace(self.filename, [ (line.offset, line.times, line.freqs) for line in self.parent.canvas.lines ] )
-		io.write_regs(self.filename, [ (reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.parent.canvas.regs ] )
+		io_ops.write_trace(self.filename, [ (line.offset, line.times, line.freqs) for line in self.parent.canvas.lines ] )
+		io_ops.write_regs(self.filename, [ (reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.parent.canvas.regs ] )
 			
 	def delete_traces(self, not_only_selected=False):
 		self.deltraces= []
@@ -147,7 +142,11 @@ class ObjectWidget(QtWidgets.QWidget):
 				else:
 					speed_curve = self.parent.canvas.master_speed.get_linspace()
 					print("Using measured speed")
-				self.resampling_thread.settings = ((self.filename,), speed_curve, self.resampling_widget.mode, self.resampling_widget.sinc_quality, channels)
+				self.resampling_thread.settings = {"filenames"			:(self.filename,),
+													"speed_curve"		:speed_curve, 
+													"resampling_mode"	:self.resampling_widget.mode,
+													"sinc_quality"		:self.resampling_widget.sinc_quality,
+													"use_channels"		:channels}
 				self.resampling_thread.start()
 			
 	def select_all(self):
@@ -270,9 +269,9 @@ class MasterSpeedLine:
 		
 	def update(self):
 		#set the output data
-		num = self.vispy_canvas.num_ffts
+		num = self.vispy_canvas.spectra[0].num_ffts
 		#get the times at which the average should be sampled
-		times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
+		times = np.linspace(0, self.vispy_canvas.duration, num=num)
 		self.data = np.zeros((len(times), 2), dtype=np.float32)
 		self.data[:, 0] = times
 		if self.vispy_canvas.lines:
@@ -321,7 +320,7 @@ class MasterRegLine:
 			#https://stackoverflow.com/questions/19771328/sine-wave-that-exponentialy-changes-between-frequencies-f1-and-f2-at-given-time
 			
 			#get the times at which the average should be sampled
-			num = self.vispy_canvas.num_ffts
+			num = self.vispy_canvas.spectra[0].num_ffts
 			times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
 			
 			#sort the regressions by their time
@@ -512,7 +511,7 @@ class TraceLine(BaseMarker):
 class Canvas(spectrum.SpectrumCanvas):
 
 	def __init__(self):
-		spectrum.SpectrumCanvas.__init__(self, spectra_colors=(None,), y_axis='Octaves',)
+		spectrum.SpectrumCanvas.__init__(self, spectra_colors=(None,), y_axis='Octaves' )
 		self.unfreeze()
 		self.show_regs = True
 		self.show_lines = True
@@ -571,7 +570,7 @@ class Canvas(spectrum.SpectrumCanvas):
 						RegLine(self, t0, t1, amplitude, omega, phase, offset)
 						self.master_reg_speed.update()
 					else:
-						times, freqs = wow_detection.trace_handle(mode, self.fft_storages[0][(self.fft_size, self.hop, 0)], self.fft_size, self.hop, self.sr, f0, f1, t0, t1,  tolerance, adapt, trail = [self.click_spec_conversion(click) for click in event.trail()])
+						times, freqs = wow_detection.trace_handle(mode, self.fft_storage[self.keys[0]], self.fft_size, self.hop, self.sr, f0, f1, t0, t1,  tolerance, adapt, trail = [self.click_spec_conversion(click) for click in event.trail()])
 						if len(freqs) and np.nan not in freqs:
 							TraceLine(self, times, freqs, auto_align=auto_align)
 							self.master_speed.update()

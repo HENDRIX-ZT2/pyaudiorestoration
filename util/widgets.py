@@ -3,9 +3,21 @@ import numpy as np
 from vispy import color
 from PyQt5 import QtGui, QtCore, QtWidgets
 
+from util import units
+
 myFont=QtGui.QFont()
 myFont.setBold(True)
 
+def showdialog(str):
+	msg = QtWidgets.QMessageBox()
+	msg.setIcon(QtWidgets.QMessageBox.Information)
+	msg.setText(str)
+	#msg.setInformativeText("This is additional information")
+	msg.setWindowTitle("Error")
+	#msg.setDetailedText("The details are as follows:")
+	msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
+	retval = msg.exec_()
+	
 def grid(buttons):
 	qgrid = QtWidgets.QGridLayout()
 	qgrid.setHorizontalSpacing(3)
@@ -335,11 +347,7 @@ class ResamplingWidget(QtWidgets.QWidget):
 		self.scroll.setWidgetResizable(True)
 		self.channel_checkboxes = [ ]
 		
-		self.progressBar = QtWidgets.QProgressBar(self)
-		self.progressBar.setRange(0,100)
-		self.progressBar.setAlignment(QtCore.Qt.AlignCenter)
-		
-		buttons = ((resampling_l,), (mode_l, self.mode_c,), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.progressBar,))
+		buttons = ((resampling_l,), (mode_l, self.mode_c,), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,))
 		vbox(self, grid(buttons))
 		
 	def toggle_resampling_quality(self):
@@ -362,9 +370,6 @@ class ResamplingWidget(QtWidgets.QWidget):
 			self.channel_checkboxes[-1].setChecked(True if i == 0 else False)
 			self.channel_layout.addWidget( self.channel_checkboxes[-1] )
 			
-	def onProgress(self, i):
-		self.progressBar.setValue(i)
-
 	@property
 	def channels(self, ): return [i for i, channel in enumerate(self.channel_checkboxes) if channel.isChecked()]
 	
@@ -373,6 +378,21 @@ class ResamplingWidget(QtWidgets.QWidget):
 	
 	@property
 	def mode(self, ): return self.mode_c.currentText()
+
+class ProgressWidget(QtWidgets.QWidget):
+	def __init__(self, ):
+		QtWidgets.QWidget.__init__(self,)
+	
+		self.progressBar = QtWidgets.QProgressBar(self)
+		self.progressBar.setRange(0,100)
+		self.progressBar.setAlignment(QtCore.Qt.AlignCenter)
+		
+		buttons = ((self.progressBar,),)
+		vbox(self, grid(buttons))
+		
+	def onProgress(self, i):
+		self.progressBar.setValue(i)
+
 
 A4 = 440
 C0 = A4*np.power(2, -4.75)
@@ -402,10 +422,7 @@ class InspectorWidget(QtWidgets.QLabel):
 		if click is not None:
 			t, f = click[0:2]
 			if t >= 0 and  sr/2 > f >= 0:
-				m, s = divmod(t, 60)
-				s, ms = divmod(s*1000, 1000)
-				h, m = divmod(m, 60)
-				self.setText("\n%11s Note\n   % 8.1f Hz\n%d:%02d:%02d:%03d h:m:s:ms" % (pitch(f), f, h, m, s, ms))
+				self.setText("\n%11s Note\n   % 8.1f Hz\n" % (pitch(f), f)+units.sec_to_timestamp(t))
 				
 
 class MainWindow(QtWidgets.QMainWindow):

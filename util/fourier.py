@@ -9,7 +9,7 @@ except:
 	print("Warning: pyfftw is not installed. Run 'pip install pyfftw' to speed up spectrogram generation.")
 
 
-def stft(x, n_fft=1024, step=512,  window='hann', num_cores=1, windowlen=None,):
+def stft(x, n_fft=1024, step=512,  window='hann', num_cores=1, windowlen=None, prog_sig=None):
 	"""Compute the STFT
 
 	Parameters
@@ -77,6 +77,7 @@ def stft(x, n_fft=1024, step=512,  window='hann', num_cores=1, windowlen=None,):
 			#set the data on the FFT input
 			fft_ob.input_array[:] = segment()
 			result[:, i] = abs(fft_ob() / n_fft)+.0000001
+			if prog_sig: prog_sig.emit( (i+1)/n_estimates*100)
 		# pyfftw.interfaces.cache.enable()
 		# for i in range(n_estimates):
 			# result[:, i] = abs(pyfftw.interfaces.numpy_fft.rfft(w * x[i * step:i * step + n_fft], threads=num_cores) / n_fft)+.0000001
@@ -84,6 +85,7 @@ def stft(x, n_fft=1024, step=512,  window='hann', num_cores=1, windowlen=None,):
 		print("Fallback to numpy fftpack!")
 		for i in range(n_estimates):
 			result[:, i] = abs(np.fft.rfft( segment() ) / n_fft)+.0000001
+			if prog_sig: prog_sig.emit( (i+1)/n_estimates*100)
 	return result
 
 

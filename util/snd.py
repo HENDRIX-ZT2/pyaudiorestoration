@@ -3,6 +3,7 @@ from PyQt5.QtCore import QBuffer, QIODevice, Qt
 from PyQt5.QtWidgets import QApplication, QFormLayout, QLineEdit, QHBoxLayout, QPushButton, QSlider, QVBoxLayout, QWidget
 from PyQt5.QtMultimedia import QAudio, QAudioDeviceInfo, QAudioFormat, QAudioOutput
 
+
 class AudioWidget(QWidget):
 
 	def __init__(self, parent = None):
@@ -40,6 +41,7 @@ class AudioWidget(QWidget):
 				self.output.stop()
 
 	def set_data(self, mono_sig, sr):
+		print(mono_sig.shape, sr)
 		# if not self.format:
 		self.format = QAudioFormat()
 		self.format.setChannelCount(1)
@@ -97,7 +99,11 @@ class AudioWidget(QWidget):
 	
 
 if __name__ == "__main__":
+	import io_ops
+	filename = "C:/Users/arnfi/Music/CSNY/CSNY WoodenNickel/02 Guinevere.flac"
+	signal, sr, channels = io_ops.read_file(filename)
 	app = QApplication([])
 	window = AudioWidget()
+	window.set_data(signal[:,0], sr)
 	window.show()
 	app.exec_()

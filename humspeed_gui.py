@@ -13,10 +13,10 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-from util import qt_theme, fourier, io
+from util import qt_theme, fourier, io_ops
 
 def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L"):
-	signal, sr, channels = io.read_file(filename)
+	signal, sr, channels = io_ops.read_file(filename)
 	spectra = []
 	channel_map = {"L":(0,), "R":(1,), "L+R":(0,1)}
 	for channel in channel_map[channel_mode]:
@@ -228,10 +228,10 @@ class MainWindow(QtWidgets.QMainWindow):
 			ratio = self.ratios[-1]
 			percentage = (ratio-1) * 100
 		
-			signal, sr, channels = io.read_file(file_path)
+			signal, sr, channels = io_ops.read_file(file_path)
 			# resample, first axis is time!
 			res = resampy.resample(signal, sr*ratio, sr, axis=0, filter='sinc_window', num_zeros=8)
-			io.write_file(file_path, signal, sr, channels, "_resampled_%.3f" % percentage)
+			io_ops.write_file(file_path, signal, sr, channels, "_resampled_%.3f" % percentage)
 			
 	def plot(self):
 		# discards the old graph

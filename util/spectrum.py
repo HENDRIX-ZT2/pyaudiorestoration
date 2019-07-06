@@ -4,7 +4,7 @@ import soundfile as sf
 from vispy import scene, gloo, visuals, color
 from vispy.geometry import Rect
 #custom modules
-from util import vispy_ext, fourier, io
+from util import vispy_ext, fourier, io_ops, qt_threads
 
 #log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)
 norm_luminance = """
@@ -186,9 +186,13 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.fft_size = 1024
 		self.hop = 256
 		self.sr = 44100
-		self.num_ffts = 0
 		self.channels = 0
-		self.k = None
+		self.duration = 0
+		self.fft_storage = {}
+		
+		self.fourier_thread = qt_threads.FourierThread()
+		self.fourier_thread.finished.connect(self.retrieve_fft)
+		# self.connect(self.fourier_thread, self.fourier_thread.finished, self.retrieve_fft)
 		
 		scene.SceneCanvas.__init__(self, keys="interactive", size=(1024, 512), bgcolor=bgcolor)
 		
@@ -205,7 +209,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.spec_yaxis = vispy_ext.ExtAxisWidget(orientation='left', axis_label='Hz', axis_font_size=8, axis_label_margin=35, tick_label_margin=5, scale_type="logarithmic")
 		self.spec_yaxis.width_max = 55
 		
-		self.spec_xaxis = scene.AxisWidget(orientation='bottom', axis_label='sec', axis_font_size=8, axis_label_margin=35, tick_label_margin=5)
+		self.spec_xaxis = vispy_ext.ExtAxisWidget(orientation='bottom', axis_label='m:s:ms', axis_font_size=8, axis_label_margin=35, tick_label_margin=5)
 		self.spec_xaxis.height_max = 55
 
 		top_padding = grid.add_widget(row=0)
@@ -237,7 +241,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.spec_yaxis.link_view(self.spec_view)
 		
 		self.spectra = [Spectrum(self.spec_view, overlay=color) for color in spectra_colors]
-		self.init_fft_storages()
+		# store one key per spectrum
+		self.keys = [None for x in self.spectra]
 		#nb. this is a vispy.util.event.EventEmitter object
 		#can this be linked somewhere to the camera? base_camera connects a few events, too
 		for spe in self.spectra:
@@ -245,42 +250,68 @@ class SpectrumCanvas(scene.SceneCanvas):
 		
 		self.freeze()
 		
-	def init_fft_storages(self,):
-		self.fft_storages = [{} for x in self.spectra]
+	def init_fft_storage(self,):
+		self.fft_storage = {}
 	
 	def compute_spectra(self, files, fft_size, fft_overlap, channels=None):
+	
+		# TODO: implement adaptive / intelligent hop reusing data
+		# maybe move more into the thread
+		
+		if self.fourier_thread.jobs:
+			print("Fourier job is still running, wait!")
+			return
+		self.keys = []
+		self.fft_size = fft_size
+		self.hop = fft_size // fft_overlap
 		if channels is None:
 			channels = [0 for file in files]
-		for filename, spec, fft_storage, channel in zip(files, self.spectra, self.fft_storages, channels):
-			#set this for the tracers etc.
-			self.fft_size = fft_size
-			self.hop = fft_size // fft_overlap
+		for filename, channel in zip(files, channels):
 			if filename:
-				self.k = (self.fft_size, self.hop, channel)
+				k = (filename, self.fft_size, self.hop, channel)
 				if not channel < self.channels:
 					print("Not enough audio channels to load, reverting to first channel")
 					channel = 0
-				if self.k not in fft_storage:
+				self.keys.append(k)
+				if k not in self.fft_storage:
 					print("storing new fft",self.fft_size)
-					#now store this for retrieval later
-					signal, self.sr, self.channels = io.read_file(filename)
-					fft_storage[self.k] = fourier.stft(signal[:,channel], self.fft_size, self.hop, "hann", self.num_cores)
-				
-				#retrieve the FFT data
-				imdata = fft_storage[self.k]
-				self.num_ffts = imdata.shape[1]
-				spec.update_data(imdata, self.hop, self.sr)
-		
+					# append to the fourier job list
+					self.fourier_thread.jobs.append( (filename, channel, self.fft_size, self.hop, "hann", self.num_cores, k) )
+					# all tasks are started below
+				else:
+					# just get FFT from current storage and continue directly
+					self.continue_spectra()
+		# perform all fourier jobs
+		if self.fourier_thread.jobs:
+			self.fourier_thread.start()
+			# we continue when the thread emits a "finished" signal, conntected to retrieve_fft()
+					
 		#has the file changed?
 		if self.filenames != files:
 			print("file has changed!")
 			self.filenames = files
-			#(re)set the spec_view
-			self.speed_view.camera.rect = (0, -1, self.num_ffts * self.hop / self.sr, 2)
-			self.spec_view.camera.rect = (0, 0, self.num_ffts * self.hop / self.sr, to_mel(self.sr//2))
 			if filename:
-				self.props.audio_widget.set_data(signal, self.sr)
+				signal, self.sr, self.channels = io_ops.read_file(filename)
+				self.props.audio_widget.set_data(signal[:,channel], self.sr)
+				#(re)set the spec_view
+				self.duration = len(signal) / self.sr
+				self.speed_view.camera.rect = (0, -1, self.duration, 2)
+				self.spec_view.camera.rect = (0, 0, self.duration, to_mel(self.sr//2))
+	
+	def retrieve_fft(self,):
+		print("Retrieving FFT from processing thread")
+		self.fft_storage.update(self.fourier_thread.result)
+		self.fourier_thread.result = {}
+		self.continue_spectra()
+		
+	def continue_spectra(self,):
+		for k, spec in zip(self.keys, self.spectra):
+			spec.update_data(self.fft_storage[k], self.hop, self.sr)
 		self.set_clims(self.vmin, self.vmax)
+			
+		# ok seems like now with threading it is important that this gets set _after_ setting the data
+		# can not be set from the outside, must make cmap a local var that is updated
+		self.set_colormap("viridis")
 			
 	#fast stuff that does not require rebuilding everything
 	def set_colormap(self, cmap):

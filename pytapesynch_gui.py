@@ -6,14 +6,8 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 from scipy import interpolate
 
 #custom modules
-from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets, filters, io
+from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, qt_threads, snd, widgets, filters, io_ops
 
-class ResamplingThread(QtCore.QThread):
-	notifyProgress = QtCore.pyqtSignal(int)
-	def run(self):
-		names, lag_curve, resampling_mode, sinc_quality, use_channels = self.settings
-		resampling.run(names, lag_curve= lag_curve, resampling_mode = resampling_mode, sinc_quality=sinc_quality, use_channels=use_channels, prog_sig=self)
-			
 class ObjectWidget(QtWidgets.QWidget):
 	"""
 	Widget for editing OBJECT parameters
@@ -31,17 +25,19 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		self.display_widget = widgets.DisplayWidget(self.parent.canvas)
 		self.resampling_widget = widgets.ResamplingWidget()
+		self.progress_widget = widgets.ProgressWidget()
 		self.audio_widget = snd.AudioWidget()
 		self.inspector_widget = widgets.InspectorWidget()
-		buttons = [self.display_widget, self.resampling_widget, self.audio_widget, self.inspector_widget ]
+		buttons = [self.display_widget, self.resampling_widget, self.progress_widget, self.audio_widget, self.inspector_widget ]
 
 		vbox = QtWidgets.QVBoxLayout()
 		for w in buttons: vbox.addWidget(w)
 		vbox.addStretch(1.0)
 		self.setLayout(vbox)
 
-		self.resampling_thread = ResamplingThread()
-		self.resampling_thread.notifyProgress.connect(self.resampling_widget.onProgress)
+		self.resampling_thread = qt_threads.ResamplingThread()
+		self.resampling_thread.notifyProgress.connect(self.progress_widget.onProgress)
+		self.parent.canvas.fourier_thread.notifyProgress.connect( self.progress_widget.onProgress )
 
 		
 	def open_audio(self):
@@ -53,16 +49,16 @@ class ObjectWidget(QtWidgets.QWidget):
 			
 	def load_audio(self, reffilename, srcfilename):
 
-		signal, sr, channels = io.read_file(reffilename)
+		signal, sr, channels = io_ops.read_file(reffilename)
 		if sr:
 			self.reffilename = reffilename
 			
-			signal, sr, channels = io.read_file(srcfilename)
+			signal, sr, channels = io_ops.read_file(srcfilename)
 			if sr:
 				self.srcfilename = srcfilename
 					
 				#Cleanup of old data
-				self.parent.canvas.init_fft_storages()
+				self.parent.canvas.init_fft_storage()
 				self.delete_traces(not_only_selected=True)
 				self.resampling_widget.refill(channels)
 				
@@ -73,14 +69,14 @@ class ObjectWidget(QtWidgets.QWidget):
 															 fft_size = self.display_widget.fft_size,
 															 fft_overlap = self.display_widget.fft_overlap)
 													 
-				data = io.read_lag(self.reffilename)
+				data = io_ops.read_lag(self.reffilename)
 				for a0, a1, b0, b1, d in data:
 					LagSample(self.parent.canvas, (a0, a1), (b0, b1), d)
 				self.parent.canvas.lag_line.update()
 
 	def save_traces(self):
 		#get the data from the traces and regressions and save it
-		io.write_lag(self.reffilename, [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d) for lag in self.parent.canvas.lag_samples ] )
+		io_ops.write_lag(self.reffilename, [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d) for lag in self.parent.canvas.lag_samples ] )
 
 	def improve_lag(self):
 		for lag in self.parent.canvas.lag_samples:
@@ -157,21 +153,23 @@ class ObjectWidget(QtWidgets.QWidget):
 			self.deltraces= []
 	
 	def run_resample(self):
-		if self.srcfilename and self.parent.canvas.lag_samples:
-			channels = self.resampling_widget.channels
-			if channels and self.parent.canvas.lag_samples:
-				lag_curve = self.parent.canvas.lag_line.data
-				self.resampling_thread.settings = ((self.srcfilename,), lag_curve, self.resampling_widget.mode, self.resampling_widget.sinc_quality, channels)
-				self.resampling_thread.start()
-		
+		self.resample_files( (self.srcfilename,) )
+	
 	def run_resample_batch(self):
-		if self.srcfilename and self.parent.canvas.lag_samples:
-			filenames = QtWidgets.QFileDialog.getOpenFileNames(self, 'Open Files for Batch Resampling', 'c:\\', "Audio files (*.flac *.wav)")[0]
-			channels = self.resampling_widget.channels
-			if channels and self.parent.canvas.lag_samples:
-				lag_curve = self.parent.canvas.lag_line.data
-				self.resampling_thread.settings = (filenames, lag_curve, self.resampling_widget.mode, self.resampling_widget.sinc_quality, channels)
-				self.resampling_thread.start()
+		filenames = QtWidgets.QFileDialog.getOpenFileNames(self, 'Open Files for Batch Resampling', 'c:\\', "Audio files (*.flac *.wav)")[0]
+		if filenames:
+			self.resample_files( filenames )
+	
+	def resample_files(self, files):
+		channels = self.resampling_widget.channels
+		if self.srcfilename and self.parent.canvas.lag_samples and channels:
+			lag_curve = self.parent.canvas.lag_line.data
+			self.resampling_thread.settings = {"filenames"			:files,
+												"lag_curve"			:lag_curve, 
+												"resampling_mode"	:self.resampling_widget.mode,
+												"sinc_quality"		:self.resampling_widget.sinc_quality,
+												"use_channels"		:channels}
+			self.resampling_thread.start()
 					
 class MainWindow(widgets.MainWindow):
 

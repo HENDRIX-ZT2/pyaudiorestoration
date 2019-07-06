@@ -8,21 +8,15 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-from util import qt_theme, fourier, io
+from util import qt_theme, fourier, io_ops, filters, widgets
 
-def showdialog(str):
-	msg = QtWidgets.QMessageBox()
-	msg.setIcon(QtWidgets.QMessageBox.Information)
-	msg.setText(str)
-	#msg.setInformativeText("This is additional information")
-	msg.setWindowTitle("Error")
-	#msg.setDetailedText("The details are as follows:")
-	msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
-	retval = msg.exec_()
+# todo: make global sr set by the first file that is loaded, make all others fit
+
    
 def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L", start=None, end=None):
 	print("reading",filename)
-	signal, sr, channels = io.read_file(filename)
+	signal, sr, channels = io_ops.read_file(filename)
+	print(sr)
 	spectra = []
 	channel_map = {"L":(0,), "R":(1,), "L+R":(0,1)}
 	for channel in channel_map[channel_mode]:
@@ -79,10 +73,6 @@ def get_eq(file_src, file_ref, channel_mode):
 		spectra_ref = np.interp(freqs, fourier.fft_freqs(fft_size, sr_ref), spectra_ref)
 	return freqs, np.asarray(spectra_ref)-np.asarray(spectra_src)
 	
-def moving_average(a, n=3) :
-	ret = np.cumsum(a, dtype=float)
-	ret[n:] = ret[n:] - ret[:-n]
-	return ret[n - 1:] / n
 	
 class MainWindow(QtWidgets.QMainWindow):
 	def __init__(self, parent=None):
@@ -96,7 +86,10 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.ref_dir = "C:\\"
 		self.out_dir = "C:\\"
 		self.names = []
-		self.freqs = []
+		self.src_noise = None
+		self.ref_noise = None
+		self.eq_noise = None
+		self.freqs = None
 		self.eqs = []
 		self.av = []
 		self.freqs_av = []
@@ -161,6 +154,10 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.s_strength.setSingleStep(10)
 		self.s_strength.setValue(100)
 		self.s_strength.setToolTip("EQ Gain [%]. Adjust the strength of the output EQ curve.")
+		
+		self.b_noise = QtWidgets.QPushButton('Noise Floor')
+		self.b_noise.setToolTip("Load a source - reference pair of noise floor samples.")
+		self.b_noise.clicked.connect(self.add_noise)
 
 		self.listWidget = QtWidgets.QListWidget()
 		
@@ -179,6 +176,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.qgrid.addWidget(self.s_output_res, 8, 1)
 		self.qgrid.addWidget(self.s_smoothing, 9, 1)
 		self.qgrid.addWidget(self.s_strength, 10, 1)
+		self.qgrid.addWidget(self.b_noise, 11, 1)
 		
 		self.colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 		self.central_widget.setLayout(self.qgrid)
@@ -198,6 +196,19 @@ class MainWindow(QtWidgets.QMainWindow):
 				self.names.append(eq_name)
 				self.eqs.append( eq )
 				self.update_color(eq_name)
+				self.plot()
+				
+	def add_noise(self):
+		file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.src_dir, "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
+		if file_src:
+			file_ref = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', self.ref_dir, "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
+			if file_ref:
+				channel_mode = self.c_channels.currentText()
+				self.freqs, self.eq_noise = get_eq(file_src, file_ref, channel_mode)
+				# self.listWidget.addItem(eq_name)
+				# self.names.append(eq_name)
+				# self.eqs.append( eq )
+				# self.update_color(eq_name)
 				self.plot()
 			
 	def update_color(self, eq_name):
@@ -227,12 +238,17 @@ class MainWindow(QtWidgets.QMainWindow):
 				write_eq(file_base+"_L.xml", self.freqs_av, self.av[0])
 				write_eq(file_base+"_R.xml", self.freqs_av, self.av[1])
 			except PermissionError:
-				showdialog("Could not write files - do you have writing permissions there?")
+				widgets.showdialog("Could not write files - do you have writing permissions there?")
 	
 	def plot(self):
 
 		# discards the old graph
 		self.ax.clear()
+		if self.freqs is not None:
+			# todo: just calculate it from SR and bin count
+			#again, just show from 20Hz
+			from20Hz = (np.abs(self.freqs-20)).argmin()
+		
 		if self.names:
 			num_in = 2000
 			#average over n samples, then reduce the step according to the desired output
@@ -249,10 +265,10 @@ class MainWindow(QtWidgets.QMainWindow):
 			
 			avs = []
 			#smoothen the curves, and reduce the points with step indexing
-			self.freqs_av = moving_average(freqs_spaced, n=n)[::reduction_step]
+			self.freqs_av = filters.moving_average(freqs_spaced, n=n)[::reduction_step]
 			for channel in (0,1):
 				#interpolate this channel's EQ, then smoothen and reduce keys for this channel
-				avs.append( moving_average(np.interp(freqs_spaced, self.freqs, av_in[channel]), n=n)[::reduction_step] )
+				avs.append( filters.moving_average(np.interp(freqs_spaced, self.freqs, av_in[channel]), n=n)[::reduction_step] )
 			self.av = np.asarray(avs)
 			
 			#get the gain of the filtered  EQ
@@ -267,13 +283,13 @@ class MainWindow(QtWidgets.QMainWindow):
 			for channel in (0,1):
 				self.av[channel] *= np.interp(self.freqs_av, (rolloff_start, rolloff_end), (1, 0) )
 				
-			#again, just show from 20Hz
-			from20Hz = (np.abs(self.freqs-20)).argmin()
 			#plot the contributing raw curves
 			for name, eq in zip(self.names, np.mean(np.asarray(self.eqs), axis=1)):
-				self.ax.semilogx(self.freqs[from20Hz:], eq[from20Hz:], basex=2, linestyle="dashed", linewidth=.5, alpha=.5, color=self.colors[self.names.index(name)+1])
+				self.ax.semilogx(self.freqs[from20Hz:], eq[from20Hz:], basex=2, linestyle="--", linewidth=.5, alpha=.5, color=self.colors[self.names.index(name)+1])
 			#take the average
 			self.ax.semilogx(self.freqs_av, np.mean(self.av, axis=0), basex=2, linewidth=2.5, alpha=1, color= self.colors[0])
+		if self.eq_noise is not None:
+			self.ax.semilogx(self.freqs[from20Hz:], np.mean(self.eq_noise, axis=0)[from20Hz:], basex=2, linestyle="-.", linewidth=.5, alpha=.5, color="white")
 		# refresh canvas
 		self.canvas.draw()
 

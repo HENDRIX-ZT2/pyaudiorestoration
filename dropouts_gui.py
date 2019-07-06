@@ -6,7 +6,7 @@ import librosa
 
 from PyQt5 import QtWidgets, QtGui, QtCore
 
-from util import qt_theme, fourier, widgets, config, filters, io
+from util import qt_theme, fourier, widgets, config, filters, io_ops, units
 	
 def pairwise(iterable):
 	it = iter(iterable)
@@ -14,9 +14,6 @@ def pairwise(iterable):
 	for b in it:
 		yield (a, b)
 		a = b
-
-def to_dB(a):
-	return 20 * np.log10(a)
 	
 class MainWindow(QtWidgets.QMainWindow):
 	def __init__(self, parent=None):
@@ -125,10 +122,10 @@ class MainWindow(QtWidgets.QMainWindow):
 	def process_max_mono(self, fft_size, hop):
 		for file_name in self.file_names:
 			file_path = self.names_to_full_paths[file_name]
-			signal, sr, channels = io.read_file(file_path)
+			signal, sr, channels = io_ops.read_file(file_path)
 			if channels != 2:
 				print("expects stereo input")
-				break
+				continue
 
 			n = len(signal)
 			# pad input stereo signal
@@ -142,7 +139,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			# take iFFT
 			y_out = librosa.istft(D_out, length=n, hop_length=hop)
 
-			io.write_file(file_path, y_out, sr, 1)
+			io_ops.write_file(file_path, y_out, sr, 1)
 		
 	def process_heuristic(self, fft_size, hop):
 		# get params from gui
@@ -157,7 +154,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		
 		for file_name in self.file_names:
 			file_path = self.names_to_full_paths[file_name]
-			signal, sr, channels = io.read_file(file_path)
+			signal, sr, channels = io_ops.read_file(file_path)
 			
 			# distance to look around current fft
 			# divide by two because we are looking around the center
@@ -167,7 +164,7 @@ class MainWindow(QtWidgets.QMainWindow):
 				print("Processing channel",channel)
 				#which range should dropouts be detected in?
 				imdata = fourier.stft(signal[:,channel], fft_size, hop, "hann")
-				imdata = to_dB(imdata)
+				imdata = units.to_dB(imdata)
 				#now what we generally don't want to do is "fix" dropouts of the lower bands only
 				#basically, the gain of a band should be always controlled by that of the band above
 				# only the top band acts freely
@@ -219,7 +216,7 @@ class MainWindow(QtWidgets.QMainWindow):
 					# add the extra bits to the signal
 					signal[:,channel] += filters.butter_bandpass_filter(vol_corr, f_lower_band, f_upper_band, sr, order=3)
 			
-			io.write_file(file_path, signal, sr, channels)
+			io_ops.write_file(file_path, signal, sr, channels)
 
 if __name__ == '__main__':
 	appQt = QtWidgets.QApplication([])

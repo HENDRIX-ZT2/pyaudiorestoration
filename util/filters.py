@@ -1,3 +1,4 @@
+import numpy as np
 from scipy.signal import butter, filtfilt
 
 def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
@@ -17,3 +18,7 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
 		return data
 	return filtfilt(b, a, data)
 	
+def moving_average(a, n=3) :
+	ret = np.cumsum(a, dtype=float)
+	ret[n:] = ret[n:] - ret[:-n]
+	return ret[n - 1:] / n

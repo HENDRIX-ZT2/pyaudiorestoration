@@ -6,7 +6,7 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 from scipy import interpolate
 
 #custom modules
-from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets, io
+from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets, io_ops, units
 
 class ObjectWidget(QtWidgets.QWidget):
 	"""
@@ -24,14 +24,17 @@ class ObjectWidget(QtWidgets.QWidget):
 		
 		self.display_widget = widgets.DisplayWidget(self.parent.canvas)
 		self.resampling_widget = widgets.ResamplingWidget()
+		self.progress_widget = widgets.ProgressWidget()
 		self.audio_widget = snd.AudioWidget()
 		self.inspector_widget = widgets.InspectorWidget()
-		buttons = [self.display_widget, self.resampling_widget, self.audio_widget, self.inspector_widget ]
+		buttons = [self.display_widget, self.resampling_widget, self.progress_widget, self.audio_widget, self.inspector_widget ]
 
 		vbox = QtWidgets.QVBoxLayout()
 		for w in buttons: vbox.addWidget(w)
 		vbox.addStretch(1.0)
 		self.setLayout(vbox)
+		
+		self.parent.canvas.fourier_thread.notifyProgress.connect( self.progress_widget.onProgress )
 		
 	def open_audio(self):
 		#just a wrapper around load_audio so we can access that via drag & drop and button
@@ -40,14 +43,14 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.load_audio(filename)
 			
 	def load_audio(self, filename):
-		signal, sr, channels = io.read_file(filename)
-		if signal:
+		signal, sr, channels = io_ops.read_file(filename)
+		if signal is not None:
 			if channels != 2:
 				print("Must be stereo!")
 				return
 			self.filename = filename
 			#Cleanup of old data
-			self.parent.canvas.init_fft_storages()
+			self.parent.canvas.init_fft_storage()
 			self.delete_traces(not_only_selected=True)
 			self.resampling_widget.refill(channels)
 			
@@ -56,17 +59,18 @@ class ObjectWidget(QtWidgets.QWidget):
 
 			self.parent.canvas.set_file_or_fft_settings((self.filename, self.filename),
 														 fft_size = self.display_widget.fft_size,
-														 fft_overlap = self.display_widget.fft_overlap, )
-														 # channels=(0, 1) )
+														 fft_overlap = self.display_widget.fft_overlap,
+														 # force reading both channels!
+														 channels=(0, 1) )
 												 
-			data = io.read_lag(self.filename)
+			data = io_ops.read_lag(self.filename)
 			for a0, a1, b0, b1, d in data:
 				PanSample(self.parent.canvas, (a0, a1), (b0, b1), d)
 			self.parent.canvas.pan_line.update()
 
 	def save_traces(self):
 		#get the data from the traces and regressions and save it
-		io.write_lag(self.filename, [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.pan) for lag in self.parent.canvas.pan_samples ] )
+		io_ops.write_lag(self.filename, [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.pan) for lag in self.parent.canvas.pan_samples ] )
 			
 	def delete_traces(self, not_only_selected=False):
 		self.deltraces= []
@@ -85,9 +89,9 @@ class ObjectWidget(QtWidgets.QWidget):
 			channels = self.resampling_widget.channels
 			if channels and self.parent.canvas.pan_samples:
 				lag_curve = self.parent.canvas.pan_line.data
-				signal, sr, channels = io.read_file(self.filename)
+				signal, sr, channels = io_ops.read_file(self.filename)
 				af = np.interp(np.arange(len(signal[:,0])), lag_curve[:,0]*sr, lag_curve[:,1])
-				io.write_file(self.filename, signal[:,1]*af, sr, 1)
+				io_ops.write_file(self.filename, signal[:,1]*af, sr, 1)
 					
 class MainWindow(widgets.MainWindow):
 
@@ -124,7 +128,7 @@ class PanLine:
 		if self.vispy_canvas.pan_samples:
 			#create the array for sampling
 			self.vispy_canvas.pan_samples.sort(key=lambda tup: tup.t)
-			num = self.vispy_canvas.num_ffts
+			num = self.vispy_canvas.spectra[0].num_ffts
 			
 			#get the times at which the average should be sampled
 			times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
@@ -250,42 +254,35 @@ class Canvas(spectrum.SpectrumCanvas):
 				#are they in spec_view?
 				if a is not None and b is not None:
 					if "Shift" in event.modifiers:
-						signal, sr, channels = io.read_file(filename)
-						fft_size = 4096
-						hop = fft_size//4
-						#now store this for retrieval later
-						L = fourier.stft(signal[:,0], fft_size, hop, "hann", 1)
-						R = fourier.stft(signal[:,1], fft_size, hop, "hann", 1)
-						L = 20 * np.log10(L)
-						R = 20 * np.log10(R)
+						L = self.fft_storage[ self.keys[0] ]
+						R = self.fft_storage[ self.keys[1] ]
 						
-						times = sorted((a[0], b[0]))
-						t0 = times[0]
-						t1 = times[1]
+						t0, t1 = sorted((a[0], b[0]))
 						freqs = sorted((a[1], b[1]))
 						fL = max(freqs[0], 1)
-						fU = min(freqs[1], sr//2-1)
+						fU = min(freqs[1], self.sr//2-1)
 						first_fft_i = 0
 						num_bins, last_fft_i = L.shape
 						#we have specified start and stop times, which is the usual case
 						if t0:
 							#make sure we force start and stop at the ends!
-							first_fft_i = max(first_fft_i, int(t0*sr/hop)) 
+							first_fft_i = max(first_fft_i, int(t0*self.sr/self.hop)) 
 						if t1:
-							last_fft_i = min(last_fft_i, int(t1*sr/hop))
+							last_fft_i = min(last_fft_i, int(t1*self.sr/self.hop))
 
-						#bin indices of the starting band
-						N = fft_size
-						
-						def freq2bin(f): return max(1, min(num_bins-3, int(round(f * N / sr))) )
+						def freq2bin(f): return max(1, min(num_bins-3, int(round(f * self.fft_size / self.sr))) )
 						bL = freq2bin(fL)
 						bU = freq2bin(fU)
 						
-						dBs = np.nanmean(L[bL:bU,first_fft_i:last_fft_i]-R[bL:bU,first_fft_i:last_fft_i], axis=0)
-						fac = np.power(10, dBs/20)
-						
+						# dBs = np.nanmean(units.to_dB(L[bL:bU,first_fft_i:last_fft_i])-units.to_dB(R[bL:bU,first_fft_i:last_fft_i]), axis=0)
+						# fac = units.to_fac(dBs)
 						# out_times = np.arange(first_fft_i, last_fft_i)*hop/sr
-						PanSample(self, a, b, np.mean(fac) )
+						# PanSample(self, a, b, np.mean(fac) )
+						
+						# faster and simpler equivalent avoiding fac - dB - fac conversion
+						fac = np.nanmean(L[bL:bU,first_fft_i:last_fft_i] / R[bL:bU,first_fft_i:last_fft_i])
+						PanSample(self, a, b, fac )
+						
 			
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':

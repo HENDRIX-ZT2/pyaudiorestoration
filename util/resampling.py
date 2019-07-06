@@ -3,7 +3,7 @@ from time import time
 import soundfile as sf
 import os
 from numba import jit#, prange
-from util import io
+from util import io_ops
 	
  # @guvectorize(['(float64[:,:],float64[:,:],float64[:,:])'],
     # '(n,m),(n,m)->(n,m)',target='parallel')
@@ -91,7 +91,7 @@ def run(filenames, speed_curve=None, resampling_mode = "Linear", sinc_quality=50
 		print('Resampling ' + filename + '...', resampling_mode, sinc_quality, use_channels)
 		#read the file
 		
-		signal, sr, channels = io.read_file(file_path)
+		signal, sr, channels = io_ops.read_file(filename)
 		
 		samples_in = np.arange( len(signal[:,0]) )
 		if speed_curve is not None:

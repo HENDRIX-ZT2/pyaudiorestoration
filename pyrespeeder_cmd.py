@@ -2,13 +2,8 @@ import soundfile as sf
 import numpy as np
 from time import time
 import os
-from util import fourier, resampling, wow_detection
+from util import fourier, resampling, wow_detection, units
 
-def sec_to_timestamp(t):
-	m, s = divmod(t, 60)
-	s, ms = divmod(s*1000, 1000)
-	h, m = divmod(m, 60)
-	return "%d:%02d:%02d:%03d h:m:s:ms" % (h, m, s, ms)
 	
 def write_speed(filename, speed_curve, piece=None):
 	piece_str  = ""
@@ -28,7 +23,7 @@ def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 1
 	for i, block in enumerate(soundob.blocks( blocksize=blocksize*hop, overlap=overlap*hop)):
 		# if i not in (0, 1):
 			# continue
-		print("Tracing from",sec_to_timestamp(block_start),"to",sec_to_timestamp(block_start+len(block)/sr))
+		print("Tracing from",units.sec_to_timestamp(block_start),"to",units.sec_to_timestamp(block_start+len(block)/sr))
 		imdata = fourier.stft(block, fft_size, hop, "hann", num_cores)
 		
 		#we can't do the start automatically
@@ -50,7 +45,7 @@ def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 1
 		write_speed(filename, speed, piece=i)
 		block_start+= ((blocksize*hop - overlap*hop) / sr)
 	dur = time() - start_time
-	print("duration",sec_to_timestamp(dur))
+	print("duration",units.sec_to_timestamp(dur))
 
 def show_all(speedname, hi=1020, lo=948):
 	dir = os.path.dirname(speedname)
@@ -121,7 +116,7 @@ def batch_res(filename, blocksize, overlap, speed_curve_names, resampling_mode):
 					pass
 
 	dur = time() - start_time
-	print("duration",sec_to_timestamp(dur))
+	print("duration",units.sec_to_timestamp(dur))
 
 #settings...
 # #at 8kHz

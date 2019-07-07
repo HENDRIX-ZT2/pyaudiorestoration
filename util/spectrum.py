@@ -4,7 +4,7 @@ import soundfile as sf
 from vispy import scene, gloo, visuals, color
 from vispy.geometry import Rect
 #custom modules
-from util import vispy_ext, fourier, io_ops, qt_threads
+from util import vispy_ext, fourier, io_ops, qt_threads, units
 
 #log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)
 norm_luminance = """

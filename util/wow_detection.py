@@ -116,7 +116,7 @@ def get_peak(D, i, NL, NU, freq_2_bin):
 	#sometimes the interpolation fails bad, then just use the raw index
 	if i_interp < 1:
 		i_interp = i_raw
-	return i_interp / freq_2_bin#, np.mean(20*np.log10(fft_data+.0000001))
+	return i_interp / freq_2_bin#, np.mean(units.to_dB(fft_data+.0000001))
 	
 def trace_peak_static(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None, tolerance = 1, adaptation_mode="Linear", dB_cutoff=-82):
 	"""

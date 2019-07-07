@@ -13,7 +13,7 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-from util import qt_theme, fourier, io_ops
+from util import qt_theme, fourier, io_ops, units
 
 def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L"):
 	signal, sr, channels = io_ops.read_file(filename)
@@ -25,7 +25,7 @@ def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L"):
 			print("not enough channels for L/R comparison  - fallback to mono")
 			break
 		#get the magnitude spectrum
-		imdata = 20 * np.log10(fourier.stft(signal[:,channel], fft_size, hop, "hann"))
+		imdata = units.to_dB(fourier.stft(signal[:,channel], fft_size, hop, "hann"))
 		spec = np.mean(imdata, axis=1)
 		spectra.append(spec)
 	if len(spectra) > 1:

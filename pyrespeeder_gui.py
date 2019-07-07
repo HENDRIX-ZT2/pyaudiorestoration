@@ -347,8 +347,6 @@ class MasterRegLine(BaseLine):
 			self.data = self.empty
 		self.line_speed.set_data(pos=self.data)
 
-		
-		
 class RegLine(BaseMarker):
 	"""Stores a single sinc regression's data and displays it"""
 	def __init__(self, vispy_canvas, t0, t1, amplitude, omega, phase, offset):

@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.interpolate
 import scipy.optimize
-from util import fourier
+from util import fourier, units
 	
 def nan_helper(y):
 	# https://stackoverflow.com/questions/6518811/interpolate-nan-values-in-a-numpy-array
@@ -166,7 +166,7 @@ def trace_peak_static(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU =
 		if i_interp < 1:
 			i_interp = i_raw
 		freqs[out_i] = i_interp
-	dBs = np.nanmean(20*np.log10(D[NL:NU, first_fft_i: last_fft_i]+.0000001), axis=0)
+	dBs = np.nanmean(units.to_dB(D[NL:NU, first_fft_i: last_fft_i]+.0000001), axis=0)
 	freqs[dBs < dB_cutoff] = np.mean(freqs)
 	return times, freqs#, dbs
 	

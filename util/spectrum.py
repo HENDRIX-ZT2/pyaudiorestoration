@@ -74,7 +74,7 @@ class Spectrum():
 			x_len = num_piece_ffts*hop/sr
 			
 			#do the dB conversion here because the tracers don't like it
-			self.pieces[i].tex.set_data(20 * np.log10(imdata_piece))
+			self.pieces[i].tex.set_data( units.to_dB(imdata_piece))
 			self.pieces[i].set_size((x_len, height_Hz_corrected))
 			#add this piece's offset with STT
 			self.pieces[i].transform = visuals.transforms.STTransform( translate=(x_start, to_mel(ystart_Hz))) * self.mel_transform

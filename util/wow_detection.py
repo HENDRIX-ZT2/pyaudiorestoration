@@ -54,6 +54,8 @@ class Track:
 		
 		if mode == "Center of Gravity":
 			self.trace_cog()
+		elif mode == "Correlation":
+			self.trace_correlation()
 		elif mode == "Peak":
 			self.trace_peak()
 		elif mode == "Freehand Draw":
@@ -171,27 +173,26 @@ class Track:
 			self.ensure_bins(fL, fU)
 	
 	def trace_correlation(self):
-		# todo: reimplement this
-		NL = freq2bin(fL)
-		NU = freq2bin(fU)
-		num_freq_samples = (NU-NL)*4
-		fft_freqs = fourier.fft_freqs(fft_size, sr)
+		fL = min(self.freqs)
+		fU = max(self.freqs)
+		self.ensure_bins(fL, fU)
+		num_freq_samples = (self.NU-self.NL)*4
 
-		log_fft_freqs = np.log2(fft_freqs[NL:NU])
+		log_fft_freqs = np.log2(self.fft_freqs[self.NL:self.NU])
 
-		linspace_freqs = np.linspace(log_fft_freqs[0], log_fft_freqs[-1], num_freq_samples)
+		linspace_fft_freqs = np.linspace(log_fft_freqs[0], log_fft_freqs[-1], num_freq_samples)
 
 		#create a new array to store FFTs resampled on a log2 scale
-		resampled = np.ones((num_freq_samples, len(freqs)+1),)
-		for i in range(len(freqs)):
-			#resampled[:,i] = np.interp(linspace_freqs, log_freqs, D[NL:NU,i])
-			interolator = scipy.interpolate.interp1d(log_fft_freqs, D[NL:NU,i], kind='quadratic')
-			resampled[:,i] = interolator(linspace_freqs)
+		resampled = np.ones((num_freq_samples, len(self.freqs)+1),)
+		for i in range(len(self.freqs)):
+			#resampled[:,i] = np.interp(linspace_fft_freqs, log_freqs, self.spectrum[self.NL:self.NU,i])
+			interolator = scipy.interpolate.interp1d(log_fft_freqs, self.spectrum[self.NL:self.NU,i], kind='quadratic')
+			resampled[:,i] = interolator(linspace_fft_freqs)
 
 		wind = np.hanning(num_freq_samples)
 		#compute the change over each frame
-		changes = np.ones(len(freqs))
-		for i in range(len(freqs)):
+		changes = np.ones(len(self.freqs))
+		for i in range(len(self.freqs)):
 			#correlation against the next sample, output will be of the same length
 			#TODO: this could be optimized by doing only, say 10 correlations instead of the full set (one correlation for each input sample)
 			res = np.correlate(resampled[:,i]*wind, resampled[:,i+1]*wind, mode="same")
@@ -211,7 +212,7 @@ class Track:
 		
 		log_mean_freq = np.log2((fL+fU)/2)
 		#convert to scale and from log2 scale
-		np.power(2, (log_mean_freq+ speed), freqs)
+		np.power(2, (log_mean_freq+ speed), self.freqs)
 		
 
 def adapt_band(freqs, num_bins, freq_2_bin, tolerance, adaptation_mode, i):

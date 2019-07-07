@@ -7,6 +7,11 @@ def nan_helper(y):
 	# https://stackoverflow.com/questions/6518811/interpolate-nan-values-in-a-numpy-array
 	return np.isnan(y), lambda z: z.nonzero()[0]
 	
+def interp_nans(y):
+	#interpolate any remaining NANs
+	nans, x = nan_helper(y)
+	y[nans]= np.interp(x(nans), x(~nans), y[~nans])
+	
 #https://github.com/librosa/librosa/blob/86275a8949fb4aef3fb16aa88b0e24862c24998f/librosa/core/pitch.py#L165
 #librosa piptrack
 
@@ -18,12 +23,196 @@ def nan_helper(y):
 #todo: create a hann window in log space?
 # or just lerp 0, 1, 0 for NL, i, NU
 	
-def COG(magnitudes, freqs, NL, NU):
-	#adapted from Czyzewski et al. (2007)
-	#18 calculate the COG with hanned frequency importance
-	#error in the printed formula: the divisor also has to contain the hann window
-	weighted_magnitudes = np.hanning(NU-NL) * magnitudes[NL:NU]
-	return np.sum(weighted_magnitudes * np.log2(freqs[NL:NU])) / np.sum(weighted_magnitudes)
+class Track:
+
+	def __init__(self, mode, spectrum, t0, t1, fft_size, hop, sr, tolerance_st=1, adaptation_mode="Linear", dB_cutoff=75, trail=[]):
+	
+		# parameters of the fourier transform that was used
+		self.fft_size = fft_size
+		self.hop = hop
+		self.sr = sr
+		self.spectrum = spectrum
+		self.fft_freqs = fourier.fft_freqs(fft_size, sr)
+		
+		#start and stop reading the FFT data here, unless...
+		self.frame_0 = 0
+		self.num_bins, self.frame_1 = self.spectrum.shape
+		self.ensure_frames(t0, t1)
+		
+		# prepare the given frequency trail and build the output data
+		self.sample_trail(trail)
+
+		# upper and lower limit of the current band
+		self.NL = 0
+		self.NU = 0
+		# we define the tolerance in semitones
+		# on log2 scale, one semitone is 1/12 (of an octave = 1)
+		self.tolerance = tolerance_st / 12
+		
+		#minimal amount of bins to consider
+		self.min_bins = 4
+		
+		if mode == "Center of Gravity":
+			self.trace_cog()
+		elif mode == "Peak":
+			self.trace_peak()
+		elif mode == "Freehand Draw":
+			pass
+		else:
+			print("Not Implemented")
+		
+		# post-pro, remove NANs
+		interp_nans(self.freqs)
+	
+	def sample_trail(self, trail):
+		#note: this fails when the user moves out of the spectrum (results in None in event.trail())
+		#TODO: vectorize this: a[a[:,0].argsort()]
+		trail.sort(key=lambda tup: tup[0])
+		times_raw = [d[0] for d in trail]
+		freqs_raw = [d[1] for d in trail]
+		self.times = np.linspace(self.frame_0*self.hop/self.sr, self.frame_1*self.hop/self.sr, self.frame_1-self.frame_0)
+		# this is both the input, ie. drawn frequency curve, and the output - the freqs are altered in place
+		self.freqs = np.interp(self.times, times_raw, freqs_raw)
+	
+	def bin_2_freq(self, b):
+		return b / self.fft_size * self.sr
+		
+	def freq_2_bin(self, f):
+		return max(1, min(self.num_bins-1, int(round(f * self.fft_size / self.sr))) )
+	
+	def time_2_frame(self, t):
+		return int(t*self.sr/self.hop)
+	
+	def ensure_frames(self, t0, t1):
+		#we have specified start and stop times, which is the usual case
+		if t0:
+			#make sure we force start and stop at the ends!
+			self.frame_0 = max(self.frame_0, self.time_2_frame(t0) ) 
+		if t1:
+			self.frame_1 = min(self.frame_1, self.time_2_frame(t1) )
+		if self.frame_0 == self.frame_1:
+			print("No point in tracing just one FFT")
+	
+	def ensure_bins(self, fL, fU):
+		#Just to be sure: clamp to valid frequency range
+		fL = max(1.0, fL)
+		fU = min(self.sr/2, fU)
+		# make sure that the bins are far enough apart
+		self.NL = self.freq_2_bin(fL)
+		self.NU = self.freq_2_bin(fU)
+		while (self.NU-self.NL) < self.min_bins:
+			self.NL-=1
+			self.NU+=1
+	
+	def freq_plus_tolerance(self, freq):
+		# so take our input frequency, log2 it, +- tolerance
+		# and take power of two of result to go back to Hz
+		logfreq = np.log2( freq )
+		fL = np.power(2, (logfreq-self.tolerance))
+		fU = np.power(2, (logfreq+self.tolerance))
+		return fL, fU
+		
+	def get_peak(self, i):
+		fft_frame = self.spectrum[:, i]# * window
+		peak_i = np.argmax( fft_frame[self.NL:self.NU] ) + self.NL
+		# make sure i_raw is really a peak and not just a border effect
+		if (fft_frame[peak_i-1] < fft_frame[peak_i]) and (fft_frame[peak_i+1] < fft_frame[peak_i]):
+			# do quadratic interpolation to get more accurate peak
+			peak_i = parabolic(fft_frame, peak_i)[0]
+		return self.bin_2_freq(peak_i)
+		
+	def trace_peak(self):
+		for i, raw_freq in enumerate(self.freqs):
+			fL, fU = self.freq_plus_tolerance(raw_freq)
+			self.ensure_bins(fL, fU)
+			# overwrite with new result
+			self.freqs[i] = self.get_peak(self.frame_0 + i)
+			# NL, NU, window, log_prediction = adapt_band(freqs, num_bins, freq_2_bin, tolerance, "Linear", out_i)
+			# try:
+				# NL, NU, window, log_prediction = adapt_band(freqs, num_bins, freq_2_bin, tolerance, adaptation_mode, out_i)
+			# except ValueError:
+				# print("ERROR",len(freqs))
+				# NL = NL_o
+				# NU = NU_o
+				# window = np.ones(NU_o-NL_o)
+				# log_prediction = 0
+		
+	def COG(self, i):
+		#adapted from Czyzewski et al. (2007)
+		#18 calculate the COG with hanned frequency importance
+		#error in the printed formula: the divisor also has to contain the hann window
+		weighted_magnitudes = np.hanning(self.NU-self.NL) * self.spectrum[self.NL:self.NU, i]
+		#19 convert the center of gravity from log2 space back into linear Hz space
+		return 2** (np.sum(weighted_magnitudes * np.log2(self.fft_freqs[self.NL:self.NU])) / np.sum(weighted_magnitudes))
+	
+	def trace_cog(self):
+		#adapted from Czyzewski et al. (2007)
+
+		# #calculate the first COG
+		# SCoct0  = self.COG( self.frame_0 )
+		
+		# #TODO: use uniform tolerance for upper and lower limit?
+		# #16a,b
+		# #the limits for the first time frame
+		# #constant for all time frames
+		# #SCoct[0]: the the first COG
+		# dfL = SCoct0 - np.log2(fL)
+		# dfU = np.log2(fU) - SCoct0
+		
+		fL, fU = self.freq_plus_tolerance( self.freqs[0] )
+		self.ensure_bins(fL, fU)
+		for i in range(len(self.freqs)):
+			#18 calculate the COG with hanned frequency importance
+			self.freqs[i] = self.COG( self.frame_0 + i )
+			#15a,b
+			#set the limits for the consecutive frame [i+1]
+			#based on those of the first frame
+			fL, fU = self.freq_plus_tolerance( self.freqs[i] )
+			self.ensure_bins(fL, fU)
+	
+	def trace_correlation(self):
+		# todo: reimplement this
+		NL = freq2bin(fL)
+		NU = freq2bin(fU)
+		num_freq_samples = (NU-NL)*4
+		fft_freqs = fourier.fft_freqs(fft_size, sr)
+
+		log_fft_freqs = np.log2(fft_freqs[NL:NU])
+
+		linspace_freqs = np.linspace(log_fft_freqs[0], log_fft_freqs[-1], num_freq_samples)
+
+		#create a new array to store FFTs resampled on a log2 scale
+		resampled = np.ones((num_freq_samples, len(freqs)+1),)
+		for i in range(len(freqs)):
+			#resampled[:,i] = np.interp(linspace_freqs, log_freqs, D[NL:NU,i])
+			interolator = scipy.interpolate.interp1d(log_fft_freqs, D[NL:NU,i], kind='quadratic')
+			resampled[:,i] = interolator(linspace_freqs)
+
+		wind = np.hanning(num_freq_samples)
+		#compute the change over each frame
+		changes = np.ones(len(freqs))
+		for i in range(len(freqs)):
+			#correlation against the next sample, output will be of the same length
+			#TODO: this could be optimized by doing only, say 10 correlations instead of the full set (one correlation for each input sample)
+			res = np.correlate(resampled[:,i]*wind, resampled[:,i+1]*wind, mode="same")
+			#this should maybe hanned before argmax to kill obvious outliers
+			i_peak = np.argmax(res)
+			#interpolate the most accurate fit
+			i_interp = parabolic(res, i_peak)[0]
+			changes[i] = (num_freq_samples//2) -i_interp
+
+		#sum up the changes to a speed curve
+		speed = np.cumsum(changes)
+		#up to this point, we've been dealing with interpolated "indices"
+		#now, we are on the log scale
+		#on log scale, +1 means double frequency or speed
+		speed = speed / num_freq_samples * (log_fft_freqs[-1]-log_fft_freqs[0])
+
+		
+		log_mean_freq = np.log2((fL+fU)/2)
+		#convert to scale and from log2 scale
+		np.power(2, (log_mean_freq+ speed), freqs)
+		
 
 def adapt_band(freqs, num_bins, freq_2_bin, tolerance, adaptation_mode, i):
 	"""
@@ -72,202 +261,6 @@ def adapt_band(freqs, num_bins, freq_2_bin, tolerance, adaptation_mode, i):
 		window = np.ones(NU-NL)
 	return NL, NU, window, logfreq
 
-	
-def trace_cog(freqs, freq2bin, D, fft_size = 8192, sr = 44100, fL = 2260, fU = 2320, adaptation_mode="Linear"):
-	#adapted from Czyzewski et al. (2007)
-
-	#make sure it doesn't escape the frequency limits
-	NL = freq2bin(fL)
-	NU = freq2bin(fU)
-
-	#the frequencies of the bins
-	fft_freqs = fourier.fft_freqs(fft_size, sr)
-
-	#calculate the first COG
-	SCoct0  = COG(D[:, 0], fft_freqs, NL, NU)
-	
-	#TODO: use uniform tolerance for upper and lower limit?
-	#16a,b
-	#the limits for the first time frame
-	#constant for all time frames
-	#SCoct[0]: the the first COG
-	dfL = SCoct0 - np.log2(fL)
-	dfU = np.log2(fU) - SCoct0
-	
-	for i in range(len(freqs)):
-		#18 calculate the COG with hanned frequency importance
-		SCoct = COG(D[:, i], fft_freqs, NL, NU)
-		
-		#19 convert the center of gravity from log2 space back into linear Hz space
-		freqs[i] = 2**SCoct
-		
-		#15a,b
-		#set the limits for the consecutive frame [i+1]
-		#based on those of the first frame
-		fL = 2**(SCoct-dfL)
-		fU = 2**(SCoct+dfU)
-		NL = freq2bin(fL)
-		NU = freq2bin(fU)
-	
-def get_peak(D, i, NL, NU, freq_2_bin):
-	fft_data = D[NL:NU, i]# * window
-	i_raw = np.argmax( fft_data )+NL
-	i_interp = (D[i_raw-1, i] - D[i_raw+1, i]) / (D[i_raw-1, i] - 2 * D[i_raw, i] + D[i_raw+1, i]) / 2 + i_raw
-	#sometimes the interpolation fails bad, then just use the raw index
-	if i_interp < 1:
-		i_interp = i_raw
-	return i_interp / freq_2_bin#, np.mean(units.to_dB(fft_data+.0000001))
-	
-def trace_peak_static(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None, tolerance = 1, adaptation_mode="Linear", dB_cutoff=-82):
-	"""
-	tolerance: tolerance above and below, in semitones (1/12th of an octave)
-	"""
-	
-	#print("adaptation_mode",adaptation_mode)
-	#start and stop reading the FFT data here, unless...
-	first_fft_i = 0
-	num_bins, last_fft_i = D.shape
-	#we have specified start and stop times, which is the usual case
-	if t0:
-		#make sure we force start and stop at the ends!
-		first_fft_i = max(first_fft_i, int(t0*sr/hop)) 
-	if t1:
-		last_fft_i = min(last_fft_i, int(t1*sr/hop))
-	
-	#bin indices of the starting band
-	#N = 1 + fft_size
-	N = fft_size
-	if first_fft_i == last_fft_i:
-		print("No point in tracing just one FFT")
-		return [],[]
-	
-	#let's say we take the lower as the starting point
-	#define the tolerance in semitones
-	#on log2 scale, one semitone is 1/12
-	#so take our start value, log2 it, +- 1/12
-	#and take power of two for both
-	freq = (fL+fU)/2
-	logfreq = np.log2( freq )
-	fL = np.power(2, (logfreq-tolerance/12))
-	fU = np.power(2, (logfreq+tolerance/12))
-	NL = max(1, min(num_bins-3, int(round(fL * N / sr))) )
-	NU = min(num_bins-2, max(1, int(round(fU * N / sr))) )
-
-	freq_2_bin = N / sr
-	#how many octaves may the pitch rise between consecutive FFTs?
-	#note that this is of course influenced by overlap and FFT size
-	fft_data = D[NL:NU, first_fft_i: last_fft_i]
-	i_raws = np.argmax( fft_data, axis=0)+NL
-	times = np.arange(first_fft_i, last_fft_i)*hop/sr
-	freqs = np.empty(last_fft_i-first_fft_i)
-	for out_i, i in enumerate(range(first_fft_i, last_fft_i)):
-		i_raw = i_raws[out_i]
-		i_interp = ((D[i_raw-1, i] - D[i_raw+1, i]) / (D[i_raw-1, i] - 2 * D[i_raw, i] + D[i_raw+1, i]) / 2 + i_raw)  / freq_2_bin
-		if i_interp < 1:
-			i_interp = i_raw
-		freqs[out_i] = i_interp
-	dBs = np.nanmean(units.to_dB(D[NL:NU, first_fft_i: last_fft_i]+.0000001), axis=0)
-	freqs[dBs < dB_cutoff] = np.mean(freqs)
-	return times, freqs#, dbs
-	
-def trace_partials(freqs, freq2bin, D, fft_size = 8192, hop = 256, sr = 44100, tolerance = 1, adaptation_mode="Linear", dB_cutoff=-75):
-	#(times, freqs, )
-	# pitches, magnitudes = librosa.piptrack(S=S, sr=sr)
-	partials = []
-	return partials
-			
-def trace_peak(freqs, freq2bin, D, fft_size = 8192, hop = 256, sr = 44100, tolerance = 1, adaptation_mode="Linear", dB_cutoff=-75):
-	"""
-	tolerance: tolerance above and below, in semitones (1/12th of an octave)
-	"""
-	
-	MIN_BINS = 4
-	
-	# define the tolerance in semitones
-	# on log2 scale, one semitone is 1/12 (of an octave = 1)
-	# so take our start value, log2 it, +- 1/12
-	# and take power of two for both
-	freq = freqs[0]
-	logfreq = np.log2( freq )
-	log_prediction = logfreq
-	fL = np.power(2, (logfreq-tolerance/12))
-	fU = np.power(2, (logfreq+tolerance/12))
-	NL = freq2bin(fL)
-	NU = freq2bin(fU)
-	while (NU-NL) < MIN_BINS:
-		NL-=1
-		NU+=1
-		
-	freq_2_bin = fft_size / sr
-
-	for i in range(len(freqs)):
-		window = np.ones(NU-NL)
-		freq = get_peak(D, i, NL, NU, freq_2_bin)
-
-		freqs[i] = freq
-		next_freq = freqs[min(i+1, len(freqs)-1)]
-		fL = np.power(2, (np.log2( next_freq )-tolerance/12))
-		fU = np.power(2, (np.log2( next_freq )+tolerance/12))
-		NL = freq2bin(fL)
-		NU = freq2bin(fU)
-		while (NU-NL) < MIN_BINS:
-			NL-=1
-			NU+=1
-		# d = freqs[max(i-1,0)]-freqs[i]
-		
-		# NL, NU, window, log_prediction = adapt_band(freqs, num_bins, freq_2_bin, tolerance, "Linear", out_i)
-		# try:
-			# NL, NU, window, log_prediction = adapt_band(freqs, num_bins, freq_2_bin, tolerance, adaptation_mode, out_i)
-		# except ValueError:
-			# print("ERROR",len(freqs))
-			# NL = NL_o
-			# NU = NU_o
-			# window = np.ones(NU_o-NL_o)
-			# log_prediction = 0
-	
-def trace_correlation(freqs, freq2bin, D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320):
-
-	NL = freq2bin(fL)
-	NU = freq2bin(fU)
-	num_freq_samples = (NU-NL)*4
-	fft_freqs = fourier.fft_freqs(fft_size, sr)
-
-	log_fft_freqs = np.log2(fft_freqs[NL:NU])
-
-	linspace_freqs = np.linspace(log_fft_freqs[0], log_fft_freqs[-1], num_freq_samples)
-
-	#create a new array to store FFTs resampled on a log2 scale
-	resampled = np.ones((num_freq_samples, len(freqs)+1),)
-	for i in range(len(freqs)):
-		#resampled[:,i] = np.interp(linspace_freqs, log_freqs, D[NL:NU,i])
-		interolator = scipy.interpolate.interp1d(log_fft_freqs, D[NL:NU,i], kind='quadratic')
-		resampled[:,i] = interolator(linspace_freqs)
-
-	wind = np.hanning(num_freq_samples)
-	#compute the change over each frame
-	changes = np.ones(len(freqs))
-	for i in range(len(freqs)):
-		#correlation against the next sample, output will be of the same length
-		#TODO: this could be optimized by doing only, say 10 correlations instead of the full set (one correlation for each input sample)
-		res = np.correlate(resampled[:,i]*wind, resampled[:,i+1]*wind, mode="same")
-		#this should maybe hanned before argmax to kill obvious outliers
-		i_peak = np.argmax(res)
-		#interpolate the most accurate fit
-		i_interp = parabolic(res, i_peak)[0]
-		changes[i] = (num_freq_samples//2) -i_interp
-
-	#sum up the changes to a speed curve
-	speed = np.cumsum(changes)
-	#up to this point, we've been dealing with interpolated "indices"
-	#now, we are on the log scale
-	#on log scale, +1 means double frequency or speed
-	speed = speed / num_freq_samples * (log_fft_freqs[-1]-log_fft_freqs[0])
-
-	
-	log_mean_freq = np.log2((fL+fU)/2)
-	#convert to scale and from log2 scale
-	np.power(2, (log_mean_freq+ speed), freqs)
-	
 	
 def fit_sin(tt, yy, assumed_freq=None):
 	'''Fit sin to the input time sequence, and return fitting parameters "amp", "omega", "phase", "offset", "freq", "period" and "fitfunc"'''
@@ -331,65 +324,6 @@ def trace_sine_reg(speed_curve, t0, t1, rpm = None):
 	
 	#return res["amp"], res["omega"], res["phase"], res["offset"]
 	return res["amp"], res["omega"], res["phase"], 0
-	
-def trace_handle(trace_mode, D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU = 2320, t0 = None, t1 = None, tolerance = 1, adaptation_mode="Linear", dB_cutoff=-75, trail = []):
-	"""
-	This function resolves all timing and passes the trimmed spectrum on to the tracers to fill in the frequency curve.
-	"""
-	#print("adaptation_mode",adaptation_mode)
-	#start and stop reading the FFT data here, unless...
-	first_fft_i = 0
-	num_bins, last_fft_i = D.shape
-	#we have specified start and stop times, which is the usual case
-	if t0:
-		#make sure we force start and stop at the ends!
-		first_fft_i = max(first_fft_i, int(t0*sr/hop)) 
-	if t1:
-		last_fft_i = min(last_fft_i, int(t1*sr/hop))
-	if first_fft_i == last_fft_i:
-		print("No point in tracing just one FFT")
-		return [],[]
-	
-	#Just to be sure: clamp to valid frequency range
-	fL = max(1.0, fL)
-	fU = min(sr/2, fU)
-	#bin indices of the starting band
-	N = fft_size
-	
-	def freq2bin(f): return max(1, min(num_bins-3, int(round(f * N / sr))) )
-		
-	# if freq2bin(fL) == freq2bin(fU):
-		# print("Can not trace one bin only")
-		# return [],[]
-	
-	#note: this fails when the user moves out of the spectrum (results in None in event.trail())
-	#TODO: vectorize this: a[a[:,0].argsort()]
-	#TODO: reduce resolution with np.interp at speed curve sample rate
-	trail.sort(key=lambda tup: tup[0])
-	times_raw = [d[0] for d in trail]
-	freqs_raw = [d[1] for d in trail]
-	
-	#create the time and frequency curves
-	num_trace_points = last_fft_i-first_fft_i
-	times = np.linspace(first_fft_i*hop/sr, last_fft_i*hop/sr, num_trace_points)
-	#nb the freqs are altered in place
-	freqs = np.interp(times, times_raw, freqs_raw)
-	
-	#fill the frequency curve with info from the tracer
-	if trace_mode == "Center of Gravity":
-		trace_cog(freqs, freq2bin, D[:,first_fft_i:last_fft_i], fft_size, sr, fL, fU, adaptation_mode)
-	elif trace_mode == "Peak":
-		trace_peak(freqs, freq2bin, D[:,first_fft_i:last_fft_i], fft_size, hop, sr, tolerance, adaptation_mode, dB_cutoff)
-	elif trace_mode == "Partials":
-		return trace_partials(freqs, freq2bin, D[:,first_fft_i:last_fft_i], fft_size, hop, sr, tolerance, adaptation_mode, dB_cutoff)
-	elif trace_mode == "Correlation":
-		freqs = freqs[:-1]
-		times = times[:-1]
-		trace_correlation(freqs, freq2bin, D[:,first_fft_i:last_fft_i], fft_size, hop, sr, fL, fU)
-	#interpolate any remaining NANs
-	nans, x = nan_helper(freqs)
-	freqs[nans]= np.interp(x(nans), x(~nans), freqs[~nans])
-	return ((times, freqs), )
 	
 def parabolic(f, x):
 	"""Helper function to refine a peak position in an array"""

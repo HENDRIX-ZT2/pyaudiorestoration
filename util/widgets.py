@@ -139,14 +139,15 @@ class TracingWidget(QtWidgets.QWidget):
 		trace_l = QtWidgets.QLabel("Mode")
 		self.trace_c = QtWidgets.QComboBox(self)
 		self.trace_c.addItems(("Center of Gravity","Peak","Partials","Correlation","Freehand Draw", "Sine Regression"))
+		self.trace_c.currentIndexChanged.connect(self.toggle_trace_mode)
 		
-		rpm_l = QtWidgets.QLabel("Source RPM")
+		self.rpm_l = QtWidgets.QLabel("Source RPM")
 		self.rpm_c = QtWidgets.QComboBox(self)
 		self.rpm_c.setEditable(True)
 		self.rpm_c.addItems(("Unknown","33.333","45","78"))
 		self.rpm_c.setToolTip("This helps avoid bad values in the sine regression. \nIf you don't know the source, measure the duration of one wow cycle. \nRPM = 60/cycle length")
 		
-		phase_l = QtWidgets.QLabel("Phase Offset")
+		self.phase_l = QtWidgets.QLabel("Phase Offset")
 		self.phase_s = QtWidgets.QSpinBox()
 		self.phase_s.setRange(-20, 20)
 		self.phase_s.setSingleStep(1)
@@ -158,13 +159,16 @@ class TracingWidget(QtWidgets.QWidget):
 		self.tolerance_s = QtWidgets.QDoubleSpinBox()
 		self.tolerance_s.setRange(.01, 5)
 		self.tolerance_s.setSingleStep(.05)
-		self.tolerance_s.setValue(.1)
+		self.tolerance_s.setValue(.5)
 		self.tolerance_s.setToolTip("Intervall to consider in the trace, in semitones.")
 		
 		adapt_l = QtWidgets.QLabel("Adaptation")
 		self.adapt_c = QtWidgets.QComboBox(self)
 		self.adapt_c.addItems(("Average", "Linear", "Constant", "None"))
 		self.adapt_c.setToolTip("Used to predict the next frequencies when tracing.")
+		# might as well hide it until it is re-implemented
+		adapt_l.setVisible(False)
+		self.adapt_c.setVisible(False)
 		
 		band0_l = QtWidgets.QLabel("Highpass")
 		self.band0_s = QtWidgets.QDoubleSpinBox()
@@ -198,8 +202,10 @@ class TracingWidget(QtWidgets.QWidget):
 		self.autoalign_b.setChecked(True)
 		self.autoalign_b.setToolTip("Should new traces be aligned with existing ones?")
 		
-		buttons = ((tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (rpm_l,self.rpm_c), (phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (band0_l, self.band0_s), (band1_l, self.band1_s), (target_l, self.target_s), (self.target_b, ), (self.autoalign_b, ))
+		buttons = ((tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (self.rpm_l,self.rpm_c), (self.phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (band0_l, self.band0_s), (band1_l, self.band1_s), (target_l, self.target_s), (self.target_b, ), (self.autoalign_b, ))
 		vbox(self, grid(buttons))
+		
+		self.toggle_trace_mode()
 
 	@property
 	def mode(self): return self.trace_c.currentText()
@@ -216,6 +222,13 @@ class TracingWidget(QtWidgets.QWidget):
 	@property
 	def rpm(self): return self.rpm_c.currentText()
 	
+	def toggle_trace_mode(self):
+		b = (self.trace_c.currentText() == "Sine Regression")
+		self.rpm_l.setVisible(b)
+		self.rpm_c.setVisible(b)
+		self.phase_l.setVisible(b)
+		self.phase_s.setVisible(b)
+		
 	def update_bands(self):
 		self.canvas.master_speed.bands = (self.band0_s.value(), self.band1_s.value())
 		self.canvas.master_speed.update()

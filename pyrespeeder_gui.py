@@ -66,7 +66,7 @@ class ObjectWidget(QtWidgets.QWidget):
 					#finally - proceed with spectrum stuff elsewhere
 					self.parent.setWindowTitle('pyrespeeder '+os.path.basename(self.filename))
 
-					self.parent.canvas.set_file_or_fft_settings((filename,),
+					self.parent.canvas.compute_spectra(  (filename,),
 														 fft_size = self.display_widget.fft_size,
 														 fft_overlap = self.display_widget.fft_overlap)
 					# also force a cmap update here
@@ -247,9 +247,8 @@ class BaseMarker:
 		#note: this has to search the list
 		self.container.remove(self)
 	
-class MasterSpeedLine:
-	"""Stores and displays the average, ie. master speed curve."""
-	def __init__(self, vispy_canvas):
+class BaseLine:
+	def __init__(self, vispy_canvas, color=(1, 0, 0, .5)):
 		
 		self.vispy_canvas = vispy_canvas
 		
@@ -257,8 +256,9 @@ class MasterSpeedLine:
 		self.data = np.zeros((2, 2), dtype=np.float32)
 		self.data[:, 0] = (0, 999)
 		self.data[:, 1] = (0, 0)
+		self.empty = np.array(self.data)
 		self.bands = (0, 9999999)
-		self.line_speed = scene.Line(pos=self.data, color=(1, 0, 0, .5), method='gl')
+		self.line_speed = scene.Line(pos=self.data, color=color, method='gl')
 		self.line_speed.parent = self.vispy_canvas.speed_view.scene
 		
 	def show(self):
@@ -266,15 +266,25 @@ class MasterSpeedLine:
 		
 	def hide(self):
 		self.line_speed.parent = None
+
+	def get_times(self):
+		# num = self.vispy_canvas.spectra[0].num_ffts
+		num = int(self.vispy_canvas.duration * self.vispy_canvas.sr / self.vispy_canvas.hop)
+		#get the times at which the average should be sampled
+		return np.linspace(0, self.vispy_canvas.duration, num=num)
+		
+	def get_linspace(self):
+		"""Convert the log2 spaced speed curve back into linspace for further processing"""
+		out = np.array(self.data)
+		np.power(2, out[:,1], out[:,1])
+		return out
+	
+class MasterSpeedLine(BaseLine):
+	"""Stores and displays the average, ie. master speed curve."""
 		
 	def update(self):
-		#set the output data
-		num = self.vispy_canvas.spectra[0].num_ffts
-		#get the times at which the average should be sampled
-		times = np.linspace(0, self.vispy_canvas.duration, num=num)
-		self.data = np.zeros((len(times), 2), dtype=np.float32)
-		self.data[:, 0] = times
 		if self.vispy_canvas.lines:
+			times = self.get_times()
 			#create the array for sampling
 			out = np.zeros((len(times), len(self.vispy_canvas.lines)), dtype=np.float32)
 			#lerp and sample all lines, use NAN for missing parts
@@ -290,27 +300,15 @@ class MasterSpeedLine:
 			#bandpass filter the output
 			fs = self.vispy_canvas.sr / self.vispy_canvas.hop
 			lowcut, highcut = sorted(self.bands)
-			self.data[:, 1] = filters.butter_bandpass_filter(mean_with_nans, lowcut, highcut, fs, order=3)
+			samples = filters.butter_bandpass_filter(mean_with_nans, lowcut, highcut, fs, order=3)
+
+			self.data = np.stack( (times, samples), axis=-1)
+		else:
+			self.data = self.empty
 		self.line_speed.set_data(pos=self.data)
 
-	def get_linspace(self):
-		"""Convert the log2 spaced speed curve back into linspace for direct use in resampling"""
-		out = np.array(self.data)
-		np.power(2, out[:,1], out[:,1])
-		return out
-
-class MasterRegLine:
+class MasterRegLine(BaseLine):
 	"""Stores and displays the average, ie. master speed curve."""
-	def __init__(self, vispy_canvas):
-		
-		self.vispy_canvas = vispy_canvas
-		
-		#create the speed curve visualization
-		self.data = np.zeros((2, 2), dtype=np.float32)
-		self.data[:, 0] = (0, 999)
-		self.data[:, 1] = (0, 0)
-		self.line_speed = scene.Line(pos=self.data, color=(0, 0, 1, .5), method='gl')
-		self.line_speed.parent = vispy_canvas.speed_view.scene
 		
 	def update(self):
 		if self.vispy_canvas.regs:
@@ -319,9 +317,7 @@ class MasterRegLine:
 			#https://stackoverflow.com/questions/11199509/sine-wave-that-slowly-ramps-up-frequency-from-f1-to-f2-for-a-given-time
 			#https://stackoverflow.com/questions/19771328/sine-wave-that-exponentialy-changes-between-frequencies-f1-and-f2-at-given-time
 			
-			#get the times at which the average should be sampled
-			num = self.vispy_canvas.spectra[0].num_ffts
-			times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
+			times = self.get_times()
 			
 			#sort the regressions by their time
 			self.vispy_canvas.regs.sort(key=lambda tup: tup.t_center)
@@ -346,26 +342,12 @@ class MasterRegLine:
 			amplitudes_sampled = np.interp(times, t_centers, amp_centers)
 			
 			#create the speed curve visualization, boost it a bit to distinguish from the raw curves
-			self.data = np.zeros((len(times), 2), dtype=np.float32)
-			self.data[:, 0] = times
-			self.data[:, 1] = 1.5  * amplitudes_sampled *  sine_curve
+			self.data = np.stack( (times, 1.5  * amplitudes_sampled *  sine_curve), axis=-1)
 		else:
-			self.data = np.zeros((2, 2), dtype=np.float32)
-			self.data[:, 0] = (0, 999)
-			self.data[:, 1] = (0, 0)
+			self.data = self.empty
 		self.line_speed.set_data(pos=self.data)
 
-	def show(self):
-		self.line_speed.parent = self.vispy_canvas.speed_view.scene
 		
-	def hide(self):
-		self.line_speed.parent = None
-		
-	def get_linspace(self):
-		"""Convert the log2 spaced speed curve back into linspace for further processing"""
-		out = np.array(self.data)
-		np.power(2, out[:,1], out[:,1])
-		return out
 		
 class RegLine(BaseMarker):
 	"""Stores a single sinc regression's data and displays it"""
@@ -518,13 +500,8 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.lines = []
 		self.regs = []
 		self.master_speed = MasterSpeedLine(self)
-		self.master_reg_speed = MasterRegLine(self)
+		self.master_reg_speed = MasterRegLine(self, (0, 0, 1, .5))
 		self.freeze()
-		
-	#called if either  the file or FFT settings have changed
-	def set_file_or_fft_settings(self, files, fft_size = 256, fft_overlap = 1):
-		if files:
-			self.compute_spectra(files, fft_size, fft_overlap)
 		
 	def on_mouse_press(self, event):
 		#audio cursor
@@ -570,10 +547,11 @@ class Canvas(spectrum.SpectrumCanvas):
 						RegLine(self, t0, t1, amplitude, omega, phase, offset)
 						self.master_reg_speed.update()
 					else:
-						times, freqs = wow_detection.trace_handle(mode, self.fft_storage[self.keys[0]], self.fft_size, self.hop, self.sr, f0, f1, t0, t1,  tolerance, adapt, trail = [self.click_spec_conversion(click) for click in event.trail()])
-						if len(freqs) and np.nan not in freqs:
-							TraceLine(self, times, freqs, auto_align=auto_align)
-							self.master_speed.update()
+						res = wow_detection.trace_handle(mode, self.fft_storage[self.keys[0]], self.fft_size, self.hop, self.sr, f0, f1, t0, t1,  tolerance, adapt, trail = [self.click_spec_conversion(click) for click in event.trail()])
+						for times, freqs in res:
+							if len(freqs) and np.nan not in freqs:
+								TraceLine(self, times, freqs, auto_align=auto_align)
+						self.master_speed.update()
 					return
 				
 				#or in speed view?

@@ -57,11 +57,11 @@ class ObjectWidget(QtWidgets.QWidget):
 			#finally - proceed with spectrum stuff elsewhere
 			self.parent.setWindowTitle('pytapesynch '+os.path.basename(self.filename))
 
-			self.parent.canvas.set_file_or_fft_settings((self.filename, self.filename),
-														 fft_size = self.display_widget.fft_size,
-														 fft_overlap = self.display_widget.fft_overlap,
-														 # force reading both channels!
-														 channels=(0, 1) )
+			self.parent.canvas.compute_spectra( (self.filename, self.filename),
+												 fft_size = self.display_widget.fft_size,
+												 fft_overlap = self.display_widget.fft_overlap,
+												 # force reading both channels!
+												 channels=(0, 1) )
 												 
 			data = io_ops.read_lag(self.filename)
 			for a0, a1, b0, b1, d in data:
@@ -224,12 +224,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.pan_samples = []
 		self.pan_line = PanLine(self)
 		self.freeze()
-		
-	#called if either  the file or FFT settings have changed
-	def set_file_or_fft_settings(self, files, fft_size = 256, fft_overlap = 1, channels=(0,1)):
-		if files:
-			self.compute_spectra(files, fft_size, fft_overlap, channels)
-			self.pan_line.update()
 		
 	def on_mouse_press(self, event):
 		#selection

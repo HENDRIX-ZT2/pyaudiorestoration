@@ -182,6 +182,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.props = None
 		self.vmin = -80
 		self.vmax = -40
+		self.cmap = "viridis"
 		self.num_cores = os.cpu_count()
 		self.fft_size = 1024
 		self.hop = 256
@@ -287,16 +288,15 @@ class SpectrumCanvas(scene.SceneCanvas):
 			# we continue when the thread emits a "finished" signal, conntected to retrieve_fft()
 					
 		#has the file changed?
-		if self.filenames != files:
+		if files and self.filenames != files:
 			print("file has changed!")
 			self.filenames = files
-			if filename:
-				signal, self.sr, self.channels = io_ops.read_file(filename)
-				self.props.audio_widget.set_data(signal[:,channel], self.sr)
-				#(re)set the spec_view
-				self.duration = len(signal) / self.sr
-				self.speed_view.camera.rect = (0, -1, self.duration, 2)
-				self.spec_view.camera.rect = (0, 0, self.duration, to_mel(self.sr//2))
+			signal, self.sr, self.channels = io_ops.read_file(filename)
+			self.props.audio_widget.set_data(signal[:,channel], self.sr)
+			#(re)set the spec_view
+			self.duration = len(signal) / self.sr
+			self.speed_view.camera.rect = (0, -1, self.duration, 2)
+			self.spec_view.camera.rect = (0, 0, self.duration, to_mel(self.sr//2))
 	
 	def retrieve_fft(self,):
 		print("Retrieving FFT from processing thread")
@@ -308,19 +308,18 @@ class SpectrumCanvas(scene.SceneCanvas):
 		for k, spec in zip(self.keys, self.spectra):
 			spec.update_data(self.fft_storage[k], self.hop, self.sr)
 		self.set_clims(self.vmin, self.vmax)
-			
-		# ok seems like now with threading it is important that this gets set _after_ setting the data
-		# can not be set from the outside, must make cmap a local var that is updated
-		self.set_colormap("viridis")
+		self.set_colormap(self.cmap)
 			
 	#fast stuff that does not require rebuilding everything
 	def set_colormap(self, cmap):
+		self.cmap = cmap
 		for spe in self.spectra:
 			spe.set_cmap(cmap)
 		self.colorbar_display.cmap = cmap
 		
-	#fast stuff that does not require rebuilding everything
 	def set_clims(self, vmin, vmax):
+		self.vmin = vmin
+		self.vmax = vmax
 		for spe in self.spectra:
 			spe.set_clims(vmin, vmax)
 		self.colorbar_display.clim = (vmin, vmax)

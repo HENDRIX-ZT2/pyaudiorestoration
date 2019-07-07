@@ -91,9 +91,9 @@ class DisplayWidget(QtWidgets.QWidget):
 	def fft_overlap(self): return int(self.overlap_c.currentText())
 	
 	def update_fft_settings(self,):
-		self.canvas.set_file_or_fft_settings(self.canvas.filenames,
-											 fft_size = self.fft_size,
-											 fft_overlap = self.fft_overlap)
+		self.canvas.compute_spectra(self.canvas.filenames,
+									fft_size = self.fft_size,
+									fft_overlap = self.fft_overlap)
 		# also force a cmap update here
 		self.update_cmap()
 		
@@ -138,7 +138,7 @@ class TracingWidget(QtWidgets.QWidget):
 		tracing_l.setFont(myFont)
 		trace_l = QtWidgets.QLabel("Mode")
 		self.trace_c = QtWidgets.QComboBox(self)
-		self.trace_c.addItems(("Center of Gravity","Peak","Correlation","Freehand Draw", "Sine Regression"))
+		self.trace_c.addItems(("Center of Gravity","Peak","Partials","Correlation","Freehand Draw", "Sine Regression"))
 		
 		rpm_l = QtWidgets.QLabel("Source RPM")
 		self.rpm_c = QtWidgets.QComboBox(self)

@@ -170,6 +170,12 @@ def trace_peak_static(D, fft_size = 8192, hop = 256, sr = 44100, fL = 2260, fU =
 	freqs[dBs < dB_cutoff] = np.mean(freqs)
 	return times, freqs#, dbs
 	
+def trace_partials(freqs, freq2bin, D, fft_size = 8192, hop = 256, sr = 44100, tolerance = 1, adaptation_mode="Linear", dB_cutoff=-75):
+	#(times, freqs, )
+	# pitches, magnitudes = librosa.piptrack(S=S, sr=sr)
+	partials = []
+	return partials
+			
 def trace_peak(freqs, freq2bin, D, fft_size = 8192, hop = 256, sr = 44100, tolerance = 1, adaptation_mode="Linear", dB_cutoff=-75):
 	"""
 	tolerance: tolerance above and below, in semitones (1/12th of an octave)
@@ -374,6 +380,8 @@ def trace_handle(trace_mode, D, fft_size = 8192, hop = 256, sr = 44100, fL = 226
 		trace_cog(freqs, freq2bin, D[:,first_fft_i:last_fft_i], fft_size, sr, fL, fU, adaptation_mode)
 	elif trace_mode == "Peak":
 		trace_peak(freqs, freq2bin, D[:,first_fft_i:last_fft_i], fft_size, hop, sr, tolerance, adaptation_mode, dB_cutoff)
+	elif trace_mode == "Partials":
+		return trace_partials(freqs, freq2bin, D[:,first_fft_i:last_fft_i], fft_size, hop, sr, tolerance, adaptation_mode, dB_cutoff)
 	elif trace_mode == "Correlation":
 		freqs = freqs[:-1]
 		times = times[:-1]
@@ -381,7 +389,7 @@ def trace_handle(trace_mode, D, fft_size = 8192, hop = 256, sr = 44100, fL = 226
 	#interpolate any remaining NANs
 	nans, x = nan_helper(freqs)
 	freqs[nans]= np.interp(x(nans), x(~nans), freqs[~nans])
-	return times, freqs
+	return ((times, freqs), )
 	
 def parabolic(f, x):
 	"""Helper function to refine a peak position in an array"""

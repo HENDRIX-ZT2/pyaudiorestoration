@@ -270,8 +270,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 		# have the filenames changed?
 		if filenames and self.filenames != filenames:
 		
-			# todo: should probably do an fft init here!
 			print("file has changed!")
+			self.init_fft_storage()
 			self.filenames = filenames
 			for i, filename in enumerate(self.filenames):
 				self.signals[i], self.sr, self.channels = io_ops.read_file(filename)

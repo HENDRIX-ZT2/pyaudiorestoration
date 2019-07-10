@@ -29,11 +29,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.audio_widget = snd.AudioWidget()
 		self.inspector_widget = widgets.InspectorWidget()
 		buttons = [self.display_widget, self.resampling_widget, self.progress_widget, self.audio_widget, self.inspector_widget ]
-
-		vbox = QtWidgets.QVBoxLayout()
-		for w in buttons: vbox.addWidget(w)
-		vbox.addStretch(1.0)
-		self.setLayout(vbox)
+		widgets.vbox2(self, buttons)
 
 		self.resampling_thread = qt_threads.ResamplingThread()
 		self.resampling_thread.notifyProgress.connect(self.progress_widget.onProgress)
@@ -43,36 +39,30 @@ class ObjectWidget(QtWidgets.QWidget):
 	def open_audio(self):
 		#just a wrapper around load_audio so we can access that via drag & drop and button
 		#pyqt5 returns a tuple
-		reffilename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', 'c:\\', "Audio files (*.flac *.wav)")[0]
-		srcfilename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', 'c:\\', "Audio files (*.flac *.wav)")[0]
+		reffilename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
+		srcfilename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
 		self.load_audio(reffilename, srcfilename)
 			
 	def load_audio(self, reffilename, srcfilename):
 
-		signal, sr, channels = io_ops.read_file(reffilename)
-		if sr:
+		try:
+			self.parent.canvas.compute_spectra( (reffilename, srcfilename), self.display_widget.fft_size, self.display_widget.fft_overlap)
+		# file could not be opened
+		except RuntimeError as err:
+			print(err)
+		# no issues, we can continue
+		else:
 			self.reffilename = reffilename
-			
-			signal, sr, channels = io_ops.read_file(srcfilename)
-			if sr:
-				self.srcfilename = srcfilename
-					
-				#Cleanup of old data
-				self.parent.canvas.init_fft_storage()
-				self.delete_traces(not_only_selected=True)
-				self.resampling_widget.refill(channels)
+			self.srcfilename = srcfilename
 				
-				#finally - proceed with spectrum stuff elsewhere
-				self.parent.setWindowTitle('pytapesynch '+os.path.basename(self.reffilename))
-
-				self.parent.canvas.compute_spectra( (self.reffilename, self.srcfilename),
-													fft_size = self.display_widget.fft_size,
-													fft_overlap = self.display_widget.fft_overlap)
-													 
-				data = io_ops.read_lag(self.reffilename)
-				for a0, a1, b0, b1, d in data:
-					LagSample(self.parent.canvas, (a0, a1), (b0, b1), d)
-				self.parent.canvas.lag_line.update()
+			#Cleanup of old data
+			self.delete_traces(not_only_selected=True)
+			self.resampling_widget.refill(self.parent.canvas.channels)
+			
+			for a0, a1, b0, b1, d in io_ops.read_lag(self.reffilename):
+				LagSample(self.parent.canvas, (a0, a1), (b0, b1), d)
+			self.parent.canvas.lag_line.update()
+			self.parent.update_file(reffilename)
 
 	def save_traces(self):
 		#get the data from the traces and regressions and save it
@@ -396,3 +386,4 @@ if __name__ == '__main__':
 	win = MainWindow()
 	win.show()
 	appQt.exec_()
+config.write_config("config.ini", win.cfg)

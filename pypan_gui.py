@@ -6,7 +6,7 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 from scipy import interpolate
 
 #custom modules
-from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets, io_ops, units
+from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets, io_ops, units, config
 
 class ObjectWidget(QtWidgets.QWidget):
 	"""
@@ -28,45 +28,42 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.audio_widget = snd.AudioWidget()
 		self.inspector_widget = widgets.InspectorWidget()
 		buttons = [self.display_widget, self.resampling_widget, self.progress_widget, self.audio_widget, self.inspector_widget ]
-
-		vbox = QtWidgets.QVBoxLayout()
-		for w in buttons: vbox.addWidget(w)
-		vbox.addStretch(1.0)
-		self.setLayout(vbox)
+		widgets.vbox2(self, buttons)
 		
 		self.parent.canvas.fourier_thread.notifyProgress.connect( self.progress_widget.onProgress )
 		
 	def open_audio(self):
 		#just a wrapper around load_audio so we can access that via drag & drop and button
 		#pyqt5 returns a tuple
-		filename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Audio', 'c:\\', "Audio files (*.flac *.wav)")[0]
+		filename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Audio', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
 		self.load_audio(filename)
 			
 	def load_audio(self, filename):
-		signal, sr, channels = io_ops.read_file(filename)
-		if signal is not None:
-			if channels != 2:
+		#ask the user if it should really be opened, if another file was already open
+		if widgets.abort_open_new_file(self, filename, self.filename):
+			return
+		
+		try:
+			self.parent.canvas.compute_spectra( (filename, filename), self.display_widget.fft_size, self.display_widget.fft_overlap, channels=(0, 1) )
+		# file could not be opened
+		except RuntimeError as err:
+			print(err)
+		# no issues, we can continue
+		else:
+			if self.parent.canvas.channels != 2:
 				print("Must be stereo!")
 				return
 			self.filename = filename
-			#Cleanup of old data
-			self.parent.canvas.init_fft_storage()
-			self.delete_traces(not_only_selected=True)
-			self.resampling_widget.refill(channels)
 			
-			#finally - proceed with spectrum stuff elsewhere
-			self.parent.setWindowTitle('pytapesynch '+os.path.basename(self.filename))
-
-			self.parent.canvas.compute_spectra( (self.filename, self.filename),
-												 fft_size = self.display_widget.fft_size,
-												 fft_overlap = self.display_widget.fft_overlap,
-												 # force reading both channels!
-												 channels=(0, 1) )
-												 
-			data = io_ops.read_lag(self.filename)
-			for a0, a1, b0, b1, d in data:
+			#Cleanup of old data
+			self.delete_traces(not_only_selected=True)
+			self.resampling_widget.refill(self.parent.canvas.channels)
+			
+			#read pan curve
+			for a0, a1, b0, b1, d in io_ops.read_lag(self.filename):
 				PanSample(self.parent.canvas, (a0, a1), (b0, b1), d)
 			self.parent.canvas.pan_line.update()
+			self.parent.update_file(self.filename)
 
 	def save_traces(self):
 		#get the data from the traces and regressions and save it
@@ -290,3 +287,4 @@ if __name__ == '__main__':
 	win = MainWindow()
 	win.show()
 	appQt.exec_()
+config.write_config("config.ini", win.cfg)

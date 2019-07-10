@@ -5,7 +5,7 @@ from vispy import scene, color
 from PyQt5 import QtGui, QtWidgets
 
 #custom modules
-from util import spectrum, resampling, wow_detection, qt_theme, qt_threads, snd, widgets, filters, io_ops
+from util import spectrum, resampling, wow_detection, qt_theme, qt_threads, snd, widgets, filters, io_ops, config
 		
 class ObjectWidget(QtWidgets.QWidget):
 	"""
@@ -28,11 +28,7 @@ class ObjectWidget(QtWidgets.QWidget):
 		self.inspector_widget = widgets.InspectorWidget()
 		
 		buttons = [self.display_widget, self.tracing_widget, self.resampling_widget, self.progress_widget, self.audio_widget, self.inspector_widget ]
-
-		vbox = QtWidgets.QVBoxLayout()
-		for w in buttons: vbox.addWidget(w)
-		vbox.addStretch(1.0)
-		self.setLayout(vbox)
+		widgets.vbox2(self, buttons)
 
 		self.resampling_thread = qt_threads.ResamplingThread(self.progress_widget.onProgress)
 		self.parent.canvas.fourier_thread.notifyProgress.connect( self.progress_widget.onProgress )
@@ -40,47 +36,37 @@ class ObjectWidget(QtWidgets.QWidget):
 	def open_audio(self):
 		#just a wrapper around load_audio so we can access that via drag & drop and button
 		#pyqt5 returns a tuple
-		filename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open file', 'c:\\', "Audio files (*.flac *.wav)")[0]
+		filename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open file', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
 		self.load_audio(filename)
 			
 	def load_audio(self, filename):
-		#called whenever a potential audio file is set as self.filename - via drag& drop or open_audio
-		if filename:
-			if filename != self.filename:
-				#ask the user if it should really be opened, if another file was already open
-				if self.filename:
-					qm = QtWidgets.QMessageBox
-					ret = qm.question(self,'', "Do you really want to load "+os.path.basename(filename)+"? You will lose unsaved work on "+os.path.basename(self.filename)+"!", qm.Yes | qm.No)
-					if ret == qm.No:
-						return
-				
-				signal, sr, channels = io_ops.read_file(filename)
-				if sr:
-					self.filename = filename
-					
-					#Cleanup of old data
-					self.parent.canvas.init_fft_storage()
-					self.delete_traces(not_only_selected=True)
-					self.resampling_widget.refill(channels)
-					
-					#finally - proceed with spectrum stuff elsewhere
-					self.parent.setWindowTitle('pyrespeeder '+os.path.basename(self.filename))
-
-					self.parent.canvas.compute_spectra(  (filename,),
-														 fft_size = self.display_widget.fft_size,
-														 fft_overlap = self.display_widget.fft_overlap)
-					# also force a cmap update here
-					self.display_widget.update_cmap()
-					
-					#read any saved traces or regressions
-					data = io_ops.read_trace(self.filename)
-					for offset, times, freqs in data:
-						TraceLine(self.parent.canvas, times, freqs, offset=offset)
-					self.parent.canvas.master_speed.update()
-					data = io_ops.read_regs(self.filename)
-					for t0, t1, amplitude, omega, phase, offset in data:
-						RegLine(self.parent.canvas, t0, t1, amplitude, omega, phase, offset)
-					self.parent.canvas.master_reg_speed.update()
+		#called whenever a potential audio file is given via drag&drop or open_audio
+	
+		#ask the user if it should really be opened, if another file was already open
+		if widgets.abort_open_new_file(self, filename, self.filename):
+			return
+		
+		try:
+			self.parent.canvas.compute_spectra( (filename,), self.display_widget.fft_size, self.display_widget.fft_overlap)
+		# file could not be opened
+		except RuntimeError as err:
+			print(err)
+		# no issues, we can continue
+		else:
+			self.filename = filename
+			
+			#Cleanup of old data
+			self.delete_traces(not_only_selected=True)
+			self.resampling_widget.refill(self.parent.canvas.channels)
+			
+			#read any saved traces or regressions
+			for offset, times, freqs in io_ops.read_trace(self.filename):
+				TraceLine(self.parent.canvas, times, freqs, offset=offset)
+			for t0, t1, amplitude, omega, phase, offset in io_ops.read_regs(self.filename):
+				RegLine(self.parent.canvas, t0, t1, amplitude, omega, phase, offset)
+			self.parent.canvas.master_speed.update()
+			self.parent.canvas.master_reg_speed.update()
+			self.parent.update_file(self.filename)
 				
 	def save_traces(self):
 		#get the data from the traces and regressions and save it
@@ -584,3 +570,4 @@ if __name__ == '__main__':
 	win = MainWindow()
 	win.show()
 	appQt.exec_()
+config.write_config("config.ini", win.cfg)

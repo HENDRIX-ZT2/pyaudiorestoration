@@ -3,10 +3,19 @@ import numpy as np
 from vispy import color
 from PyQt5 import QtGui, QtCore, QtWidgets
 
-from util import units
+from util import units, config
 
 myFont=QtGui.QFont()
 myFont.setBold(True)
+
+def abort_open_new_file(parent, newfile, oldfile):
+	# only return True if we should abort
+	if newfile == oldfile:
+		return True
+	if oldfile:
+		qm = QtWidgets.QMessageBox
+		ret = qm.question(parent,'', "Do you really want to load "+os.path.basename(newfile)+"? You will lose unsaved work on "+os.path.basename(oldfile)+"!", qm.Yes | qm.No)
+		return ret == qm.No
 
 def showdialog(str):
 	msg = QtWidgets.QMessageBox()
@@ -17,7 +26,7 @@ def showdialog(str):
 	#msg.setDetailedText("The details are as follows:")
 	msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
 	retval = msg.exec_()
-	
+
 def grid(buttons):
 	qgrid = QtWidgets.QGridLayout()
 	qgrid.setHorizontalSpacing(3)
@@ -33,12 +42,17 @@ def grid(buttons):
 		qgrid.setColumnStretch(i, 1)
 	return qgrid
 	
-def vbox(self, grid):
-	vbox = QtWidgets.QVBoxLayout(self)
+def vbox(parent, grid):
+	vbox = QtWidgets.QVBoxLayout(parent)
 	vbox.addLayout(grid)
 	vbox.addStretch(1.0)
 	vbox.setSpacing(0)
 	vbox.setContentsMargins(0,0,0,0)
+
+def vbox2(parent, buttons):
+	vbox = QtWidgets.QVBoxLayout(parent)
+	for w in buttons: vbox.addWidget(w)
+	vbox.addStretch(1.0)
 	
 class DisplayWidget(QtWidgets.QWidget):
 	def __init__(self, canvas=None):
@@ -443,12 +457,15 @@ class MainWindow(QtWidgets.QMainWindow):
 	def __init__(self, name, object_widget, canvas_widget, accept_drag=True):
 		QtWidgets.QMainWindow.__init__(self)		
 		
+		self.name = name
 		self.resize(720, 400)
 		self.setWindowTitle(name)
 		try:
 			base_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 			self.setWindowIcon(QtGui.QIcon(os.path.join(base_dir,'icons/'+name+'.png')))
 		except: pass
+		
+		self.cfg = config.read_config("config.ini")
 		
 		if accept_drag:
 			self.setAcceptDrops(True)
@@ -463,6 +480,10 @@ class MainWindow(QtWidgets.QMainWindow):
 		splitter.addWidget(self.canvas.native)
 		splitter.addWidget(self.props)
 		self.setCentralWidget(splitter)
+
+	def update_file(self, filepath):
+		self.cfg["dir_in"], file_name = os.path.split(filepath)
+		self.setWindowTitle(self.name+" "+ file_name)
 		
 	def add_to_menu(self, button_data):
 		for submenu, name, func, shortcut in button_data:

@@ -2,14 +2,9 @@ import soundfile as sf
 import os
 
 def read_file(file_path):
-	print("Processing",file_path)
-	# load audio
-	try:
-		soundob = sf.SoundFile(file_path)
-		return soundob.read(always_2d=True), soundob.samplerate, soundob.channels
-	except:
-		print("Could not read",file_path)
-		return None, None, None
+	print("Reading",file_path)
+	soundob = sf.SoundFile(file_path)
+	return soundob.read(always_2d=True), soundob.samplerate, soundob.channels
 
 def write_file(file_path, signal, sr, channels, suffix="_out"):
 	# write the final signal

@@ -178,7 +178,6 @@ class SpectrumCanvas(scene.SceneCanvas):
 	def __init__(self, spectra_colors=("r","g"), y_axis='Src. Lag', bgcolor="#353535"):
 		
 		#some default dummy values
-		self.filenames = ()
 		self.props = None
 		self.vmin = -80
 		self.vmax = -40
@@ -189,7 +188,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.sr = 44100
 		self.channels = 0
 		self.duration = 0
-		self.fft_storage = {}
+		
+		
 		
 		self.fourier_thread = qt_threads.FourierThread()
 		self.fourier_thread.finished.connect(self.retrieve_fft)
@@ -242,8 +242,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.spec_yaxis.link_view(self.spec_view)
 		
 		self.spectra = [Spectrum(self.spec_view, overlay=color) for color in spectra_colors]
-		# store one key per spectrum
-		self.keys = [None for x in self.spectra]
+		self.init_fft_storage()
 		#nb. this is a vispy.util.event.EventEmitter object
 		#can this be linked somewhere to the camera? base_camera connects a few events, too
 		for spe in self.spectra:
@@ -252,9 +251,14 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.freeze()
 		
 	def init_fft_storage(self,):
+		# we must initialize whenever new file(s) are loaded
+		# store one key per spectrum
+		self.keys = []
+		self.filenames = [None for x in self.spectra]
+		self.signals = [None for x in self.spectra]
 		self.fft_storage = {}
 	
-	def compute_spectra(self, files, fft_size, fft_overlap, channels=None):
+	def compute_spectra(self, filenames, fft_size, fft_overlap, channels=None):
 	
 		# TODO: implement adaptive / intelligent hop reusing data
 		# maybe move more into the thread
@@ -262,41 +266,73 @@ class SpectrumCanvas(scene.SceneCanvas):
 		if self.fourier_thread.jobs:
 			print("Fourier job is still running, wait!")
 			return
+			
+		# have the filenames changed?
+		if filenames and self.filenames != filenames:
+		
+			# todo: should probably do an fft init here!
+			print("file has changed!")
+			self.filenames = filenames
+			for i, filename in enumerate(self.filenames):
+				self.signals[i], self.sr, self.channels = io_ops.read_file(filename)
+			# don't bother until it is fixed
+			# self.props.audio_widget.set_data(signal[:,channel], self.sr)
+			#(re)set the spec_view
+			# just set according to the first signal
+			self.duration = len(self.signals[0]) / self.sr
+			self.speed_view.camera.rect = (0, -1, self.duration, 2)
+			self.spec_view.camera.rect = (0, 0, self.duration, to_mel(self.sr//2))
+		
 		self.keys = []
 		self.fft_size = fft_size
 		self.hop = fft_size // fft_overlap
 		if channels is None:
-			channels = [0 for file in files]
-		for filename, channel in zip(files, channels):
+			channels = [0 for file in filenames]
+		for filename, signal, channel in zip(self.filenames, self.signals, channels):
 			if filename:
-				k = (filename, self.fft_size, self.hop, channel)
+				k = (filename, self.fft_size, channel, self.hop)
+				self.keys.append(k)
 				if not channel < self.channels:
 					print("Not enough audio channels to load, reverting to first channel")
 					channel = 0
-				self.keys.append(k)
-				if k not in self.fft_storage:
-					print("storing new fft",self.fft_size)
-					# append to the fourier job list
-					self.fourier_thread.jobs.append( (filename, channel, self.fft_size, self.hop, "hann", self.num_cores, k) )
-					# all tasks are started below
-				else:
-					# just get FFT from current storage and continue directly
+				# first try to get FFT from current storage and continue directly
+				if k in self.fft_storage:
+					print("loading fft",self.fft_size)
 					self.continue_spectra()
+				# check for alternate hops
+				else:
+					more_dense = None
+					more_sparse = None
+					# go over all keys and see if there is a bigger one
+					for key in self.fft_storage:
+						if key[0:3] == k[0:3]:
+							if key[3] > k[3]:
+								more_sparse = key
+							elif key[3] < k[3]:
+								# only save key if none had been set or the new key is closer to the desired k
+								if not more_dense or more_dense[3] < key[3]:
+									more_dense = key
+					# prefer reduction via strides
+					if more_dense:
+						print("reducing resolution via stride",more_dense[3],k[3])
+						step = k[3]//more_dense[3]
+						self.fft_storage[k] = np.array(self.fft_storage[more_dense][:,::step])
+						self.continue_spectra()
+					# TODO: implement gap filling, will need changes to stft function
+					# # then fill missing gaps
+					# elif more_sparse:
+						# print("increasing resolution by filling gaps",self.fft_size)
+						# self.fft_storage[k] = self.fft_storage[more_sparse]
+					else:
+						print("storing new fft",self.fft_size)
+						# append to the fourier job list
+						self.fourier_thread.jobs.append( (signal[:,channel], self.fft_size, self.hop, "hann", self.num_cores, k) )
+						# all tasks are started below
 		# perform all fourier jobs
 		if self.fourier_thread.jobs:
 			self.fourier_thread.start()
 			# we continue when the thread emits a "finished" signal, conntected to retrieve_fft()
 					
-		#has the file changed?
-		if files and self.filenames != files:
-			print("file has changed!")
-			self.filenames = files
-			signal, self.sr, self.channels = io_ops.read_file(filename)
-			self.props.audio_widget.set_data(signal[:,channel], self.sr)
-			#(re)set the spec_view
-			self.duration = len(signal) / self.sr
-			self.speed_view.camera.rect = (0, -1, self.duration, 2)
-			self.spec_view.camera.rect = (0, 0, self.duration, to_mel(self.sr//2))
 	
 	def retrieve_fft(self,):
 		print("Retrieving FFT from processing thread")

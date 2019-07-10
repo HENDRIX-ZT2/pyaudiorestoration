@@ -21,8 +21,7 @@ class FourierThread(BaseThread):
 	jobs = []
 	result = {}
 	def run(self):
-		for filename, channel, fft_size, hop, window, num_cores, key in self.jobs:
-			signal, self.sr, self.channels = io_ops.read_file(filename)
-			self.result[key] = fourier.stft(signal[:,channel], fft_size, hop, window, num_cores, prog_sig=self.notifyProgress)
+		for signal_1d, fft_size, hop, window, num_cores, key in self.jobs:
+			self.result[key] = fourier.stft(signal_1d, fft_size, hop, window, num_cores, prog_sig=self.notifyProgress)
 		self.jobs = []
 	

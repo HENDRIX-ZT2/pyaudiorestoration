@@ -13,7 +13,7 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-from util import qt_theme, fourier, io_ops, units
+from util import qt_theme, fourier, io_ops, units, wow_detection
 
 def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L"):
 	signal, sr, channels = io_ops.read_file(filename)
@@ -32,12 +32,6 @@ def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L"):
 		return np.mean(spectra, axis=0), sr
 	else:
 		return spectra[0], sr
-	
-def parabolic(f, x):
-	"""Helper function to refine a peak position in an array"""
-	xv = 1/2. * (f[x-1] - f[x+1]) / (f[x-1] - 2 * f[x] + f[x+1]) + x
-	yv = f[x] - 1/4. * (f[x-1] - f[x+1]) * (xv - x)
-	return (xv, yv)
 	
 def get_spectrum(file_src, channel_mode, fft_size):
 	print("Analyzing channels:",channel_mode)
@@ -186,7 +180,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			
 			# get peak from the selected region 
 			raw_index = np.argmax(self.spectrum[border_L:border_R]) + border_L
-			interp_index, dB = parabolic(self.spectrum, raw_index)
+			interp_index, dB = wow_detection.parabolic(self.spectrum, raw_index)
 			
 			# convert to frequency
 			freq = interp_index * self.sr / self.fft_size

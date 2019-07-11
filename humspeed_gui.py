@@ -13,7 +13,7 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-from util import qt_theme, fourier, io_ops, units, wow_detection
+from util import fourier, io_ops, units, wow_detection, widgets
 
 def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L"):
 	signal, sr, channels = io_ops.read_file(filename)
@@ -242,13 +242,4 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 if __name__ == '__main__':
-	appQt = QtWidgets.QApplication([])
-	
-	#style
-	appQt.setStyle(QtWidgets.QStyleFactory.create('Fusion'))
-	appQt.setPalette(qt_theme.dark_palette)
-	appQt.setStyleSheet("QToolTip { color: #ffffff; background-color: #353535; border: 1px solid white; }")
-	
-	win = MainWindow()
-	win.show()
-	appQt.exec_()
+	widgets.startup( MainWindow )

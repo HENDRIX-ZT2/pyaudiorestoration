@@ -6,7 +6,7 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 from scipy import interpolate
 
 #custom modules
-from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, snd, widgets, io_ops, units, config
+from util import vispy_ext, fourier, spectrum, resampling, wow_detection, snd, widgets, io_ops, units, markers
 
 class ObjectWidget(QtWidgets.QWidget):
 	"""
@@ -61,7 +61,7 @@ class ObjectWidget(QtWidgets.QWidget):
 			
 			#read pan curve
 			for a0, a1, b0, b1, d in io_ops.read_lag(self.filename):
-				PanSample(self.parent.canvas, (a0, a1), (b0, b1), d)
+				markers.PanSample(self.parent.canvas, (a0, a1), (b0, b1), d)
 			self.parent.canvas.pan_line.update()
 			self.parent.update_file(self.filename)
 
@@ -104,114 +104,6 @@ class MainWindow(widgets.MainWindow):
 						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
 						)
 		self.add_to_menu(button_data)
-
-class PanLine:
-	"""Stores and displays the average, ie. master speed curve."""
-	def __init__(self, vispy_canvas):
-		
-		self.vispy_canvas = vispy_canvas
-		
-		#create the speed curve visualization
-		self.data = np.zeros((2, 2), dtype=np.float32)
-		self.data[:, 0] = (0, 999)
-		self.data[:, 1] = (0, 0)
-		self.line_speed = scene.Line(pos=self.data, color=(0, 0, 1, .5), method='gl')
-		self.line_speed.parent = vispy_canvas.speed_view.scene
-		
-	def update(self):
-
-		#set the output data
-
-		if self.vispy_canvas.pan_samples:
-			#create the array for sampling
-			self.vispy_canvas.pan_samples.sort(key=lambda tup: tup.t)
-			num = self.vispy_canvas.spectra[0].num_ffts
-			
-			#get the times at which the average should be sampled
-			times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
-			# out = np.zeros((len(times), len(self.vispy_canvas.pan_samples)), dtype=np.float32)
-			# #lerp and sample all lines, use NAN for missing parts
-			# for i, line in enumerate(self.vispy_canvas.pan_samples):
-				# line_sampled = np.interp(times, line.times, line.pan, left = np.nan, right = np.nan)
-				# out[:, i] = line_sampled
-			# #take the mean and ignore nans
-			# mean_with_nans = np.nanmean(out, axis=1)
-			# #lerp over nan areas
-			# nans, x = wow_detection.nan_helper(mean_with_nans)
-			# mean_with_nans[nans]= np.interp(x(nans), x(~nans), mean_with_nans[~nans])
-			# self.data[:, 1] = mean_with_nans
-			
-			sample_times = [sample.t for sample in self.vispy_canvas.pan_samples]
-			sample_pans = [sample.pan for sample in self.vispy_canvas.pan_samples]
-			pan = np.interp(times, sample_times, sample_pans)
-			#create the speed curve visualization, boost it a bit to distinguish from the raw curves
-			self.data = np.zeros((len(times), 2), dtype=np.float32)
-			self.data[:, 0] = times
-			self.data[:, 1] = pan
-			self.line_speed.set_data(pos=self.data)	
-				
-class PanSample():
-	"""Stores a single sinc regression's data and displays it"""
-	def __init__(self, vispy_canvas, a, b, pan):
-		
-		self.a = a
-		self.b = b
-		
-		self.t = (a[0]+b[0])/2
-		self.width= abs(a[0]-b[0])
-		self.f = (a[1]+b[1])/2
-		self.height= abs(a[1]-b[1])
-		self.spec_center = (self.t, self.f)
-		self.speed_center = (self.t, pan)
-		# self.times = times
-		self.pan = pan
-		self.rect = scene.Rectangle(center=(self.t, self.f), width=self.width, height=self.height, radius=0, parent=vispy_canvas.spec_view.scene)
-		self.rect.color = (1, 1, 1, .5)
-		self.rect.transform = vispy_canvas.spectra[-1].mel_transform
-		self.rect.set_gl_state('additive')
-		self.selected = False
-		self.vispy_canvas = vispy_canvas
-		self.initialize()
-		
-	def initialize(self):
-		"""Called when first created, or revived via undo."""
-		self.vispy_canvas.pan_samples.append(self)
-		self.vispy_canvas.pan_line.update()
-
-	def deselect(self):
-		"""Deselect this line, ie. restore its colors to their original state"""
-		self.selected = False
-		self.rect.color = (1, 1, 1, .5)
-		
-	def select(self):
-		"""Toggle this line's selection state"""
-		self.selected = True
-		self.rect.color = (0, 0, 1, .5)
-		
-	def toggle(self):
-		"""Toggle this line's selection state"""
-		if self.selected:
-			self.deselect()
-		else:
-			self.select()
-			
-	def select_handle(self, multi=False):
-		if not multi:
-			for lag_sample in self.vispy_canvas.pan_samples:
-				lag_sample.deselect()
-		self.toggle()
-	
-	def show(self):
-		self.rect.parent = self.vispy_canvas.spec_view.scene
-		
-	def hide(self):
-		self.rect.parent = None
-		self.deselect()
-		
-	def remove(self):
-		self.hide()
-		#note: this has to search the list
-		self.vispy_canvas.pan_samples.remove(self)
 		
 class Canvas(spectrum.SpectrumCanvas):
 
@@ -219,7 +111,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		spectrum.SpectrumCanvas.__init__(self, bgcolor="black")
 		self.unfreeze()
 		self.pan_samples = []
-		self.pan_line = PanLine(self)
+		self.pan_line = markers.PanLine(self)
 		self.freeze()
 		
 	def on_mouse_press(self, event):
@@ -272,19 +164,10 @@ class Canvas(spectrum.SpectrumCanvas):
 						
 						# faster and simpler equivalent avoiding fac - dB - fac conversion
 						fac = np.nanmean(L[bL:bU,first_fft_i:last_fft_i] / R[bL:bU,first_fft_i:last_fft_i])
-						PanSample(self, a, b, fac )
+						markers.PanSample(self, a, b, fac )
+						self.pan_line.update()
 						
 			
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
-	appQt = QtWidgets.QApplication([])
-	
-	#style
-	appQt.setStyle(QtWidgets.QStyleFactory.create('Fusion'))
-	appQt.setPalette(qt_theme.dark_palette)
-	appQt.setStyleSheet("QToolTip { color: #ffffff; background-color: #353535; border: 1px solid white; }")
-	
-	win = MainWindow()
-	win.show()
-	appQt.exec_()
-config.write_config("config.ini", win.cfg)
+	widgets.startup( MainWindow )

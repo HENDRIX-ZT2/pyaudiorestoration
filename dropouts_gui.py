@@ -6,7 +6,7 @@ import librosa
 
 from PyQt5 import QtWidgets, QtGui, QtCore
 
-from util import qt_theme, fourier, widgets, config, filters, io_ops, units
+from util import fourier, widgets, config, filters, io_ops, units
 	
 def pairwise(iterable):
 	it = iter(iterable)
@@ -219,14 +219,4 @@ class MainWindow(QtWidgets.QMainWindow):
 			io_ops.write_file(file_path, signal, sr, channels)
 
 if __name__ == '__main__':
-	appQt = QtWidgets.QApplication([])
-	
-	#style
-	appQt.setStyle(QtWidgets.QStyleFactory.create('Fusion'))
-	appQt.setPalette(qt_theme.dark_palette)
-	appQt.setStyleSheet("QToolTip { color: #ffffff; background-color: #353535; border: 1px solid white; }")
-	
-	win = MainWindow()
-	win.show()
-	appQt.exec_()
-config.write_config("config.ini", win.cfg)
+	widgets.startup( MainWindow )

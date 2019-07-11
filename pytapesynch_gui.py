@@ -6,7 +6,7 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 from scipy import interpolate
 
 #custom modules
-from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_theme, qt_threads, snd, widgets, filters, io_ops
+from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_threads, snd, widgets, filters, io_ops, markers
 
 class ObjectWidget(QtWidgets.QWidget):
 	"""
@@ -60,7 +60,7 @@ class ObjectWidget(QtWidgets.QWidget):
 			self.resampling_widget.refill(self.parent.canvas.channels)
 			
 			for a0, a1, b0, b1, d in io_ops.read_lag(self.reffilename):
-				LagSample(self.parent.canvas, (a0, a1), (b0, b1), d)
+				markers.LagSample(self.parent.canvas, (a0, a1), (b0, b1), d)
 			self.parent.canvas.lag_line.update()
 			self.parent.update_file(reffilename)
 
@@ -178,131 +178,14 @@ class MainWindow(widgets.MainWindow):
 						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
 						)
 		self.add_to_menu(button_data)
-
-class LagLine:
-	"""Stores and displays the average, ie. master speed curve."""
-	def __init__(self, vispy_canvas):
-		
-		self.vispy_canvas = vispy_canvas
-		
-		#create the speed curve visualization
-		self.data = np.zeros((2, 2), dtype=np.float32)
-		self.data[:, 0] = (0, 999)
-		self.data[:, 1] = (0, 0)
-		self.line_speed = scene.Line(pos=self.data, color=(0, 0, 1, .5), method='gl')
-		self.line_speed.parent = vispy_canvas.speed_view.scene
-		
-	def update(self):
-		if self.vispy_canvas.lag_samples:
-			try:
-				self.vispy_canvas.lag_samples.sort(key=lambda tup: tup.t)
-				sample_times = [sample.t for sample in self.vispy_canvas.lag_samples]
-				sample_lags = [sample.d for sample in self.vispy_canvas.lag_samples]
-				
-				num = max([spec.num_ffts for spec in self.vispy_canvas.spectra])
-				times = np.linspace(0, num * self.vispy_canvas.hop / self.vispy_canvas.sr, num=num)
-				# lag = np.interp(times, sample_times, sample_lags)
-				lag = interpolate.interp1d(sample_times, sample_lags, fill_value="extrapolate")(times)
-
-				#quadratic interpolation does not give usable results
-				# interolator = scipy.interpolate.interp1d(sample_times, sample_lags, kind='quadratic', bounds_error=False, fill_value="extrapolate")
-				# lag = interolator(times)
-				
-				#using bezier splines; probably needs to be done segment by segment
-				# tck,u = interpolate.splprep([times,lag],k=2,s=0)
-				# # u=np.linspace(0,1,num=10000,endpoint=True)
-				# out = interpolate.splev(u,tck)
-				# x=out[0]
-				# y=out[1]
-				# #create the speed curve visualization, boost it a bit to distinguish from the raw curves
-				# self.data = np.zeros((len(x), 2), dtype=np.float32)
-				# self.data[:, 0] = x
-				# self.data[:, 1] = y
-				#create the speed curve visualization, boost it a bit to distinguish from the raw curves
-				self.data = np.zeros((len(times), 2), dtype=np.float32)
-				self.data[:, 0] = times
-				self.data[:, 1] = lag
-			except: pass
-		else:
-			self.data = np.zeros((2, 2), dtype=np.float32)
-			self.data[:, 0] = (0, 999)
-			self.data[:, 1] = (0, 0)
-		self.line_speed.set_data(pos=self.data)
-				
-class LagSample():
-	"""Stores a single sinc regression's data and displays it"""
-	def __init__(self, vispy_canvas, a, b, d=None):
-		
-		self.a = a
-		self.b = b
-		
-		self.t = (a[0]+b[0])/2
-		if d is None:
-			self.d = vispy_canvas.spectra[-1].delta
-		else:
-			self.d = d
-		self.width= abs(a[0]-b[0])
-		self.f = (a[1]+b[1])/2
-		self.height= abs(a[1]-b[1])
-		self.spec_center = (self.t, self.f)
-		self.speed_center = (self.t, self.d)
-		self.rect = scene.Rectangle(center=(self.t, self.f), width=self.width, height=self.height, radius=0, parent=vispy_canvas.spec_view.scene)
-		self.rect.color = (1, 1, 1, .5)
-		self.rect.transform = vispy_canvas.spectra[-1].mel_transform
-		self.rect.set_gl_state('additive')
-		self.selected = False
-		self.vispy_canvas = vispy_canvas
-		self.initialize()
-		
-	def initialize(self):
-		"""Called when first created, or revived via undo."""
-		self.vispy_canvas.lag_samples.append(self)
-		self.vispy_canvas.lag_line.update()
-
-	def deselect(self):
-		"""Deselect this line, ie. restore its colors to their original state"""
-		self.selected = False
-		self.rect.color = (1, 1, 1, .5)
-		
-	def select(self):
-		"""Toggle this line's selection state"""
-		self.selected = True
-		self.rect.color = (0, 0, 1, .5)
-		new_d = self.vispy_canvas.spectra[-1].delta
-		self.vispy_canvas.spectra[-1].translate(self.d-new_d)
-		
-	def toggle(self):
-		"""Toggle this line's selection state"""
-		if self.selected:
-			self.deselect()
-		else:
-			self.select()
-			
-	def select_handle(self, multi=False):
-		if not multi:
-			for lag_sample in self.vispy_canvas.lag_samples:
-				lag_sample.deselect()
-		self.toggle()
 	
-	def show(self):
-		self.rect.parent = self.vispy_canvas.spec_view.scene
-		
-	def hide(self):
-		self.rect.parent = None
-		self.deselect()
-		
-	def remove(self):
-		self.hide()
-		#note: this has to search the list
-		self.vispy_canvas.lag_samples.remove(self)
-		
 class Canvas(spectrum.SpectrumCanvas):
 
 	def __init__(self):
 		spectrum.SpectrumCanvas.__init__(self, bgcolor="black")
 		self.unfreeze()
 		self.lag_samples = []
-		self.lag_line = LagLine(self)
+		self.lag_line = markers.LagLine(self)
 		self.freeze()
 		
 	def on_mouse_press(self, event):
@@ -331,7 +214,8 @@ class Canvas(spectrum.SpectrumCanvas):
 						d = b[0]-a[0]
 						self.spectra[1].translate(d)
 					elif "Shift" in event.modifiers:
-						LagSample(self, a, b)
+						markers.LagSample(self, a, b)
+						self.lag_line.update()
 					# elif "Alt" in event.modifiers:
 						# print()
 						# print("Start")
@@ -376,14 +260,4 @@ class Canvas(spectrum.SpectrumCanvas):
 							
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
-	appQt = QtWidgets.QApplication([])
-	
-	#style
-	appQt.setStyle(QtWidgets.QStyleFactory.create('Fusion'))
-	appQt.setPalette(qt_theme.dark_palette)
-	appQt.setStyleSheet("QToolTip { color: #ffffff; background-color: #353535; border: 1px solid white; }")
-	
-	win = MainWindow()
-	win.show()
-	appQt.exec_()
-config.write_config("config.ini", win.cfg)
+	widgets.startup( MainWindow )

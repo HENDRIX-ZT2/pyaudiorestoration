@@ -3,10 +3,23 @@ import numpy as np
 from vispy import color
 from PyQt5 import QtGui, QtCore, QtWidgets
 
-from util import units, config
+from util import units, config, qt_theme
 
 myFont=QtGui.QFont()
 myFont.setBold(True)
+
+def startup(cls):
+	appQt = QtWidgets.QApplication([])
+	
+	#style
+	appQt.setStyle(QtWidgets.QStyleFactory.create('Fusion'))
+	appQt.setPalette(qt_theme.dark_palette)
+	appQt.setStyleSheet("QToolTip { color: #ffffff; background-color: #353535; border: 1px solid white; }")
+	
+	win = cls()
+	win.show()
+	appQt.exec_()
+	config.write_config("config.ini", win.cfg)
 
 def abort_open_new_file(parent, newfile, oldfile):
 	# only return True if we should abort

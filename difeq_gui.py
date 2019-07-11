@@ -8,7 +8,7 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-from util import qt_theme, fourier, io_ops, filters, widgets, units
+from util import fourier, io_ops, filters, widgets, units, config
 
 # todo: make global sr set by the first file that is loaded, make all others fit
 
@@ -82,9 +82,6 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.setCentralWidget(self.central_widget)
 		
 		self.setWindowTitle('Differential EQ')
-		self.src_dir = "C:\\"
-		self.ref_dir = "C:\\"
-		self.out_dir = "C:\\"
 		self.names = []
 		self.src_noise = None
 		self.ref_noise = None
@@ -93,6 +90,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.eqs = []
 		self.av = []
 		self.freqs_av = []
+		self.cfg = config.read_config("config.ini")
 
 		# a figure instance to plot on
 		self.fig, self.ax = plt.subplots(nrows=1, ncols=1)
@@ -183,13 +181,13 @@ class MainWindow(QtWidgets.QMainWindow):
 		
 		
 	def add(self):
-		file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.src_dir, "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
+		file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.cfg["dir_in"], "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
 		if file_src:
-			self.src_dir, src_name = os.path.split(file_src)
-			file_ref = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', self.ref_dir, "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
+			self.cfg["dir_in"], src_name = os.path.split(file_src)
+			file_ref = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', self.cfg["dir_in"], "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
 			if file_ref:
 				channel_mode = self.c_channels.currentText()
-				self.ref_dir, ref_name = os.path.split(file_ref)
+				self.cfg["dir_in"], ref_name = os.path.split(file_ref)
 				eq_name = src_name +" ("+channel_mode+") -> " + ref_name+" ("+channel_mode+")"
 				self.freqs, eq = get_eq(file_src, file_ref, channel_mode)
 				self.listWidget.addItem(eq_name)
@@ -199,9 +197,9 @@ class MainWindow(QtWidgets.QMainWindow):
 				self.plot()
 				
 	def add_noise(self):
-		file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.src_dir, "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
+		file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.cfg["dir_in"], "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
 		if file_src:
-			file_ref = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', self.ref_dir, "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
+			file_ref = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', self.cfg["dir_in"], "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
 			if file_ref:
 				channel_mode = self.c_channels.currentText()
 				self.freqs, self.eq_noise = get_eq(file_src, file_ref, channel_mode)
@@ -229,11 +227,11 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.plot()
 		
 	def write(self):
-		file_out = QtWidgets.QFileDialog.getSaveFileName(self, 'Save Average EQ', self.out_dir, "XML files (*.xml)")[0]
+		file_out = QtWidgets.QFileDialog.getSaveFileName(self, 'Save Average EQ', self.cfg["dir_out"], "XML files (*.xml)")[0]
 		file_base = ".".join(file_out.split(".")[:-1])
 		if file_out:
 			try:
-				self.out_dir, eq_name = os.path.split(file_out)
+				self.cfg["dir_out"], eq_name = os.path.split(file_out)
 				write_eq(file_base+"_AV.xml", self.freqs_av, np.mean(self.av, axis=0))
 				write_eq(file_base+"_L.xml", self.freqs_av, self.av[0])
 				write_eq(file_base+"_R.xml", self.freqs_av, self.av[1])
@@ -295,13 +293,4 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 if __name__ == '__main__':
-	appQt = QtWidgets.QApplication([])
-	
-	#style
-	appQt.setStyle(QtWidgets.QStyleFactory.create('Fusion'))
-	appQt.setPalette(qt_theme.dark_palette)
-	appQt.setStyleSheet("QToolTip { color: #ffffff; background-color: #353535; border: 1px solid white; }")
-	
-	win = MainWindow()
-	win.show()
-	appQt.exec_()
+	widgets.startup( MainWindow )

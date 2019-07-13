@@ -68,9 +68,8 @@ def vbox2(parent, buttons):
 	vbox.addStretch(1.0)
 	
 class DisplayWidget(QtWidgets.QWidget):
-	def __init__(self, canvas=None):
+	def __init__(self, with_canvas=True):
 		QtWidgets.QWidget.__init__(self,)
-		self.canvas = canvas
 		
 		display_l = QtWidgets.QLabel("Display")
 		display_l.setFont(myFont)
@@ -89,7 +88,7 @@ class DisplayWidget(QtWidgets.QWidget):
 		
 		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c)]
 		
-		if canvas:
+		if with_canvas:
 			show_l = QtWidgets.QLabel("Show")
 			self.show_c = QtWidgets.QComboBox(self)
 			self.show_c.addItems(("Both","Traces","Regressions"))
@@ -104,7 +103,7 @@ class DisplayWidget(QtWidgets.QWidget):
 			
 		vbox(self, grid(buttons))
 		
-		if canvas:
+		if with_canvas:
 			#only connect in the end
 			self.fft_c.currentIndexChanged.connect(self.update_fft_settings)
 			self.overlap_c.currentIndexChanged.connect(self.update_fft_settings)
@@ -158,9 +157,8 @@ class DisplayWidget(QtWidgets.QWidget):
 		self.canvas.set_colormap(self.cmap_c.currentText())	
 
 class TracingWidget(QtWidgets.QWidget):
-	def __init__(self, canvas):
+	def __init__(self,):
 		QtWidgets.QWidget.__init__(self,)
-		self.canvas = canvas
 		tracing_l = QtWidgets.QLabel("\nTracing")
 		tracing_l.setFont(myFont)
 		trace_l = QtWidgets.QLabel("Mode")
@@ -483,10 +481,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		if accept_drag:
 			self.setAcceptDrops(True)
 
-		self.canvas = canvas_widget()
-		self.canvas.create_native()
-		self.canvas.native.setParent(self)
 		self.props = object_widget(parent=self)
+		self.canvas = canvas_widget(parent=self)
 		self.canvas.props = self.props
 
 		splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
@@ -523,7 +519,28 @@ class MainWindow(QtWidgets.QMainWindow):
 			event.setDropAction(QtCore.Qt.CopyAction)
 			event.accept()
 			for url in event.mimeData().urls():
-				self.props.load_audio( str(url.toLocalFile()) )
+				self.canvas.load_audio( str(url.toLocalFile()) )
 				return
 		else:
 			event.ignore()
+			
+class ParamWidget(QtWidgets.QWidget):
+	"""
+	Widget for editing parameters
+	"""
+
+	def __init__(self, parent=None):
+		super(ParamWidget, self).__init__(parent)
+		
+		self.parent = parent
+		
+		self.display_widget = DisplayWidget()
+		self.tracing_widget = TracingWidget()
+		self.resampling_widget = ResamplingWidget()
+		self.progress_widget = ProgressWidget()
+		#self.audio_widget = snd.AudioWidget()
+		self.inspector_widget = InspectorWidget()
+		
+		buttons = [self.display_widget, self.tracing_widget, self.resampling_widget, self.progress_widget,# self.audio_widget, 
+					self.inspector_widget ]
+		vbox2(self, buttons)

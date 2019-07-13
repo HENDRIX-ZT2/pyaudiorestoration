@@ -8,45 +8,55 @@ from scipy import interpolate
 #custom modules
 from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_threads, snd, widgets, filters, io_ops, markers
 
-class ObjectWidget(QtWidgets.QWidget):
-	"""
-	Widget for editing OBJECT parameters
-	"""
+class MainWindow(widgets.MainWindow):
 
-	def __init__(self, parent=None):
-		super(ObjectWidget, self).__init__(parent)
+	def __init__(self):
+		widgets.MainWindow.__init__(self, "pytapesynch", widgets.ParamWidget, Canvas, accept_drag=False)
+		mainMenu = self.menuBar() 
+		fileMenu = mainMenu.addMenu('File')
+		editMenu = mainMenu.addMenu('Edit')
+		button_data = ( (fileMenu, "Open", self.canvas.open_audio, "CTRL+O"), \
+						(fileMenu, "Save", self.canvas.save_traces, "CTRL+S"), \
+						(fileMenu, "Resample", self.canvas.run_resample, "CTRL+R"), \
+						(fileMenu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B"), \
+						(fileMenu, "Exit", self.close, ""), \
+						(editMenu, "Select All", self.canvas.select_all, "CTRL+A"), \
+						(editMenu, "Improve", self.canvas.improve_lag, "CTRL+I"), \
+						(editMenu, "Delete Selected", self.canvas.delete_traces, "DEL"), \
+						)
+		self.add_to_menu(button_data)
+	
+class Canvas(spectrum.SpectrumCanvas):
+
+	def __init__(self, parent):
+		spectrum.SpectrumCanvas.__init__(self, bgcolor="black")
+		self.create_native()
+		self.native.setParent(parent)
 		
+		self.unfreeze()
 		self.parent = parent
-		
 		self.srcfilename = ""
 		self.reffilename = ""
 		self.deltraces = []
+		self.lag_samples = []
+		self.lag_line = markers.LagLine(self)
 		
-		
-		self.display_widget = widgets.DisplayWidget(self.parent.canvas)
-		self.resampling_widget = widgets.ResamplingWidget()
-		self.progress_widget = widgets.ProgressWidget()
-		self.audio_widget = snd.AudioWidget()
-		self.inspector_widget = widgets.InspectorWidget()
-		buttons = [self.display_widget, self.resampling_widget, self.progress_widget, self.audio_widget, self.inspector_widget ]
-		widgets.vbox2(self, buttons)
-
 		self.resampling_thread = qt_threads.ResamplingThread()
-		self.resampling_thread.notifyProgress.connect(self.progress_widget.onProgress)
-		self.parent.canvas.fourier_thread.notifyProgress.connect( self.progress_widget.onProgress )
-
+		self.resampling_thread.notifyProgress.connect(self.parent.props.progress_widget.onProgress)
+		self.fourier_thread.notifyProgress.connect( self.parent.props.progress_widget.onProgress )
+		self.freeze()
 		
 	def open_audio(self):
 		#just a wrapper around load_audio so we can access that via drag & drop and button
 		#pyqt5 returns a tuple
-		reffilename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
-		srcfilename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
+		reffilename = QtWidgets.QFileDialog.getOpenFileName(self.parent, 'Open Reference', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
+		srcfilename = QtWidgets.QFileDialog.getOpenFileName(self.parent, 'Open Source', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
 		self.load_audio(reffilename, srcfilename)
 			
 	def load_audio(self, reffilename, srcfilename):
 
 		try:
-			self.parent.canvas.compute_spectra( (reffilename, srcfilename), self.display_widget.fft_size, self.display_widget.fft_overlap)
+			self.compute_spectra( (reffilename, srcfilename), self.parent.props.display_widget.fft_size, self.parent.props.display_widget.fft_overlap)
 		# file could not be opened
 		except RuntimeError as err:
 			print(err)
@@ -57,23 +67,23 @@ class ObjectWidget(QtWidgets.QWidget):
 				
 			#Cleanup of old data
 			self.delete_traces(not_only_selected=True)
-			self.resampling_widget.refill(self.parent.canvas.channels)
+			self.parent.props.resampling_widget.refill(self.channels)
 			
 			for a0, a1, b0, b1, d in io_ops.read_lag(self.reffilename):
-				markers.LagSample(self.parent.canvas, (a0, a1), (b0, b1), d)
-			self.parent.canvas.lag_line.update()
+				markers.LagSample(self, (a0, a1), (b0, b1), d)
+			self.lag_line.update()
 			self.parent.update_file(reffilename)
 
 	def save_traces(self):
 		#get the data from the traces and regressions and save it
-		io_ops.write_lag(self.reffilename, [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d) for lag in self.parent.canvas.lag_samples ] )
+		io_ops.write_lag(self.reffilename, [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d) for lag in self.lag_samples ] )
 
 	def improve_lag(self):
-		for lag in self.parent.canvas.lag_samples:
+		for lag in self.lag_samples:
 			if lag.selected:
 				try:
 					#prepare some values
-					sr = self.parent.canvas.sr
+					sr = self.sr
 					raw_lag = int(lag.d*sr)
 					ref_t0 = int(sr*lag.a[0])
 					ref_t1 = int(sr*lag.b[0])
@@ -120,24 +130,24 @@ class ObjectWidget(QtWidgets.QWidget):
 					#update the lag marker
 					lag.d = result/sr
 					lag.select()
-					self.parent.canvas.lag_line.update()
+					self.lag_line.update()
 					print("raw accuracy (smp)",raw_lag)
 					print("extra accuracy (smp)",result)
 				except:
 					print("Refining error!")
 	
 	def select_all(self):
-		for trace in self.parent.canvas.lag_samples:
+		for trace in self.lag_samples:
 			trace.select()
 			
 	def delete_traces(self, not_only_selected=False):
 		self.deltraces= []
-		for trace in reversed(self.parent.canvas.lag_samples):
+		for trace in reversed(self.lag_samples):
 			if (trace.selected and not not_only_selected) or not_only_selected:
 				self.deltraces.append(trace)
 		for trace in self.deltraces:
 			trace.remove()
-		self.parent.canvas.lag_line.update()
+		self.lag_line.update()
 		#this means a file was loaded, so clear the undo stack
 		if not_only_selected:
 			self.deltraces= []
@@ -151,49 +161,22 @@ class ObjectWidget(QtWidgets.QWidget):
 			self.resample_files( filenames )
 	
 	def resample_files(self, files):
-		channels = self.resampling_widget.channels
-		if self.srcfilename and self.parent.canvas.lag_samples and channels:
-			lag_curve = self.parent.canvas.lag_line.data
+		channels = self.parent.props.resampling_widget.channels
+		if self.srcfilename and self.lag_samples and channels:
+			lag_curve = self.lag_line.data
 			self.resampling_thread.settings = {"filenames"			:files,
 												"lag_curve"			:lag_curve, 
-												"resampling_mode"	:self.resampling_widget.mode,
-												"sinc_quality"		:self.resampling_widget.sinc_quality,
+												"resampling_mode"	:self.parent.props.resampling_widget.mode,
+												"sinc_quality"		:self.parent.props.resampling_widget.sinc_quality,
 												"use_channels"		:channels}
 			self.resampling_thread.start()
-					
-class MainWindow(widgets.MainWindow):
-
-	def __init__(self):
-		widgets.MainWindow.__init__(self, "pytapesynch", ObjectWidget, Canvas, accept_drag=False)
-		mainMenu = self.menuBar() 
-		fileMenu = mainMenu.addMenu('File')
-		editMenu = mainMenu.addMenu('Edit')
-		button_data = ( (fileMenu, "Open", self.props.open_audio, "CTRL+O"), \
-						(fileMenu, "Save", self.props.save_traces, "CTRL+S"), \
-						(fileMenu, "Resample", self.props.run_resample, "CTRL+R"), \
-						(fileMenu, "Batch Resample", self.props.run_resample_batch, "CTRL+B"), \
-						(fileMenu, "Exit", self.close, ""), \
-						(editMenu, "Select All", self.props.select_all, "CTRL+A"), \
-						(editMenu, "Improve", self.props.improve_lag, "CTRL+I"), \
-						(editMenu, "Delete Selected", self.props.delete_traces, "DEL"), \
-						)
-		self.add_to_menu(button_data)
-	
-class Canvas(spectrum.SpectrumCanvas):
-
-	def __init__(self):
-		spectrum.SpectrumCanvas.__init__(self, bgcolor="black")
-		self.unfreeze()
-		self.lag_samples = []
-		self.lag_line = markers.LagLine(self)
-		self.freeze()
 		
 	def on_mouse_press(self, event):
-		#selection
-		b = self.click_spec_conversion(event.pos)
-		#are they in spec_view?
-		if b is not None:
-			self.props.audio_widget.cursor(b[0])
+		# #selection
+		# b = self.click_spec_conversion(event.pos)
+		# #are they in spec_view?
+		# if b is not None:
+			# self.props.audio_widget.cursor(b[0])
 		if event.button == 2:
 			closest_lag_sample = self.get_closest( self.lag_samples, event.pos )
 			if closest_lag_sample:
@@ -202,7 +185,7 @@ class Canvas(spectrum.SpectrumCanvas):
 	
 	def on_mouse_release(self, event):
 		#coords of the click on the vispy canvas
-		if self.props.srcfilename and (event.trail() is not None) and event.button == 1:
+		if self.srcfilename and (event.trail() is not None) and event.button == 1:
 			last_click = event.trail()[0]
 			click = event.pos
 			if last_click is not None:

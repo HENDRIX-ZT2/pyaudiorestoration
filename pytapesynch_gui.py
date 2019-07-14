@@ -35,8 +35,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		
 		self.unfreeze()
 		self.parent = parent
-		self.srcfilename = ""
-		self.reffilename = ""
 		self.deltraces = []
 		self.lag_samples = []
 		self.lag_line = markers.LagLine(self)
@@ -46,37 +44,14 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.fourier_thread.notifyProgress.connect( self.parent.props.progress_widget.onProgress )
 		self.freeze()
 		
-	def open_audio(self):
-		#just a wrapper around load_audio so we can access that via drag & drop and button
-		#pyqt5 returns a tuple
-		reffilename = QtWidgets.QFileDialog.getOpenFileName(self.parent, 'Open Reference', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
-		srcfilename = QtWidgets.QFileDialog.getOpenFileName(self.parent, 'Open Source', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
-		self.load_audio(reffilename, srcfilename)
-			
-	def load_audio(self, reffilename, srcfilename):
-
-		try:
-			self.compute_spectra( (reffilename, srcfilename), self.parent.props.display_widget.fft_size, self.parent.props.display_widget.fft_overlap)
-		# file could not be opened
-		except RuntimeError as err:
-			print(err)
-		# no issues, we can continue
-		else:
-			self.reffilename = reffilename
-			self.srcfilename = srcfilename
-				
-			#Cleanup of old data
-			self.delete_traces(not_only_selected=True)
-			self.parent.props.resampling_widget.refill(self.channels)
-			
-			for a0, a1, b0, b1, d in io_ops.read_lag(self.reffilename):
-				markers.LagSample(self, (a0, a1), (b0, b1), d)
-			self.lag_line.update()
-			self.parent.update_file(reffilename)
+	def load_visuals(self,):
+		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):
+			markers.LagSample(self, (a0, a1), (b0, b1), d)
+		self.lag_line.update()
 
 	def save_traces(self):
 		#get the data from the traces and regressions and save it
-		io_ops.write_lag(self.reffilename, [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d) for lag in self.lag_samples ] )
+		io_ops.write_lag(self.filenames[0], [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d) for lag in self.lag_samples ] )
 
 	def improve_lag(self):
 		for lag in self.lag_samples:
@@ -99,25 +74,22 @@ class Canvas(spectrum.SpectrumCanvas):
 					# channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
 					
 					#trim and pad both sources
-					ref_ob = sf.SoundFile(self.reffilename)
-					ref_sig = ref_ob.read(always_2d=True, dtype='float32')[:,0]
+					ref_sig = self.signals[0]
+					src_sig = self.signals[1]
 					if ref_t0 < 0:
 						ref_pad_l = abs(ref_t0)
 						ref_t0 = 0
 					if ref_t1 > len(ref_sig):
 						ref_pad_r = ref_t1 - len(ref_sig)
-					ref_sig = np.pad( ref_sig[ref_t0:ref_t1], (ref_pad_l, ref_pad_r), "constant", constant_values = 0)
 					
-					src_ob = sf.SoundFile(self.srcfilename)
-					src_sig = src_ob.read(always_2d=True, dtype='float32')[:,0]
 					if src_t0 < 0:
 						src_pad_l = abs(src_t0)
 						src_t0 = 0
 					if src_t1 > len(src_sig):
 						src_pad_r = src_t1 - len(src_sig)
-					src_sig = np.pad( src_sig[src_t0:src_t1], (src_pad_l, src_pad_r), "constant", constant_values = 0)
-					# with sf.SoundFile(self.reffilename+"2.wav", 'w+', sr, 1, subtype='FLOAT') as outfile: outfile.write( ref_sig )
-					# with sf.SoundFile(self.srcfilename+"2.wav", 'w+', sr, 1, subtype='FLOAT') as outfile: outfile.write( src_sig )
+						
+					ref_sig = np.pad( ref_sig[ref_t0:ref_t1, 0], (ref_pad_l, ref_pad_r), "constant", constant_values = 0)
+					src_sig = np.pad( src_sig[src_t0:src_t1, 0], (src_pad_l, src_pad_r), "constant", constant_values = 0)
 					
 					#correlate both sources
 					res = np.correlate(filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3), filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3), mode="same")
@@ -153,7 +125,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			self.deltraces= []
 	
 	def run_resample(self):
-		self.resample_files( (self.srcfilename,) )
+		self.resample_files( (self.filenames[1],) )
 	
 	def run_resample_batch(self):
 		filenames = QtWidgets.QFileDialog.getOpenFileNames(self, 'Open Files for Batch Resampling', 'c:\\', "Audio files (*.flac *.wav)")[0]
@@ -162,7 +134,7 @@ class Canvas(spectrum.SpectrumCanvas):
 	
 	def resample_files(self, files):
 		channels = self.parent.props.resampling_widget.channels
-		if self.srcfilename and self.lag_samples and channels:
+		if self.filenames[1] and self.lag_samples and channels:
 			lag_curve = self.lag_line.data
 			self.resampling_thread.settings = {"filenames"			:files,
 												"lag_curve"			:lag_curve, 
@@ -185,7 +157,7 @@ class Canvas(spectrum.SpectrumCanvas):
 	
 	def on_mouse_release(self, event):
 		#coords of the click on the vispy canvas
-		if self.srcfilename and (event.trail() is not None) and event.button == 1:
+		if self.filenames[1] and (event.trail() is not None) and event.button == 1:
 			last_click = event.trail()[0]
 			click = event.pos
 			if last_click is not None:

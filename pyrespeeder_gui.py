@@ -39,7 +39,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		
 		self.unfreeze()
 		self.parent = parent
-		self.filename = ""
 		self.show_regs = True
 		self.show_lines = True
 		self.deltraces = []
@@ -56,45 +55,19 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.tracing_widget.canvas = self
 		self.freeze()
 		
-	def open_audio(self):
-		#just a wrapper around load_audio so we can access that via drag & drop and button
-		#pyqt5 returns a tuple
-		filename = QtWidgets.QFileDialog.getOpenFileName(self.parent, 'Open file', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
-		self.load_audio(filename)
-			
-	def load_audio(self, filename):
-		#called whenever a potential audio file is given via drag&drop or open_audio
-	
-		#ask the user if it should really be opened, if another file was already open
-		if widgets.abort_open_new_file(self, filename, self.filename):
-			return
-		
-		try:
-			self.compute_spectra( (filename,), self.props.display_widget.fft_size, self.props.display_widget.fft_overlap)
-		# file could not be opened
-		except RuntimeError as err:
-			print(err)
-		# no issues, we can continue
-		else:
-			self.filename = filename
-			
-			#Cleanup of old data
-			self.delete_traces(not_only_selected=True)
-			self.props.resampling_widget.refill(self.channels)
-			
-			#read any saved traces or regressions
-			for offset, times, freqs in io_ops.read_trace(self.filename):
-				markers.TraceLine(self, times, freqs, offset=offset)
-			for t0, t1, amplitude, omega, phase, offset in io_ops.read_regs(self.filename):
-				markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
-			self.master_speed.update()
-			self.master_reg_speed.update()
-			self.parent.update_file(self.filename)
+	def load_visuals(self,):
+		#read any saved traces or regressions
+		for offset, times, freqs in io_ops.read_trace(self.filenames[0]):
+			markers.TraceLine(self, times, freqs, offset=offset)
+		for t0, t1, amplitude, omega, phase, offset in io_ops.read_regs(self.filenames[0]):
+			markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
+		self.master_speed.update()
+		self.master_reg_speed.update()
 				
 	def save_traces(self):
 		#get the data from the traces and regressions and save it
-		io_ops.write_trace(self.filename, [ (line.offset, line.times, line.freqs) for line in self.lines ] )
-		io_ops.write_regs(self.filename, [ (reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.regs ] )
+		io_ops.write_trace(self.filenames[0], [ (line.offset, line.times, line.freqs) for line in self.lines ] )
+		io_ops.write_regs(self.filenames[0], [ (reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.regs ] )
 			
 	def delete_traces(self, not_only_selected=False):
 		self.deltraces= []
@@ -142,7 +115,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.deltraces = []
 			
 	def run_resample(self):
-		if self.filename and self.lines:
+		if self.filenames[0] and self.lines:
 			channels = self.props.resampling_widget.channels
 			if channels:
 				if self.regs:
@@ -151,7 +124,7 @@ class Canvas(spectrum.SpectrumCanvas):
 				else:
 					speed_curve = self.master_speed.get_linspace()
 					print("Using measured speed")
-				self.resampling_thread.settings = {"filenames"			:(self.filename,),
+				self.resampling_thread.settings = {"filenames"			:(self.filenames[0],),
 													"speed_curve"		:speed_curve, 
 													"resampling_mode"	:self.props.resampling_widget.mode,
 													"sinc_quality"		:self.props.resampling_widget.sinc_quality,
@@ -187,7 +160,7 @@ class Canvas(spectrum.SpectrumCanvas):
 	
 	def on_mouse_release(self, event):
 		#coords of the click on the vispy canvas
-		if self.filenames and (event.trail() is not None) and event.button == 1 and "Control" in event.modifiers:
+		if self.filenames[0] and (event.trail() is not None) and event.button == 1 and "Control" in event.modifiers:
 			last_click = event.trail()[0]
 			click = event.pos
 			if last_click is not None:

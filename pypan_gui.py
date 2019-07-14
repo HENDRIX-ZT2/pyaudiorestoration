@@ -29,49 +29,21 @@ class Canvas(spectrum.SpectrumCanvas):
 		spectrum.SpectrumCanvas.__init__(self, bgcolor="black")
 		self.unfreeze()
 		self.parent = parent
-		self.filename = ""
 		self.deltraces = []
 		self.pan_samples = []
 		self.pan_line = markers.PanLine(self)
 		self.fourier_thread.notifyProgress.connect( self.parent.props.progress_widget.onProgress )
 		self.freeze()
 		
-	def open_audio(self):
-		#just a wrapper around load_audio so we can access that via drag & drop and button
-		#pyqt5 returns a tuple
-		filename = QtWidgets.QFileDialog.getOpenFileName(self.parent, 'Open Audio', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
-		self.load_audio(filename)
-			
-	def load_audio(self, filename):
-		#ask the user if it should really be opened, if another file was already open
-		if widgets.abort_open_new_file(self, filename, self.filename):
-			return
-		
-		try:
-			self.compute_spectra( (filename, filename), self.parent.props.display_widget.fft_size, self.parent.props.display_widget.fft_overlap, channels=(0, 1) )
-		# file could not be opened
-		except RuntimeError as err:
-			print(err)
-		# no issues, we can continue
-		else:
-			if self.channels != 2:
-				print("Must be stereo!")
-				return
-			self.filename = filename
-			
-			#Cleanup of old data
-			self.delete_traces(not_only_selected=True)
-			self.parent.props.resampling_widget.refill(self.channels)
-			
-			#read pan curve
-			for a0, a1, b0, b1, d in io_ops.read_lag(self.filename):
-				markers.PanSample(self, (a0, a1), (b0, b1), d)
-			self.pan_line.update()
-			self.parent.update_file(self.filename)
+	def load_visuals(self,):
+		#read pan curve
+		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):
+			markers.PanSample(self, (a0, a1), (b0, b1), d)
+		self.pan_line.update()
 
 	def save_traces(self):
 		#get the data from the traces and regressions and save it
-		io_ops.write_lag(self.filename, [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.pan) for lag in self.pan_samples ] )
+		io_ops.write_lag(self.filenames[0], [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.pan) for lag in self.pan_samples ] )
 			
 	def delete_traces(self, not_only_selected=False):
 		self.deltraces= []
@@ -86,13 +58,13 @@ class Canvas(spectrum.SpectrumCanvas):
 			self.deltraces= []
 	
 	def run_resample(self):
-		if self.filename and self.pan_samples:
+		if self.filenames[0] and self.pan_samples:
 			channels = self.parent.props.resampling_widget.channels
 			if channels and self.pan_samples:
 				lag_curve = self.pan_line.data
-				signal, sr, channels = io_ops.read_file(self.filename)
+				signal, sr, channels = io_ops.read_file(self.filenames[0])
 				af = np.interp(np.arange(len(signal[:,0])), lag_curve[:,0]*sr, lag_curve[:,1])
-				io_ops.write_file(self.filename, signal[:,1]*af, sr, 1)
+				io_ops.write_file(self.filenames[0], signal[:,1]*af, sr, 1)
 					
 	def on_mouse_press(self, event):
 		# #selection
@@ -108,7 +80,7 @@ class Canvas(spectrum.SpectrumCanvas):
 	
 	def on_mouse_release(self, event):
 		#coords of the click on the vispy canvas
-		if self.filename and (event.trail() is not None) and event.button == 1:
+		if self.filenames[0] and (event.trail() is not None) and event.button == 1:
 			last_click = event.trail()[0]
 			click = event.pos
 			if last_click is not None:

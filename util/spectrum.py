@@ -3,8 +3,10 @@ import numpy as np
 import soundfile as sf
 from vispy import scene, gloo, visuals, color
 from vispy.geometry import Rect
+from PyQt5 import QtWidgets
+
 #custom modules
-from util import vispy_ext, fourier, io_ops, qt_threads, units
+from util import vispy_ext, fourier, io_ops, qt_threads, units, widgets
 
 #log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)
 norm_luminance = """
@@ -258,6 +260,32 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.signals = [None for x in self.spectra]
 		self.fft_storage = {}
 	
+	def open_audio(self):
+		#just a wrapper around load_audio so we can access that via drag & drop and button
+		filenames = []
+		for f in self.filenames:
+			#pyqt5 returns a tuple
+			filenames.append( QtWidgets.QFileDialog.getOpenFileName(self.parent, 'Open Audio', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0] )
+		self.load_audio( filenames )
+			
+	def load_audio(self, filenames):
+		#ask the user if it should really be opened, if another file was already open
+		if widgets.abort_open_new_file(self, filenames[0], self.filenames[0]):
+			return
+			
+		try:
+			self.compute_spectra( filenames, self.parent.props.display_widget.fft_size, self.parent.props.display_widget.fft_overlap)
+		# file could not be opened
+		except RuntimeError as err:
+			print(err)
+		# no issues, we can continue
+		else:
+			#Cleanup of old data
+			self.delete_traces(not_only_selected=True)
+			self.load_visuals()
+			self.parent.props.resampling_widget.refill(self.channels)
+			self.parent.update_file(self.filenames[0])
+			
 	def compute_spectra(self, filenames, fft_size, fft_overlap, channels=None):
 	
 		# TODO: implement adaptive / intelligent hop reusing data

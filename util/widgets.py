@@ -27,7 +27,7 @@ def abort_open_new_file(parent, newfile, oldfile):
 		return True
 	if oldfile:
 		qm = QtWidgets.QMessageBox
-		ret = qm.question(parent,'', "Do you really want to load "+os.path.basename(newfile)+"? You will lose unsaved work on "+os.path.basename(oldfile)+"!", qm.Yes | qm.No)
+		ret = qm.question(parent.parent,'', "Do you really want to load "+os.path.basename(newfile)+"? You will lose unsaved work on "+os.path.basename(oldfile)+"!", qm.Yes | qm.No)
 		return ret == qm.No
 
 def showdialog(str):

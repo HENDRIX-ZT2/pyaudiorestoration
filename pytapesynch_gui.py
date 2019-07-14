@@ -39,9 +39,11 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.lag_samples = []
 		self.lag_line = markers.LagLine(self)
 		
+		# threading & links
 		self.resampling_thread = qt_threads.ResamplingThread()
 		self.resampling_thread.notifyProgress.connect(self.parent.props.progress_widget.onProgress)
 		self.fourier_thread.notifyProgress.connect( self.parent.props.progress_widget.onProgress )
+		self.parent.props.display_widget.canvas = self
 		self.freeze()
 		
 	def load_visuals(self,):

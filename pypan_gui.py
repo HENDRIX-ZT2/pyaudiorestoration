@@ -32,7 +32,10 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.deltraces = []
 		self.pan_samples = []
 		self.pan_line = markers.PanLine(self)
+		
+		# threading & links
 		self.fourier_thread.notifyProgress.connect( self.parent.props.progress_widget.onProgress )
+		self.parent.props.display_widget.canvas = self
 		self.freeze()
 		
 	def load_visuals(self,):

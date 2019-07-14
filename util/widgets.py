@@ -519,7 +519,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			event.setDropAction(QtCore.Qt.CopyAction)
 			event.accept()
 			for url in event.mimeData().urls():
-				self.canvas.load_audio( str(url.toLocalFile()) )
+				self.canvas.load_audio( ( str(url.toLocalFile()), ) )
 				return
 		else:
 			event.ignore()

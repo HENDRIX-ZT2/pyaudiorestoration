@@ -151,12 +151,8 @@ class Canvas(spectrum.SpectrumCanvas):
 		if event.button == 2:
 			closest_line = self.get_closest_line( event.pos )
 			if closest_line:
-				if "Shift" in event.modifiers:
-					closest_line.select_handle(multi=True)
-					event.handled = True
-				else:
-					closest_line.select_handle()
-					event.handled = True
+				closest_line.select_handle("Shift" in event.modifiers)
+				event.handled = True
 	
 	def on_mouse_release(self, event):
 		#coords of the click on the vispy canvas

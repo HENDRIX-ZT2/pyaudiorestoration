@@ -38,6 +38,24 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.display_widget.canvas = self
 		self.freeze()
 		
+	def load_audio(self, filenames):
+		#ask the user if it should really be opened, if another file was already open
+		if widgets.abort_open_new_file(self, filenames[0], self.filenames[0]):
+			return
+			
+		try:
+			self.compute_spectra( filenames, self.parent.props.display_widget.fft_size, self.parent.props.display_widget.fft_overlap, channels=(0,1))
+		# file could not be opened
+		except RuntimeError as err:
+			print(err)
+		# no issues, we can continue
+		else:
+			#Cleanup of old data
+			self.delete_traces(not_only_selected=True)
+			self.load_visuals()
+			self.parent.props.resampling_widget.refill(self.channels)
+			self.parent.update_file(self.filenames[0])
+		
 	def load_visuals(self,):
 		#read pan curve
 		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):

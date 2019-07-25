@@ -11,11 +11,11 @@ from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_thr
 class MainWindow(widgets.MainWindow):
 
 	def __init__(self):
-		widgets.MainWindow.__init__(self, "pytapesynch", widgets.ParamWidget, Canvas, accept_drag=False)
+		widgets.MainWindow.__init__(self, "pytapesynch", widgets.ParamWidget, Canvas, 2)
 		mainMenu = self.menuBar() 
 		fileMenu = mainMenu.addMenu('File')
 		editMenu = mainMenu.addMenu('Edit')
-		button_data = ( (fileMenu, "Open", self.canvas.open_audio, "CTRL+O"), \
+		button_data = ( (fileMenu, "Open", self.props.file_widget.ask_open, "CTRL+O"), \
 						(fileMenu, "Save", self.canvas.save_traces, "CTRL+S"), \
 						(fileMenu, "Resample", self.canvas.run_resample, "CTRL+R"), \
 						(fileMenu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B"), \
@@ -44,6 +44,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.resampling_thread.notifyProgress.connect(self.parent.props.progress_widget.onProgress)
 		self.fourier_thread.notifyProgress.connect( self.parent.props.progress_widget.onProgress )
 		self.parent.props.display_widget.canvas = self
+		self.parent.props.tracing_widget.setVisible(False)
 		self.freeze()
 		
 	def load_visuals(self,):
@@ -97,9 +98,10 @@ class Canvas(spectrum.SpectrumCanvas):
 					res = np.correlate(filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3), filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3), mode="same")
 					#interpolate to get the most accurate fit
 					# we are not necessarily interested in the largest positive value if the correlation is negative
-					# todo: add a toggle for this
-					# i_peak = wow_detection.parabolic(res, np.argmax(np.abs(res)))[0]
-					i_peak = wow_detection.parabolic(res, np.argmax(res))[0]
+					if self.parent.props.alignment_widget.align_abs:
+						print("absolute")
+						np.abs(res, out=res)
+					i_peak = wow_detection.parabolic(res, np.argmax(res[1:-1]))[0]
 					result = raw_lag + i_peak - len(ref_sig)//2
 					#update the lag marker
 					lag.d = result/sr
@@ -130,7 +132,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.resample_files( (self.filenames[1],) )
 	
 	def run_resample_batch(self):
-		filenames = QtWidgets.QFileDialog.getOpenFileNames(self, 'Open Files for Batch Resampling', 'c:\\', "Audio files (*.flac *.wav)")[0]
+		filenames = QtWidgets.QFileDialog.getOpenFileNames(self.parent, 'Open Files for Batch Resampling', 'c:\\', "Audio files (*.flac *.wav)")[0]
 		if filenames:
 			self.resample_files( filenames )
 	

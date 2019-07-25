@@ -179,6 +179,10 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 	def __init__(self, spectra_colors=("r","g"), y_axis='Src. Lag', bgcolor="#353535"):
 		
+		# todo: make sure duration is for each spectrum
+		# long term: move a lot of these settings into the individual spectra - Spectrum class
+		
+		
 		#some default dummy values
 		self.props = None
 		self.vmin = -80
@@ -191,11 +195,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.channels = 0
 		self.duration = 0
 		
-		
-		
 		self.fourier_thread = qt_threads.FourierThread()
 		self.fourier_thread.finished.connect(self.retrieve_fft)
-		# self.connect(self.fourier_thread, self.fourier_thread.finished, self.retrieve_fft)
 		
 		scene.SceneCanvas.__init__(self, keys="interactive", size=(1024, 512), bgcolor=bgcolor)
 		
@@ -244,7 +245,14 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.spec_yaxis.link_view(self.spec_view)
 		
 		self.spectra = [Spectrum(self.spec_view, overlay=color) for color in spectra_colors]
-		self.init_fft_storage()
+		# store one key per spectrum
+		# these are the keys that are currently in use
+		self.keys = []
+		self.filenames = [None for x in self.spectra]
+		self.signals = [None for x in self.spectra]
+		self.fft_storage = {}
+		self.selected_channels = [0 for x in self.spectra]
+		
 		#nb. this is a vispy.util.event.EventEmitter object
 		#can this be linked somewhere to the camera? base_camera connects a few events, too
 		for spe in self.spectra:
@@ -252,29 +260,12 @@ class SpectrumCanvas(scene.SceneCanvas):
 		
 		self.freeze()
 		
-	def init_fft_storage(self,):
-		# we must initialize whenever new file(s) are loaded
-		# store one key per spectrum
-		self.keys = []
-		self.filenames = [None for x in self.spectra]
-		self.signals = [None for x in self.spectra]
-		self.fft_storage = {}
-	
-	def open_audio(self):
-		#just a wrapper around load_audio so we can access that via drag & drop and button
-		filenames = []
-		for f in self.filenames:
-			#pyqt5 returns a tuple
-			filenames.append( QtWidgets.QFileDialog.getOpenFileName(self.parent, 'Open Audio', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0] )
-		self.load_audio( filenames )
-			
-	def load_audio(self, filenames):
-		#ask the user if it should really be opened, if another file was already open
-		if widgets.abort_open_new_file(self, filenames[0], self.filenames[0]):
-			return
-			
+	def load_audio(self, filenames, channels=None):
+		if channels:
+			self.selected_channels = channels
+		# called by the files widget
 		try:
-			self.compute_spectra( filenames, self.parent.props.display_widget.fft_size, self.parent.props.display_widget.fft_overlap)
+			self.compute_spectra( filenames, self.parent.props.display_widget.fft_size, self.parent.props.display_widget.fft_overlap )
 		# file could not be opened
 		except RuntimeError as err:
 			print(err)
@@ -286,7 +277,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 			self.parent.props.resampling_widget.refill(self.channels)
 			self.parent.update_file(self.filenames[0])
 			
-	def compute_spectra(self, filenames, fft_size, fft_overlap, channels=None):
+	def compute_spectra(self, filenames, fft_size, fft_overlap):
 	
 		# TODO: implement adaptive / intelligent hop reusing data
 		# maybe move more into the thread
@@ -295,28 +286,22 @@ class SpectrumCanvas(scene.SceneCanvas):
 			print("Fourier job is still running, wait!")
 			return
 			
-		# have the filenames changed?
-		if filenames and self.filenames != filenames:
-		
-			print("file has changed!")
-			self.init_fft_storage()
-			self.filenames = filenames
-			for i, filename in enumerate(self.filenames):
+		# go over all new file candidates
+		for i, filename in enumerate(filenames):
+			# only reload audio if this filename has changed
+			if self.filenames[i] != filename:
+				# remove all ffts of the old file from storage
+				for k in [k for k in self.fft_storage if k[0] == self.filenames[i]]:
+					del self.fft_storage[k]
+				
+				# now load new audio
 				self.signals[i], self.sr, self.channels = io_ops.read_file(filename)
-			# don't bother until it is fixed
-			# self.props.audio_widget.set_data(signal[:,channel], self.sr)
-			#(re)set the spec_view
-			# just set according to the first signal
-			self.duration = len(self.signals[0]) / self.sr
-			self.speed_view.camera.rect = (0, -1, self.duration, 2)
-			self.spec_view.camera.rect = (0, 0, self.duration, to_mel(self.sr//2))
+				self.filenames[i] = filename
 		
 		self.keys = []
 		self.fft_size = fft_size
 		self.hop = fft_size // fft_overlap
-		if channels is None:
-			channels = [0 for file in filenames]
-		for filename, signal, channel in zip(self.filenames, self.signals, channels):
+		for filename, signal, channel in zip(self.filenames, self.signals, self.selected_channels):
 			if filename:
 				k = (filename, self.fft_size, channel, self.hop)
 				self.keys.append(k)
@@ -360,8 +345,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		if self.fourier_thread.jobs:
 			self.fourier_thread.start()
 			# we continue when the thread emits a "finished" signal, conntected to retrieve_fft()
-					
-	
+		
 	def retrieve_fft(self,):
 		print("Retrieving FFT from processing thread")
 		self.fft_storage.update(self.fourier_thread.result)
@@ -373,6 +357,12 @@ class SpectrumCanvas(scene.SceneCanvas):
 			spec.update_data(self.fft_storage[k], self.hop, self.sr)
 		self.set_clims(self.vmin, self.vmax)
 		self.set_colormap(self.cmap)
+		# don't bother with audio until it is fixed
+		# self.props.audio_widget.set_data(signal[:,channel], self.sr)
+		#(re)set the spec_view
+		self.duration = max([len(sig) / self.sr for sig in self.signals])
+		self.speed_view.camera.rect = (0, -1, self.duration, 2)
+		self.spec_view.camera.rect = (0, 0, self.duration, to_mel(self.sr//2))
 			
 	#fast stuff that does not require rebuilding everything
 	def set_colormap(self, cmap):

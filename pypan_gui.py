@@ -11,11 +11,11 @@ from util import vispy_ext, fourier, spectrum, resampling, wow_detection, widget
 class MainWindow(widgets.MainWindow):
 
 	def __init__(self):
-		widgets.MainWindow.__init__(self, "pypan", widgets.ParamWidget, Canvas)
+		widgets.MainWindow.__init__(self, "pypan", widgets.ParamWidget, Canvas, 1)
 		mainMenu = self.menuBar() 
 		fileMenu = mainMenu.addMenu('File')
 		editMenu = mainMenu.addMenu('Edit')
-		button_data = ( (fileMenu, "Open", self.canvas.open_audio, "CTRL+O"), \
+		button_data = ( (fileMenu, "Open", self.props.file_widget.ask_open, "CTRL+O"), \
 						(fileMenu, "Save", self.canvas.save_traces, "CTRL+S"), \
 						(fileMenu, "Resample", self.canvas.run_resample, "CTRL+R"), \
 						(fileMenu, "Exit", self.close, ""), \
@@ -36,25 +36,8 @@ class Canvas(spectrum.SpectrumCanvas):
 		# threading & links
 		self.fourier_thread.notifyProgress.connect( self.parent.props.progress_widget.onProgress )
 		self.parent.props.display_widget.canvas = self
+		self.parent.props.tracing_widget.setVisible(False)
 		self.freeze()
-		
-	def load_audio(self, filenames):
-		#ask the user if it should really be opened, if another file was already open
-		if widgets.abort_open_new_file(self, filenames[0], self.filenames[0]):
-			return
-			
-		try:
-			self.compute_spectra( filenames, self.parent.props.display_widget.fft_size, self.parent.props.display_widget.fft_overlap, channels=(0,1))
-		# file could not be opened
-		except RuntimeError as err:
-			print(err)
-		# no issues, we can continue
-		else:
-			#Cleanup of old data
-			self.delete_traces(not_only_selected=True)
-			self.load_visuals()
-			self.parent.props.resampling_widget.refill(self.channels)
-			self.parent.update_file(self.filenames[0])
 		
 	def load_visuals(self,):
 		#read pan curve
@@ -143,4 +126,8 @@ class Canvas(spectrum.SpectrumCanvas):
 			
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
+	# monkey patch the file load function
+	def load_file_spectrum(self):
+		self.parent.parent.canvas.load_audio( (self.filepaths[0], self.filepaths[0]), (0, 1) )
+	widgets.FilesWidget.load = load_file_spectrum
 	widgets.startup( MainWindow )

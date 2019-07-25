@@ -27,8 +27,7 @@ def abort_open_new_file(parent, newfile, oldfile):
 		return True
 	if oldfile:
 		qm = QtWidgets.QMessageBox
-		ret = qm.question(parent.parent,'', "Do you really want to load "+os.path.basename(newfile)+"? You will lose unsaved work on "+os.path.basename(oldfile)+"!", qm.Yes | qm.No)
-		return ret == qm.No
+		return qm.No == qm.question(parent.parent,'', "Do you really want to load "+os.path.basename(newfile)+"? You will lose unsaved work on "+os.path.basename(oldfile)+"!", qm.Yes | qm.No)
 
 def showdialog(str):
 	msg = QtWidgets.QMessageBox()
@@ -67,6 +66,75 @@ def vbox2(parent, buttons):
 	for w in buttons: vbox.addWidget(w)
 	vbox.addStretch(1.0)
 	
+
+
+class FileWidget(QtWidgets.QLineEdit):
+	"""An entry widget that starts a file selector when clicked and also accepts drag & drop.
+	Displays the current file's basename.
+	"""
+	# todo: connect to load_audio
+
+	def __init__(self, parent, cfg, description=""):
+		super(FileWidget, self).__init__(parent)
+		self.parent = parent
+		self.cfg = cfg#["dir_in"]
+		# self.cfg = parent.parent.cfg#["dir_in"]
+		self.setDragEnabled(True)
+		self.setReadOnly(True)
+		# self.dirty = False
+		self.filepath = ""
+		self.description = description
+		self.setToolTip(self.description)
+			
+	def abort_open_new_file(self, new_filepath):
+		# only return True if we should abort
+		if new_filepath == self.filepath:
+			return True
+		if self.filepath:
+			qm = QtWidgets.QMessageBox
+			return qm.No == qm.question(self,'', "Do you really want to load "+os.path.basename(new_filepath)+"? You will lose unsaved work on "+os.path.basename(self.filepath)+"!", qm.Yes | qm.No)
+			
+	def accept_file(self, filepath):
+		if os.path.isfile(filepath):
+			if os.path.splitext(filepath)[1].lower() in (".flac", ".wav"):
+				if not self.abort_open_new_file(filepath):
+					self.filepath = filepath
+					self.cfg["dir_in"], filename = os.path.split(filepath)
+					self.setText(filename)
+					# self.dirty = True
+					self.parent.poll()
+			else:
+				showdialog("Unsupported File Format")
+				
+	def get_files(self, event):
+		data = event.mimeData()
+		urls = data.urls()
+		if urls and urls[0].scheme() == 'file':
+			return urls
+		
+	def dragEnterEvent(self, event):
+		if self.get_files(event):
+			event.acceptProposedAction()
+			self.setFocus(True)
+
+	def dragMoveEvent(self, event):
+		if self.get_files(event):
+			event.acceptProposedAction()
+			self.setFocus(True)
+
+	def dropEvent(self, event):
+		urls = self.get_files(event)
+		if urls:
+			filepath = str(urls[0].path())[1:]
+			self.accept_file(filepath)
+			
+	def ask_open(self):
+		filepath = QtWidgets.QFileDialog.getOpenFileName(self, 'Open '+self.description, self.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
+		self.accept_file(filepath)
+		
+	def mousePressEvent(self, event):
+		self.ask_open()
+
 class DisplayWidget(QtWidgets.QWidget):
 	def __init__(self, with_canvas=True):
 		QtWidgets.QWidget.__init__(self,)
@@ -120,8 +188,6 @@ class DisplayWidget(QtWidgets.QWidget):
 		self.canvas.compute_spectra(self.canvas.filenames,
 									fft_size = self.fft_size,
 									fft_overlap = self.fft_overlap)
-		# also force a cmap update here
-		self.update_cmap()
 		
 	def update_show_settings(self):
 		show = self.show_c.currentText()
@@ -270,6 +336,22 @@ class TracingWidget(QtWidgets.QWidget):
 			reg.lock_to(f)
 		self.canvas.master_speed.update()
 
+class AlignmentWidget(QtWidgets.QWidget):
+	def __init__(self,):
+		QtWidgets.QWidget.__init__(self,)
+		align_l = QtWidgets.QLabel("\nAlignment")
+		align_l.setFont(myFont)
+		
+		self.align_abs_b = QtWidgets.QCheckBox("Absolute match")
+		self.align_abs_b.setChecked(False)
+		self.align_abs_b.setToolTip("Turn on if phase does not match.")
+		
+		buttons = ((align_l,), (self.align_abs_b, ), )
+		vbox(self, grid(buttons))
+	
+	@property
+	def align_abs(self): return self.align_abs_b.isChecked()
+
 class DropoutWidget(QtWidgets.QWidget):
 	def __init__(self, ):
 		QtWidgets.QWidget.__init__(self,)
@@ -321,7 +403,7 @@ class DropoutWidget(QtWidgets.QWidget):
 		self.max_width_s.setSuffix(" s")
 		self.max_width_s.setToolTip("Maximum length of a dropout - increase to capture wider dropouts")
 		
-		buttons = ((dropouts_l,), (mode_l, self.mode_c,), (self.num_bands_l, self.num_bands_s), (self.f_upper_l, self.f_upper_s), (self.f_lower_l, self.f_lower_s), (self.max_slope_l, self.max_slope_s), (self.max_width_l, self.max_width_s)  )
+		buttons = ((dropouts_l,), (mode_l, self.mode_c,), (self.num_bands_l, self.num_bands_s), (self.f_upper_l, self.f_upper_s), (self.f_lower_l, self.f_lower_s), (self.max_slope_l, self.max_slope_s), (self.max_width_l, self.max_width_s)	)
 		vbox(self, grid(buttons))
 		
 	def toggle_mode(self):
@@ -465,7 +547,7 @@ class InspectorWidget(QtWidgets.QLabel):
 
 class MainWindow(QtWidgets.QMainWindow):
 
-	def __init__(self, name, object_widget, canvas_widget, accept_drag=True):
+	def __init__(self, name, object_widget, canvas_widget, count):
 		QtWidgets.QMainWindow.__init__(self)		
 		
 		self.name = name
@@ -478,10 +560,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		
 		self.cfg = config.read_config("config.ini")
 		
-		if accept_drag:
-			self.setAcceptDrops(True)
-
-		self.props = object_widget(parent=self)
+		self.props = object_widget(parent=self, count=count)
 		self.canvas = canvas_widget(parent=self)
 		self.canvas.props = self.props
 
@@ -500,47 +579,56 @@ class MainWindow(QtWidgets.QMainWindow):
 			button.triggered.connect(func)
 			if shortcut: button.setShortcut(shortcut)
 			submenu.addAction(button)
-		
-	def dragEnterEvent(self, event):
-		if event.mimeData().hasUrls:
-			event.accept()
-		else:
-			event.ignore()
-
-	def dragMoveEvent(self, event):
-		if event.mimeData().hasUrls:
-			event.setDropAction(QtCore.Qt.CopyAction)
-			event.accept()
-		else:
-			event.ignore()
-
-	def dropEvent(self, event):
-		if event.mimeData().hasUrls:
-			event.setDropAction(QtCore.Qt.CopyAction)
-			event.accept()
-			for url in event.mimeData().urls():
-				self.canvas.load_audio( ( str(url.toLocalFile()), ) )
-				return
-		else:
-			event.ignore()
 			
+class FilesWidget(QtWidgets.QWidget):
+	"""
+	Holds several file widgets
+	controls what happens when they are loaded
+	"""
+
+	def __init__(self, parent, count):
+		super(FilesWidget, self).__init__(parent)
+		self.parent = parent
+		#note: count must be 1 or 2
+		# idiosyncratic order here so the complicated stuff can remain as is
+		descriptions = ("Reference", "Source")
+		self.files = [FileWidget(self, parent.parent.cfg, description) for description in descriptions[-count:] ]
+		vbox2(self, self.files)
+		self.poll()
+		
+	def ask_open(self):
+		for w in self.files:
+			w.ask_open()
+			
+	def poll(self):
+		# called by the child widgets after they have received a file
+		self.filepaths = [ w.filepath for w in self.files]
+		# only continue if all slots are filled with files
+		if all(self.filepaths):
+			self.load()
+	
+	def load(self):
+		self.parent.parent.canvas.load_audio(self.filepaths)
+		
 class ParamWidget(QtWidgets.QWidget):
 	"""
 	Widget for editing parameters
 	"""
 
-	def __init__(self, parent=None):
+	def __init__(self, parent=None, count=1):
 		super(ParamWidget, self).__init__(parent)
 		
 		self.parent = parent
 		
+		self.file_widget = FilesWidget(self, count)
 		self.display_widget = DisplayWidget()
 		self.tracing_widget = TracingWidget()
 		self.resampling_widget = ResamplingWidget()
 		self.progress_widget = ProgressWidget()
 		#self.audio_widget = snd.AudioWidget()
 		self.inspector_widget = InspectorWidget()
-		
-		buttons = [self.display_widget, self.tracing_widget, self.resampling_widget, self.progress_widget,# self.audio_widget, 
+		self.alignment_widget = AlignmentWidget()
+		buttons = [ self.file_widget, self.display_widget, self.tracing_widget, self.alignment_widget, self.resampling_widget, self.progress_widget,# self.audio_widget, 
 					self.inspector_widget ]
 		vbox2(self, buttons)
+	

@@ -10,13 +10,13 @@ from util import spectrum, resampling, wow_detection, qt_threads, widgets, io_op
 class MainWindow(widgets.MainWindow):
 
 	def __init__(self):
-		widgets.MainWindow.__init__(self, "pyrespeeder", widgets.ParamWidget, Canvas)
+		widgets.MainWindow.__init__(self, "pyrespeeder", widgets.ParamWidget, Canvas, 1)
 		mainMenu = self.menuBar() 
 		fileMenu = mainMenu.addMenu('File')
 		editMenu = mainMenu.addMenu('Edit')
 		#viewMenu = mainMenu.addMenu('View')
 		#helpMenu = mainMenu.addMenu('Help')
-		button_data = ( (fileMenu, "Open", self.canvas.open_audio, "CTRL+O"), \
+		button_data = ( (fileMenu, "Open", self.props.file_widget.ask_open, "CTRL+O"), \
 						(fileMenu, "Save", self.canvas.save_traces, "CTRL+S"), \
 						(fileMenu, "Resample", self.canvas.run_resample, "CTRL+R"), \
 						(fileMenu, "Exit", self.close, ""), \
@@ -53,6 +53,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.fourier_thread.notifyProgress.connect( self.parent.props.progress_widget.onProgress )
 		self.parent.props.display_widget.canvas = self
 		self.parent.props.tracing_widget.canvas = self
+		self.parent.props.alignment_widget.setVisible(False)
 		self.freeze()
 		
 	def load_visuals(self,):
@@ -139,8 +140,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		for trace in self.lines+self.regs:
 			trace.toggle()
 			
-	# end old
-	
 	def on_mouse_press(self, event):
 		# #audio cursor
 		# b = self.click_spec_conversion(event.pos)

@@ -1,11 +1,9 @@
 import numpy as np
-# import soundfile as sf
-from vispy import scene, color
-# from PyQt5 import QtGui, QtCore, QtWidgets
+from vispy import scene
 from scipy import interpolate
 
 #custom modules
-from util import resampling, wow_detection, snd, widgets, io_ops, units, markers, filters
+from util import wow_detection, filters
 
 class BaseMarker:
 	"""Stores and visualizes a trace fragment, including its speed offset."""
@@ -314,7 +312,6 @@ class BaseLine:
 		#create the speed curve visualization
 		self.data = np.zeros((2, 2), dtype=np.float32)
 		self.data[:, 0] = (0, 999)
-		self.data[:, 1] = (0, 0)
 		self.empty = np.array(self.data)
 		self.bands = (0, 9999999)
 		self.line_speed = scene.Line(pos=self.data, color=color, method='gl')

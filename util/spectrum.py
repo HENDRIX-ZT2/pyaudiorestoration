@@ -3,10 +3,9 @@ import numpy as np
 import soundfile as sf
 from vispy import scene, gloo, visuals, color
 from vispy.geometry import Rect
-from PyQt5 import QtWidgets
 
 #custom modules
-from util import vispy_ext, fourier, io_ops, qt_threads, units, widgets
+from util import vispy_ext, fourier, io_ops, qt_threads, units
 
 #log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)
 norm_luminance = """
@@ -194,6 +193,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.sr = 44100
 		self.channels = 0
 		self.duration = 0
+		self.dirty = False
 		
 		self.fourier_thread = qt_threads.FourierThread()
 		self.fourier_thread.finished.connect(self.retrieve_fft)
@@ -282,6 +282,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		# TODO: implement adaptive / intelligent hop reusing data
 		# maybe move more into the thread
 		
+		self.dirty = False
 		if self.fourier_thread.jobs:
 			print("Fourier job is still running, wait!")
 			return
@@ -297,7 +298,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 				# now load new audio
 				self.signals[i], self.sr, self.channels = io_ops.read_file(filename)
 				self.filenames[i] = filename
-		
+		durations = [len(sig) / self.sr for sig in self.signals if sig is not None]
+		self.duration = max(durations) if durations else 0
 		self.keys = []
 		self.fft_size = fft_size
 		self.hop = fft_size // fft_overlap
@@ -310,8 +312,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 					channel = 0
 				# first try to get FFT from current storage and continue directly
 				if k in self.fft_storage:
-					print("loading fft",self.fft_size)
-					self.continue_spectra()
+					self.dirty = True
 				# check for alternate hops
 				else:
 					more_dense = None
@@ -337,7 +338,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 						# print("increasing resolution by filling gaps",self.fft_size)
 						# self.fft_storage[k] = self.fft_storage[more_sparse]
 					else:
-						print("storing new fft",self.fft_size)
+						print("storing new fft",k)
 						# append to the fourier job list
 						self.fourier_thread.jobs.append( (signal[:,channel], self.fft_size, self.hop, "hann", self.num_cores, k) )
 						# all tasks are started below
@@ -345,6 +346,10 @@ class SpectrumCanvas(scene.SceneCanvas):
 		if self.fourier_thread.jobs:
 			self.fourier_thread.start()
 			# we continue when the thread emits a "finished" signal, conntected to retrieve_fft()
+		# this happens when only loading from storage is required
+		elif self.dirty:
+			self.continue_spectra()
+			
 		
 	def retrieve_fft(self,):
 		print("Retrieving FFT from processing thread")
@@ -360,7 +365,6 @@ class SpectrumCanvas(scene.SceneCanvas):
 		# don't bother with audio until it is fixed
 		# self.props.audio_widget.set_data(signal[:,channel], self.sr)
 		#(re)set the spec_view
-		self.duration = max([len(sig) / self.sr for sig in self.signals])
 		self.speed_view.camera.rect = (0, -1, self.duration, 2)
 		self.spec_view.camera.rect = (0, 0, self.duration, to_mel(self.sr//2))
 			

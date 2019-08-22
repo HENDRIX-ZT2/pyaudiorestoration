@@ -132,7 +132,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.resample_files( (self.filenames[1],) )
 	
 	def run_resample_batch(self):
-		filenames = QtWidgets.QFileDialog.getOpenFileNames(self.parent, 'Open Files for Batch Resampling', 'c:\\', "Audio files (*.flac *.wav)")[0]
+		filenames = QtWidgets.QFileDialog.getOpenFileNames(self.parent, 'Open Files for Batch Resampling', self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
 		if filenames:
 			self.resample_files( filenames )
 	

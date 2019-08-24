@@ -14,7 +14,6 @@ class BaseThread(QtCore.QThread):
 class ResamplingThread(BaseThread):
 
 	def run(self):
-		# name, speed_curve, resampling_mode, sinc_quality, use_channels = 
 		resampling.run(prog_sig=self, **self.settings)
 		
 class FourierThread(BaseThread):

@@ -38,14 +38,14 @@ def sinc_wrapper_mt(sample_at, signal, lowpass, NT ):
 @jit(nopython=True, nogil=True, cache=True, fastmath=True)
 def sinc_core(sample_at, signal, lowpass, output, win_func, N ):
 	"""
-	sample_at: 1D array holding the points at which the old signal should be sampled to get the new signal
+	sample_at: 1D array holding the points at which the old signal should be sampled to get the new signal, is expected to be 0 <= i < len(signal)
 	signal: 1D array of the input signal
 	lowpass: 1D array of lowpass filter coefficients
 	output: 1D array, pre-allocated, len(output) == len(sample_at)
 	win_func: windowing used for the sinc to reduce ringing, np.hanning(2*sinc_quality)
 	N: fixed range of input for sinc
 	"""
-	NT = (len(N)-1)/2
+	NT = (len(N)-1)//2
 	len_in = len(signal)
 	len_out = len(sample_at)
 	#just using prange here does not make it faster
@@ -132,6 +132,7 @@ def run(filenames, signal_data=None, speed_curve=None, resampling_mode = "Linear
 			signal, sr, channels = io_ops.read_file(filename)
 		if resampling_mode == "Linear":
 			samples_in = np.arange( len(signal) )
+		lowpass = 0
 		if speed_curve is not None:
 			sampletimes = speed_curve[:,0]*sr
 			speeds = speed_curve[:,1]
@@ -140,11 +141,12 @@ def run(filenames, signal_data=None, speed_curve=None, resampling_mode = "Linear
 			# get the speed for every output sample
 			# if resampling_mode == "Sinc":
 				# lowpass = np.interp(np.arange( len(sample_at) ), sampletimes, speeds)
-			lowpass = 0
 		elif lag_curve is not None:
 			sampletimes = lag_curve[:,0]*sr
 			lags = lag_curve[:,1]*sr
 			sample_at = np.interp(np.arange( len(signal)+lags[-1] ), sampletimes, sampletimes-lags)
+			# ensure we have no sub-zero values, saves one max in sinc
+			np.clip(sample_at, 0, None, out=sample_at)
 			# with lerped speed curve
 			# speeds = np.diff(lag_curve[:,1])/np.diff(lag_curve[:,0])+1
 			# sampletimes = (lag_curve[:-1,0]+np.diff(lag_curve[:,0])/2)*sr

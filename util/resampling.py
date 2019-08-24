@@ -11,7 +11,8 @@ def sinc_wrapper(sample_at, signal, lowpass, NT ):
 	N = np.arange(-NT,NT+1, dtype="float32")
 	win_func = np.hanning(2*NT+1).astype("float32")
 	output = np.empty(len(sample_at), "float32")
-	return sinc_core(sample_at, signal, lowpass, output, win_func, N )
+	sinc_core(sample_at, signal, lowpass, output, win_func, N )
+	return output
 	
 def sinc_wrapper_mt(sample_at, signal, lowpass, NT ):
 	# manual parallelization with threading module
@@ -32,51 +33,6 @@ def sinc_wrapper_mt(sample_at, signal, lowpass, NT ):
 		thread.join()
 	return output
 	
-# def sinc_wrapper_parallel(sample_at, signal, lowpass, NT ):
-	# assert signal.dtype == "float32"
-	# assert sample_at.dtype == "float32"
-	# # initialize arrays here because we can't do so in nopython mode
-	# N = np.arange(-NT,NT+1, dtype="float32")
-	# win_func = np.hanning(2*NT+1).astype("float32")
-	# # output is created on the fly
-	# return sinc_core_gu_parallel(sample_at, signal, win_func, N )
-
-# this version is about 10% slower than normal jit - cuda does not work
-# @guvectorize(['void(float32[:], float32[:], float32[:], float32[:], float32[:])'], '(n),(o),(p),(p)->(n)', nopython=True, target='parallel', cache=True)
-# def sinc_core_gu_parallel(sample_at, signal, win_func, N, out ):
-	# NT = (len(N)-1)/2
-	# len_in = len(signal)
-	# len_out = len(sample_at)
-	# #just using prange here does not make it faster
-	# for i in range( len_out ):
-		# # p is the position in the signal where this output sample should be sampled at
-		# p = sample_at[i]
-		# # rounding here makes no significant difference; truncating may be enough
-		# ind = int(round(p))
-		
-		# #can we end it here already?
-		# if ind == len_in:
-			# break
-			
-		# lower = max(0, ind-NT)
-		# upper = min(ind+NT, len_in)
-		
-		# #fc is the cutoff frequency expressed as a fraction of the nyquist freq
-		# #we need anti-aliasing when sampling rate is bigger than before, ie. exceeding the nyquist frequency
-		# if i+1 != len_out:
-			# period_to = max(0.000000000001, sample_at[i+1]-p)
-			# #period to must not be 0, crashes if jit is enabled
-		# fc = min(1/period_to, 1)
-		
-		# # evaluate the sinc function around its center (with slight shift)
-		# # stretched & scaled by fc parameter as a lowpass / anti-aliasing filter
-		# shift = p - ind
-		# si = np.sinc ((N - shift) * fc) * fc
-		
-		# # create output sample by taking the sum of its neighboring input samples weighted by the sinc and window
-		# sigbit = signal[lower:upper]
-		# out[i] = np.sum(sigbit * si[0:len(sigbit)] * win_func[0:len(sigbit)])
-
 # lazy optimization is recommended
 # @jit('float32[:](float64[:], float64[:], float64[:], float32[:], float64[:], int32[:])', nopython=True, nogil=True, parallel=True)
 @jit(nopython=True, nogil=True, cache=True, fastmath=True)
@@ -119,7 +75,6 @@ def sinc_core(sample_at, signal, lowpass, output, win_func, N ):
 		# create output sample by taking the sum of its neighboring input samples weighted by the sinc and window
 		sigbit = signal[lower:upper]
 		output[i] = np.sum(sigbit * si[0:len(sigbit)] * win_func[0:len(sigbit)])
-	return output
 
 @jit(forceobj=True)
 def prepare_linear_or_sinc(sampletimes, speeds, num_imput_samples):
@@ -246,7 +201,6 @@ def test_sinc():
 	
 	correct = timefunc(None, "normal", sinc_wrapper, sample_at, signal, lowpass, 50)
 	timefunc(correct, "mt", sinc_wrapper_mt, sample_at, signal, lowpass, 50)
-	#timefunc(correct, "parallel", sinc_wrapper_parallel, sample_at, signal, lowpass, 50)
 	with sf.SoundFile("test_raw.wav", 'w+', sr, 1, subtype='FLOAT') as outfile:
 		outfile.write( signal )
 	with sf.SoundFile("test_sin.wav", 'w+', sr, 1, subtype='FLOAT') as outfile:

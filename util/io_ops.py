@@ -4,7 +4,7 @@ import os
 def read_file(file_path):
 	print("Reading",file_path)
 	soundob = sf.SoundFile(file_path)
-	return soundob.read(always_2d=True), soundob.samplerate, soundob.channels
+	return soundob.read(always_2d=True, dtype="float32"), soundob.samplerate, soundob.channels
 
 def write_file(file_path, signal, sr, channels, suffix="_out"):
 	# write the final signal

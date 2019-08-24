@@ -2,69 +2,141 @@ import numpy as np
 from time import time
 import soundfile as sf
 import os
-from numba import jit#, prange
-from util import io_ops
+from numba import jit#, prange, guvectorize
+import math
+import threading
+
+def sinc_wrapper(sample_at, signal, lowpass, NT ):
+	# initialize arrays here because we can't do so in nopython mode
+	N = np.arange(-NT,NT+1, dtype="float32")
+	win_func = np.hanning(2*NT+1).astype("float32")
+	output = np.empty(len(sample_at), "float32")
+	return sinc_core(sample_at, signal, lowpass, output, win_func, N )
 	
- # @guvectorize(['(float64[:,:],float64[:,:],float64[:,:])'],
-    # '(n,m),(n,m)->(n,m)',target='parallel')
+def sinc_wrapper_mt(sample_at, signal, lowpass, NT ):
+	# manual parallelization with threading module
+	# from: http://numba.pydata.org/numba-doc/dev/user/examples.html#multi-threading
+	numthreads = os.cpu_count()
+	length = len(sample_at)
+	N = np.arange(-NT,NT+1, dtype="float32")
+	win_func = np.hanning(2*NT+1).astype("float32")
+	output = np.empty(length, dtype="float32")
+	chunklen = (length + numthreads - 1) // numthreads
+	# Create argument tuples for each input chunk
+	chunks = [ (sample_at[i * chunklen:(i + 1) * chunklen], signal, lowpass, output[i * chunklen:(i + 1) * chunklen], win_func, N) for i in range(numthreads)]
+	# Spawn one thread per chunk
+	threads = [threading.Thread(target=sinc_core, args=chunk) for chunk in chunks]
+	for thread in threads:
+		thread.start()
+	for thread in threads:
+		thread.join()
+	return output
 	
-#jit notes: parallel makes it at least as slow as the normal one
+# def sinc_wrapper_parallel(sample_at, signal, lowpass, NT ):
+	# assert signal.dtype == "float32"
+	# assert sample_at.dtype == "float32"
+	# # initialize arrays here because we can't do so in nopython mode
+	# N = np.arange(-NT,NT+1, dtype="float32")
+	# win_func = np.hanning(2*NT+1).astype("float32")
+	# # output is created on the fly
+	# return sinc_core_gu_parallel(sample_at, signal, win_func, N )
+
+# this version is about 10% slower than normal jit - cuda does not work
+# @guvectorize(['void(float32[:], float32[:], float32[:], float32[:], float32[:])'], '(n),(o),(p),(p)->(n)', nopython=True, target='parallel', cache=True)
+# def sinc_core_gu_parallel(sample_at, signal, win_func, N, out ):
+	# NT = (len(N)-1)/2
+	# len_in = len(signal)
+	# len_out = len(sample_at)
+	# #just using prange here does not make it faster
+	# for i in range( len_out ):
+		# # p is the position in the signal where this output sample should be sampled at
+		# p = sample_at[i]
+		# # rounding here makes no significant difference; truncating may be enough
+		# ind = int(round(p))
+		
+		# #can we end it here already?
+		# if ind == len_in:
+			# break
+			
+		# lower = max(0, ind-NT)
+		# upper = min(ind+NT, len_in)
+		
+		# #fc is the cutoff frequency expressed as a fraction of the nyquist freq
+		# #we need anti-aliasing when sampling rate is bigger than before, ie. exceeding the nyquist frequency
+		# if i+1 != len_out:
+			# period_to = max(0.000000000001, sample_at[i+1]-p)
+			# #period to must not be 0, crashes if jit is enabled
+		# fc = min(1/period_to, 1)
+		
+		# # evaluate the sinc function around its center (with slight shift)
+		# # stretched & scaled by fc parameter as a lowpass / anti-aliasing filter
+		# shift = p - ind
+		# si = np.sinc ((N - shift) * fc) * fc
+		
+		# # create output sample by taking the sum of its neighboring input samples weighted by the sinc and window
+		# sigbit = signal[lower:upper]
+		# out[i] = np.sum(sigbit * si[0:len(sigbit)] * win_func[0:len(sigbit)])
+
 # lazy optimization is recommended
-@jit(nopython=True, nogil=True, cache=True)
-def sinc_core(positions, samples_in2, signal, output, win_func, NT ):
-	in_len = len(samples_in2)
-	block_len = len(positions)
+# @jit('float32[:](float64[:], float64[:], float64[:], float32[:], float64[:], int32[:])', nopython=True, nogil=True, parallel=True)
+@jit(nopython=True, nogil=True, cache=True, fastmath=True)
+def sinc_core(sample_at, signal, lowpass, output, win_func, N ):
+	"""
+	sample_at: 1D array holding the points at which the old signal should be sampled to get the new signal
+	signal: 1D array of the input signal
+	lowpass: 1D array of lowpass filter coefficients
+	output: 1D array, pre-allocated, len(output) == len(sample_at)
+	win_func: windowing used for the sinc to reduce ringing, np.hanning(2*sinc_quality)
+	N: fixed range of input for sinc
+	"""
+	NT = (len(N)-1)/2
+	len_in = len(signal)
+	len_out = len(sample_at)
 	#just using prange here does not make it faster
-	for i in range( block_len):
-		#now we are at the end and we can yield the rest of the piece
-		p = positions[i]
-		#map the output to the input
-		#error diffusion here makes no significant difference
+	for i in range( len_out ):
+		# p is the position in the signal where this output sample should be sampled at
+		p = sample_at[i]
+		# rounding here makes no significant difference; truncating may be enough
 		ind = int(round(p))
 		
-		#can we end it here already?
-		#then cut the output and break out of this loop
-		if ind == in_len:
-			return output[0:i]
-			
 		lower = max(0, ind-NT)
-		upper = max(0, min(ind+NT, in_len))
-		# length = upper - lower
+		upper = min(ind+NT, len_in)
 		
 		#fc is the cutoff frequency expressed as a fraction of the nyquist freq
 		#we need anti-aliasing when sampling rate is bigger than before, ie. exceeding the nyquist frequency
-		#could skip this calculation and get it from the speed curve instead?
-		if i+1 != block_len:
-			period_to = max(0.000000000001, positions[i+1]-p)
+		if i+1 != len_out:
+			period_to = max(0.000000000001, sample_at[i+1]-p)
 			#period to must not be 0, crashes if jit is enabled
 		fc = min(1/period_to, 1)
+		# fc = lowpass[i]
+		# old and new are not identical because their interpolation is different. old is better
 		
-		#use a Hann window to reduce the prominent sinc ringing of a rectangular window
-		#(http://www-cs.engr.ccny.cuny.edu/~wolberg/pub/crc04.pdf, p. 11ff)
-		#http://www.analog.com/media/en/technical-documentation/dsp-book/dsp_book_Ch16.pdf
-		#claims that only hamming and blackman are worth using? my experiments look best with hann window
+		# evaluate the sinc function around its center (with slight shift)
+		# stretched & scaled by fc parameter as a lowpass / anti-aliasing filter
+		shift = p - ind
+		si = np.sinc ((N - shift) * fc) * fc
 		
-		si = np.sinc ((samples_in2[lower:upper] - p) * fc) * fc
-		#note that in some end cases, len may be 0 but win_func gets another len so it would break
-		#TODO: this is probably obsolete and could get its indices like the other two, because the end is cut off already
-		output[i] = np.sum(si * signal[lower:upper] * win_func[0:len(si)])
+		# create output sample by taking the sum of its neighboring input samples weighted by the sinc and window
+		sigbit = signal[lower:upper]
+		output[i] = np.sum(sigbit * si[0:len(sigbit)] * win_func[0:len(sigbit)])
 	return output
 
-@jit(nopython=False, nogil=True, cache=True)
-def prepare_linear_or_sinc(sampletimes, speeds):
+@jit(forceobj=True)
+def prepare_linear_or_sinc(sampletimes, speeds, num_imput_samples):
 	# replace periods with fixed dt, but how to deal with the end?
-	# dt = sampletimes[1]-sampletimes[0]
-	periods = np.diff(sampletimes)
+	dt = sampletimes[1]-sampletimes[0]
+	# periods = np.diff(sampletimes)
 	err = 0
 	offset = sampletimes[0]
 	
 	#just add a little bit of tolerance here
 	end_guess = int(np.mean(speeds)*(sampletimes[-1]-sampletimes[0]) *1.01 )
-	output = np.empty(end_guess)
+	output = np.empty(end_guess, dtype="float32")
 	out_ind = 0
 	for i in range(0, len(speeds)-1):
 		#the desired number of output samples in this block, before dithering
-		n = periods[i] * np.mean(speeds[i:i+2])
+		# n = periods[i] * np.mean(speeds[i:i+2])
+		n = dt * np.mean(speeds[i:i+2])
 		
 		#without dithering here, we get big gaps at the end of each segment!
 		inerr = n + err
@@ -75,38 +147,53 @@ def prepare_linear_or_sinc(sampletimes, speeds):
 		#linspace is slower for numpy than interp, but interp is not supported by jit
 		# block_speeds = np.interp(np.arange(n), (0, n-1), (speeds[i], speeds[i+1]) )
 		# block_speeds = np.linspace(speeds[i], speeds[i+1], n)
-		#is this correct, should not rather be + old_positions[-1]  to account for dithering?
-		positions = np.cumsum(1/block_speeds) + offset
-		offset = positions[-1]
-		output[out_ind:out_ind+n] = positions
+		#is this correct, should not rather be + old_sample_at[-1]	to account for dithering?
+		sample_at = np.cumsum(1/block_speeds) + offset
+		offset = sample_at[-1]
+		output[out_ind:out_ind+n] = sample_at
+		
+		# see if this block reaches the end of the input signal
+		if output[out_ind] <= num_imput_samples <= output[out_ind+n-1]:
+			# ok the end is somewhere in this block
+			# we can fine tune it to find the exact output sample 
+			end = out_ind + np.argmin(np.abs(sample_at-num_imput_samples))
+			# now trim to get rid of the extra tolerance
+			output = output[:end]
+			break
 		out_ind+=n
-	#trim to remove the extra tolerance
-	return output[:out_ind]
+	return output
 
-def run(filenames, speed_curve=None, resampling_mode = "Linear", sinc_quality=50, use_channels = [0,], prog_sig=None, lag_curve=None):
+def run(filenames, signal_data=None, speed_curve=None, resampling_mode = "Linear", sinc_quality=50, use_channels = [0,], prog_sig=None, lag_curve=None):
 	if prog_sig: prog_sig.notifyProgress.emit(0)
-	
-	for filename in filenames:
+	if signal_data is None: signal_data = [None for filename in filenames]
+	for filename, sig_data in zip(filenames, signal_data):
 		start_time = time()
 		print('Resampling ' + filename + '...', resampling_mode, sinc_quality, use_channels)
 		#read the file
-		
-		signal, sr, channels = io_ops.read_file(filename)
-		
-		samples_in = np.arange( len(signal[:,0]) )
+		if sig_data:
+			signal, sr = sig_data
+		else:
+			from util import io_ops
+			signal, sr, channels = io_ops.read_file(filename)
+		if resampling_mode == "Linear":
+			samples_in = np.arange( len(signal) )
 		if speed_curve is not None:
 			sampletimes = speed_curve[:,0]*sr
 			speeds = speed_curve[:,1]
-			samples_out = prepare_linear_or_sinc(sampletimes, speeds)
+			sample_at = prepare_linear_or_sinc(sampletimes, speeds, len(signal))
+			# the problem is we don't really need the lerped speeds but what happens from the cumsum
+			# get the speed for every output sample
+			# if resampling_mode == "Sinc":
+				# lowpass = np.interp(np.arange( len(sample_at) ), sampletimes, speeds)
+			lowpass = 0
 		elif lag_curve is not None:
 			sampletimes = lag_curve[:,0]*sr
 			lags = lag_curve[:,1]*sr
-			samples_out = np.interp(np.arange( len(signal[:,0])+lags[-1] ), sampletimes, sampletimes-lags)
+			sample_at = np.interp(np.arange( len(signal)+lags[-1] ), sampletimes, sampletimes-lags)
 			# with lerped speed curve
 			# speeds = np.diff(lag_curve[:,1])/np.diff(lag_curve[:,0])+1
 			# sampletimes = (lag_curve[:-1,0]+np.diff(lag_curve[:,0])/2)*sr
-			# samples_out = prepare_linear_or_sinc(sampletimes, speeds)
-			
+			# sample_at = prepare_linear_or_sinc(sampletimes, speeds)
 		dur = time() - start_time
 		print("Preparation took",dur)
 		start_time = time()
@@ -116,11 +203,55 @@ def run(filenames, speed_curve=None, resampling_mode = "Linear", sinc_quality=50
 			outfilename = filename.rsplit('.', 1)[0]+str(channel)+'.wav'
 			with sf.SoundFile(outfilename, 'w+', sr, 1, subtype='FLOAT') as outfile:
 				if resampling_mode == "Sinc":
-					outfile.write( sinc_core(samples_out, samples_in, signal[:,channel], np.empty(len(samples_out), "float32"), np.hanning(2*sinc_quality), sinc_quality ) )
+					outfile.write( sinc_wrapper_mt(sample_at, signal[:,channel], lowpass, sinc_quality ) )
 				elif resampling_mode == "Linear":
-					outfile.write( np.interp(samples_out, samples_in, signal[:,channel]) )
+					outfile.write( np.interp(sample_at, samples_in, signal[:,channel]) )
 			if prog_sig: prog_sig.notifyProgress.emit((progress+1)/len(use_channels)*100)
 		if prog_sig: prog_sig.notifyProgress.emit(100)
 		dur = time() - start_time
 		print("Resampling took",dur)
 	print("Done!\n")
+	
+def timefunc(correct, s, func, *args, **kwargs):
+	"""
+	Benchmark *func* and print out its runtime.
+	"""
+	from timeit import repeat
+	print(s.ljust(20), end=" ")
+	# Make sure the function is compiled before we start the benchmark
+	res = func(*args, **kwargs)
+	if correct is not None:
+		assert np.allclose(res, correct), (res, correct)
+	# time it
+	print('{:>5.0f} ms'.format(min(repeat(lambda: func(*args, **kwargs),
+										  number=5, repeat=2)) * 1000))
+	return res
+	
+def test_sinc():
+	# just a test function
+	sr = 44100
+	volume = 0.5	 # range [0.0, 1.0]
+	duration = 2.0	 # seconds
+	f = 440.0		 # sine frequency, Hz
+	
+	# generate signal
+	signal = np.sin(2*np.pi*np.arange(sr*duration)*f/sr, dtype="float32")*volume
+	signal += np.sin(2*np.pi*np.arange(sr*duration)*21000/sr)*.1
+	# generate speed curve
+	sampletimes = (0,len(signal))
+	speeds = (0.5, 2)
+	sample_at = prepare_linear_or_sinc(sampletimes, speeds, len(signal))
+	lowpass = np.interp(np.arange( len(sample_at) ), sampletimes, speeds)
+	np.clip(lowpass, None, 1, out=lowpass)
+	
+	correct = timefunc(None, "normal", sinc_wrapper, sample_at, signal, lowpass, 50)
+	timefunc(correct, "mt", sinc_wrapper_mt, sample_at, signal, lowpass, 50)
+	#timefunc(correct, "parallel", sinc_wrapper_parallel, sample_at, signal, lowpass, 50)
+	with sf.SoundFile("test_raw.wav", 'w+', sr, 1, subtype='FLOAT') as outfile:
+		outfile.write( signal )
+	with sf.SoundFile("test_sin.wav", 'w+', sr, 1, subtype='FLOAT') as outfile:
+		outfile.write( sinc_wrapper_mt(sample_at, signal, lowpass, 50 ) )
+
+
+if __name__ == '__main__':
+	test_sinc()

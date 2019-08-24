@@ -116,7 +116,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.deltraces = []
 			
 	def run_resample(self):
-		if self.filenames[0] and self.lines:
+		if self.filenames[0] and self.lines+self.regs:
 			channels = self.props.resampling_widget.channels
 			if channels:
 				if self.regs:
@@ -126,6 +126,7 @@ class Canvas(spectrum.SpectrumCanvas):
 					speed_curve = self.master_speed.get_linspace()
 					print("Using measured speed")
 				self.resampling_thread.settings = {"filenames"			:(self.filenames[0],),
+													"signal_data"		:((self.signals[0], self.sr),),
 													"speed_curve"		:speed_curve, 
 													"resampling_mode"	:self.props.resampling_widget.mode,
 													"sinc_quality"		:self.props.resampling_widget.sinc_quality,

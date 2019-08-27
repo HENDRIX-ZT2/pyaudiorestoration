@@ -77,7 +77,7 @@ def sinc_core(sample_at, signal, lowpass, output, win_func, N ):
 		output[i] = np.sum(sigbit * si[0:len(sigbit)] * win_func[0:len(sigbit)])
 
 @jit(forceobj=True)
-def prepare_linear_or_sinc(sampletimes, speeds, num_imput_samples):
+def speed_to_pos(sampletimes, speeds, num_imput_samples):
 	"""
 	sampletimes: 1D array of sample numbers at which speeds is sampled; must have even spacing
 	speeds: 1D array of speed samples
@@ -123,6 +123,29 @@ def prepare_linear_or_sinc(sampletimes, speeds, num_imput_samples):
 		out_ind+=n
 	return output
 
+
+def lag_to_pos(sampletimes, lags, num_imput_samples):
+	"""
+	sampletimes: 1D array of sample numbers at which lags is sampled
+	lags: 1D array of lag samples, ie. shift from actual sample time
+	num_imput_samples: int
+	"""
+	# dt = sampletimes[1]-sampletimes[0]
+	end_guess = int((num_imput_samples+lags[-1]) *1.01 )
+	output = np.empty(end_guess, dtype="float32")
+	speeds_in = np.empty(len(lags), dtype="float32")
+	speeds = np.empty(len(lags), dtype="float32")
+	for i in range(0, len(lags)-1):
+		original = sampletimes[i+1]-sampletimes[i]
+		target = original- (lags[i+1]-lags[i])
+		# this is the mean speed for this segment
+		speeds_in[i] = target/original
+	# now split the segment and do a cumsum in each part
+	for i in range(0, len(lags)-1):
+		speeds[i] = (speeds[i]+speeds[i+1])/2
+	print(speeds[i])
+		
+
 def run(filenames, signal_data=None, speed_curve=None, resampling_mode = "Linear", sinc_quality=50, use_channels = [0,], prog_sig=None, lag_curve=None):
 	if prog_sig: prog_sig.notifyProgress.emit(0)
 	if signal_data is None: signal_data = [None for filename in filenames]
@@ -141,7 +164,7 @@ def run(filenames, signal_data=None, speed_curve=None, resampling_mode = "Linear
 		if speed_curve is not None:
 			sampletimes = speed_curve[:,0]*sr
 			speeds = speed_curve[:,1]
-			sample_at = prepare_linear_or_sinc(sampletimes, speeds, len(signal))
+			sample_at = speed_to_pos(sampletimes, speeds, len(signal))
 			# the problem is we don't really need the lerped speeds but what happens from the cumsum
 			# get the speed for every output sample
 			# if resampling_mode == "Sinc":
@@ -149,13 +172,14 @@ def run(filenames, signal_data=None, speed_curve=None, resampling_mode = "Linear
 		elif lag_curve is not None:
 			sampletimes = lag_curve[:,0]*sr
 			lags = lag_curve[:,1]*sr
+			# lag_to_pos(sampletimes, lags, len(signal))
 			sample_at = np.interp(np.arange( len(signal)+lags[-1] ), sampletimes, sampletimes-lags)
 			# ensure we have no sub-zero values, saves one max in sinc
 			np.clip(sample_at, 0, None, out=sample_at)
 			# with lerped speed curve
 			# speeds = np.diff(lag_curve[:,1])/np.diff(lag_curve[:,0])+1
 			# sampletimes = (lag_curve[:-1,0]+np.diff(lag_curve[:,0])/2)*sr
-			# sample_at = prepare_linear_or_sinc(sampletimes, speeds)
+			# sample_at = speed_to_pos(sampletimes, speeds)
 		dur = time() - start_time
 		print("Preparation took",dur)
 		start_time = time()
@@ -202,7 +226,7 @@ def test_sinc():
 	# generate speed curve
 	sampletimes = (0,len(signal))
 	speeds = (0.5, 2)
-	sample_at = prepare_linear_or_sinc(sampletimes, speeds, len(signal))
+	sample_at = speed_to_pos(sampletimes, speeds, len(signal))
 	lowpass = np.interp(np.arange( len(sample_at) ), sampletimes, speeds)
 	np.clip(lowpass, None, 1, out=lowpass)
 	

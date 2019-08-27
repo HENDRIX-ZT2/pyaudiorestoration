@@ -12,6 +12,19 @@ def write_file(file_path, signal, sr, channels, suffix="_out"):
 		outfile.write(signal)
 	print("Finished",file_path)
 	
+def write_trace_bin(filename, traces):
+	# int32		:	number of traces
+	# float32[]	:	offset value for each
+	# int32[]	:	offset into time/freq arrays
+	# float32[]	:	times
+	# float32[]	:	freqs
+	if traces:
+		num_traces = len(traces)
+		offsets = [t.offset for t in traces]
+		times = [t.times for t in traces]
+		freqs = [t.freqs for t in traces]
+		indices = np.cumsum([len(t) for t in times])
+	
 def write_trace(filename, data):
 	"""
 	TODO: rewrite into BIN format

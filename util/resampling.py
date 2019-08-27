@@ -78,9 +78,15 @@ def sinc_core(sample_at, signal, lowpass, output, win_func, N ):
 
 @jit(forceobj=True)
 def prepare_linear_or_sinc(sampletimes, speeds, num_imput_samples):
-	# replace periods with fixed dt, but how to deal with the end?
+	"""
+	sampletimes: 1D array of sample numbers at which speeds is sampled; must have even spacing
+	speeds: 1D array of speed samples
+	num_imput_samples: int
+	"""
+	
+	#TODO: this could actually make use of sampletimes by locking start and end values of each block to these positions
+	# but, especially for small dt, that could introduce unwanted speed errors
 	dt = sampletimes[1]-sampletimes[0]
-	# periods = np.diff(sampletimes)
 	err = 0
 	offset = sampletimes[0]
 	
@@ -90,7 +96,6 @@ def prepare_linear_or_sinc(sampletimes, speeds, num_imput_samples):
 	out_ind = 0
 	for i in range(0, len(speeds)-1):
 		#the desired number of output samples in this block, before dithering
-		# n = periods[i] * np.mean(speeds[i:i+2])
 		n = dt * np.mean(speeds[i:i+2])
 		
 		#without dithering here, we get big gaps at the end of each segment!
@@ -102,10 +107,10 @@ def prepare_linear_or_sinc(sampletimes, speeds, num_imput_samples):
 		#linspace is slower for numpy than interp, but interp is not supported by jit
 		# block_speeds = np.interp(np.arange(n), (0, n-1), (speeds[i], speeds[i+1]) )
 		# block_speeds = np.linspace(speeds[i], speeds[i+1], n)
-		#is this correct, should not rather be + old_sample_at[-1]	to account for dithering?
 		sample_at = np.cumsum(1/block_speeds) + offset
 		offset = sample_at[-1]
 		output[out_ind:out_ind+n] = sample_at
+		# print(sample_at[0],sampletimes[i],sample_at[-1],sampletimes[i+1])
 		
 		# see if this block reaches the end of the input signal
 		if output[out_ind] <= num_imput_samples <= output[out_ind+n-1]:

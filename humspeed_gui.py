@@ -13,7 +13,7 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-from util import fourier, io_ops, units, wow_detection, widgets
+from util import fourier, io_ops, units, wow_detection, widgets, config
 
 def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L"):
 	signal, sr, channels = io_ops.read_file(filename)
@@ -57,6 +57,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.marker_dBs = []
 		self.ratios = []
 		self.hum_freqs = []
+		self.cfg = config.read_config("config.ini")
 		
 		self.cb = QtWidgets.QApplication.clipboard()
 			
@@ -79,9 +80,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.toolbar = NavigationToolbar(self.canvas, self)
 
 		# Just some button connected to `plot` method
-		self.b_open = QtWidgets.QPushButton('Open')
-		self.b_open.setToolTip("Load an audio source to plot.")
-		self.b_open.clicked.connect(self.open_file)
+		self.file_widget = widgets.FilesWidget(self, 1, self.cfg)
+		self.file_widget.on_load_file = self.open_file
 		
 		self.b_resample = QtWidgets.QPushButton('Resample')
 		self.b_resample.setToolTip("Write speed-corrected audio to a new file.")
@@ -117,7 +117,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.qgrid.setVerticalSpacing(0)
 		self.qgrid.addWidget(self.toolbar, 0, 0, 1, 7)
 		self.qgrid.addWidget(self.canvas, 1, 0, 1, 7)
-		self.qgrid.addWidget(self.b_open, 2, 0)
+		self.qgrid.addWidget(self.file_widget, 2, 0)
 		self.qgrid.addWidget(self.b_resample, 2, 1)
 		self.qgrid.addWidget(self.c_channels, 2, 2)
 		self.qgrid.addWidget(self.s_base_hum, 2, 3)
@@ -144,11 +144,11 @@ class MainWindow(QtWidgets.QMainWindow):
 			self.track_to(hum_freq)
 			self.plot()
 		
-	def open_file(self):
-		file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', os.path.dirname(self.file_src), "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
-		if file_src:
-			self.file_src = file_src
+	def open_file(self, filepaths):
+		for filepath in filepaths:
+			self.file_src = filepath
 			self.update_spectrum()
+			break
 	
 	def update_spectrum(self,):
 		if self.file_src:
@@ -222,10 +222,10 @@ class MainWindow(QtWidgets.QMainWindow):
 			ratio = self.ratios[-1]
 			percentage = (ratio-1) * 100
 		
-			signal, sr, channels = io_ops.read_file(file_path)
+			signal, sr, channels = io_ops.read_file(self.file_src)
 			# resample, first axis is time!
 			res = resampy.resample(signal, sr*ratio, sr, axis=0, filter='sinc_window', num_zeros=8)
-			io_ops.write_file(file_path, signal, sr, channels, "_resampled_%.3f" % percentage)
+			io_ops.write_file(self.file_src, res, sr, channels, "_resampled_%.3f" % percentage)
 			
 	def plot(self):
 		# discards the old graph

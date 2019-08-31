@@ -72,22 +72,24 @@ class FileWidget(QtWidgets.QLineEdit):
 	"""An entry widget that starts a file selector when clicked and also accepts drag & drop.
 	Displays the current file's basename.
 	"""
-	# todo: connect to load_audio
 
-	def __init__(self, parent, cfg, description=""):
+	def __init__(self, parent, cfg, description="", ask_user=True):
 		super(FileWidget, self).__init__(parent)
 		self.parent = parent
-		self.cfg = cfg#["dir_in"]
-		# self.cfg = parent.parent.cfg#["dir_in"]
+		self.cfg = cfg
+		if not self.cfg:
+			self.cfg["dir_in"]  = "C://"
 		self.setDragEnabled(True)
 		self.setReadOnly(True)
-		# self.dirty = False
 		self.filepath = ""
 		self.description = description
 		self.setToolTip(self.description)
+		self.ask_user = ask_user
 			
 	def abort_open_new_file(self, new_filepath):
 		# only return True if we should abort
+		if not self.ask_user:
+			return False
 		if new_filepath == self.filepath:
 			return True
 		if self.filepath:
@@ -101,7 +103,6 @@ class FileWidget(QtWidgets.QLineEdit):
 					self.filepath = filepath
 					self.cfg["dir_in"], filename = os.path.split(filepath)
 					self.setText(filename)
-					# self.dirty = True
 					self.parent.poll()
 			else:
 				showdialog("Unsupported File Format")
@@ -563,6 +564,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.props = object_widget(parent=self, count=count)
 		self.canvas = canvas_widget(parent=self)
 		self.canvas.props = self.props
+		self.props.file_widget.on_load_file = self.canvas.load_audio
 
 		splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 		splitter.addWidget(self.canvas.native)
@@ -586,17 +588,18 @@ class FilesWidget(QtWidgets.QWidget):
 	controls what happens when they are loaded
 	"""
 
-	def __init__(self, parent, count):
+	def __init__(self, parent, count, cfg={}, ask_user=True):
 		super(FilesWidget, self).__init__(parent)
 		self.parent = parent
 		#note: count must be 1 or 2
 		# idiosyncratic order here so the complicated stuff can remain as is
 		descriptions = ("Reference", "Source")
-		self.files = [FileWidget(self, parent.parent.cfg, description) for description in descriptions[-count:] ]
+		self.files = [FileWidget(self, cfg, description, ask_user) for description in descriptions[-count:] ]
 		vbox2(self, self.files)
 		self.poll()
 		
 	def ask_open(self):
+		# propagates the open action onto child widgets which then call a file selector
 		for w in self.files:
 			w.ask_open()
 			
@@ -606,9 +609,12 @@ class FilesWidget(QtWidgets.QWidget):
 		# only continue if all slots are filled with files
 		if all(self.filepaths):
 			self.load()
-	
+			
+	def on_load_file(self, filepaths):
+		print("No loading function defined!")
+		
 	def load(self):
-		self.parent.parent.canvas.load_audio(self.filepaths)
+		self.on_load_file(self.filepaths)
 		
 class ParamWidget(QtWidgets.QWidget):
 	"""
@@ -620,7 +626,7 @@ class ParamWidget(QtWidgets.QWidget):
 		
 		self.parent = parent
 		
-		self.file_widget = FilesWidget(self, count)
+		self.file_widget = FilesWidget(self, count, self.parent.cfg)
 		self.display_widget = DisplayWidget()
 		self.tracing_widget = TracingWidget()
 		self.resampling_widget = ResamplingWidget()

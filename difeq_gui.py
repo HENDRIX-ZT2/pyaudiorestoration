@@ -46,17 +46,17 @@ def indent(e, level=0):
 		if level and (not e.tail or not e.tail.strip()): e.tail = i
 		
 def write_eq(file_path, freqs, dB):
-		tree=ET.ElementTree()
-		equalizationeffect = ET.Element('equalizationeffect')
-		curve=ET.SubElement(equalizationeffect, 'curve')
-		curve.attrib["name"] = os.path.basename(file_path)[:-4]
-		for f,d in zip(freqs,dB):
-			point=ET.SubElement(curve, 'point')
-			point.attrib["f"] = str(f)
-			point.attrib["d"] = str(d)
-		tree._setroot(equalizationeffect)
-		indent(equalizationeffect)
-		tree.write(file_path)
+	tree=ET.ElementTree()
+	equalizationeffect = ET.Element('equalizationeffect')
+	curve=ET.SubElement(equalizationeffect, 'curve')
+	curve.attrib["name"] = os.path.basename(file_path)[:-4]
+	for f,d in zip(freqs,dB):
+		point=ET.SubElement(curve, 'point')
+		point.attrib["f"] = str(f)
+		point.attrib["d"] = str(d)
+	tree._setroot(equalizationeffect)
+	indent(equalizationeffect)
+	tree.write(file_path)
 		
 def get_eq(file_src, file_ref, channel_mode):
 	print("Comparing channels:",channel_mode)
@@ -109,9 +109,11 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.toolbar = NavigationToolbar(self.canvas, self)
 
 		# Just some button connected to `plot` method
+		self.file_widget = widgets.FilesWidget(self, 2, self.cfg, ask_user=False)
+		self.file_widget.on_load_file = self.foo
 		self.b_add = QtWidgets.QPushButton('+')
 		self.b_add.setToolTip("Add a source - reference pair to the list.")
-		self.b_add.clicked.connect(self.add)
+		self.b_add.clicked.connect(self.open)
 		self.b_delete = QtWidgets.QPushButton('-')
 		self.b_delete.setToolTip("Delete the selected source - reference pair from the list.")
 		self.b_delete.clicked.connect(self.delete)
@@ -164,38 +166,41 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.qgrid.setVerticalSpacing(0)
 		self.qgrid.addWidget(self.toolbar, 0, 0, 1, 2)
 		self.qgrid.addWidget(self.canvas, 1, 0, 1, 2)
-		self.qgrid.addWidget(self.listWidget, 2, 0, 8, 1)
-		self.qgrid.addWidget(self.b_add, 2, 1)
-		self.qgrid.addWidget(self.b_delete, 3, 1)
-		self.qgrid.addWidget(self.b_save, 4, 1)
-		self.qgrid.addWidget(self.s_rolloff_start, 5, 1)
-		self.qgrid.addWidget(self.s_rolloff_end, 6, 1)
-		self.qgrid.addWidget(self.c_channels, 7, 1)
-		self.qgrid.addWidget(self.s_output_res, 8, 1)
-		self.qgrid.addWidget(self.s_smoothing, 9, 1)
-		self.qgrid.addWidget(self.s_strength, 10, 1)
-		self.qgrid.addWidget(self.b_noise, 11, 1)
+		self.qgrid.addWidget(self.listWidget, 2, 0, 9, 1)
+		self.qgrid.addWidget(self.file_widget, 2, 1)
+		self.qgrid.addWidget(self.b_add, 3, 1)
+		self.qgrid.addWidget(self.b_delete, 4, 1)
+		self.qgrid.addWidget(self.b_save, 5, 1)
+		self.qgrid.addWidget(self.s_rolloff_start, 6, 1)
+		self.qgrid.addWidget(self.s_rolloff_end, 7, 1)
+		self.qgrid.addWidget(self.c_channels, 8, 1)
+		self.qgrid.addWidget(self.s_output_res, 9, 1)
+		self.qgrid.addWidget(self.s_smoothing, 10, 1)
+		self.qgrid.addWidget(self.s_strength, 11, 1)
+		# self.qgrid.addWidget(self.b_noise, 11, 1)
 		
 		self.colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 		self.central_widget.setLayout(self.qgrid)
 		
+	def foo(self, filepaths):
+		pass
 		
-	def add(self):
-		file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.cfg["dir_in"], "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
-		if file_src:
-			self.cfg["dir_in"], src_name = os.path.split(file_src)
-			file_ref = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', self.cfg["dir_in"], "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
-			if file_ref:
-				channel_mode = self.c_channels.currentText()
-				self.cfg["dir_in"], ref_name = os.path.split(file_ref)
-				eq_name = src_name +" ("+channel_mode+") -> " + ref_name+" ("+channel_mode+")"
-				self.freqs, eq = get_eq(file_src, file_ref, channel_mode)
-				self.listWidget.addItem(eq_name)
-				self.names.append(eq_name)
-				self.eqs.append( eq )
-				self.update_color(eq_name)
-				self.plot()
-				
+	def open(self, ):
+		filepaths = self.file_widget.filepaths
+		if filepaths and len(filepaths) == 2:
+			file_src = filepaths[1]
+			file_ref = filepaths[0]
+			src_name = os.path.basename(file_src)
+			ref_name = os.path.basename(file_ref)
+			channel_mode = self.c_channels.currentText()
+			eq_name = src_name +" ("+channel_mode+") -> " + ref_name+" ("+channel_mode+")"
+			self.freqs, eq = get_eq(file_src, file_ref, channel_mode)
+			self.listWidget.addItem(eq_name)
+			self.names.append(eq_name)
+			self.eqs.append( eq )
+			self.update_color(eq_name)
+			self.plot()
+			
 	def add_noise(self):
 		file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.cfg["dir_in"], "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
 		if file_src:

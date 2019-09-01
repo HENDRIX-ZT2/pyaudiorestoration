@@ -105,7 +105,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			i1 = int(t1*sr/hop)
 			data = self.master_speed.data[i0:i1]
 			freqs = np.power(2, data[:,1]+np.log2(np.mean(means)))
-			line = TraceLine(self, data[:,0], freqs, np.mean(offsets))
+			line = markers.TraceLine(self, data[:,0], freqs, np.mean(offsets))
 			self.master_speed.update()
 			
 	def restore_traces(self):

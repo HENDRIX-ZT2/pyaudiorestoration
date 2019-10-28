@@ -5,8 +5,9 @@ A set of tools to restore audio quality from a variety of old analog sources, su
 - Wow & Flutter Removal
 - Speed matching to hum frequency
 - EQ matching with differential EQ
-- Spectral Alignment
+- Spectral Temporal Alignment
 - Automatic Dropout Restoration
+- Spectral Expander / Decompressor
 
 ### Installation
 You need to have installed:

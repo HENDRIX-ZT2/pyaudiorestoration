@@ -16,3 +16,12 @@ def to_dB(a):
 	
 def to_fac(a):
 	return np.power(10, a/20)
+
+def normalize(_d, copy=False):
+	# d is a (n x dimension) np array
+	d = _d if not copy else np.copy(_d)
+	m = np.max(np.abs(_d))
+	# d -= np.min(d, axis=0)
+	d /= m
+	print(m)
+	return d

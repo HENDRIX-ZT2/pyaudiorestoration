@@ -3,7 +3,7 @@ import numpy as np
 from vispy import color
 from PyQt5 import QtGui, QtCore, QtWidgets
 
-from util import units, config, qt_theme
+from util import units, config, qt_theme, colormaps
 
 myFont=QtGui.QFont()
 myFont.setBold(True)
@@ -160,20 +160,19 @@ class DisplayWidget(QtWidgets.QWidget):
 		if with_canvas:
 			show_l = QtWidgets.QLabel("Show")
 			self.show_c = QtWidgets.QComboBox(self)
-			self.show_c.addItems(("Both","Traces","Regressions"))
+			self.show_c.addItems(("Both", "Traces", "Regressions"))
 			
 			cmap_l = QtWidgets.QLabel("Colors")
 			self.cmap_c = QtWidgets.QComboBox(self)
-			self.cmap_c.addItems(sorted(color.colormap.get_colormaps().keys()))
-			self.cmap_c.setCurrentText("viridis")
-		
-			
+			self.cmap_c.addItems(sorted(colormaps.cmaps.keys()))
+			# self.cmap_c.setCurrentText("viridis")
+
 			buttons.extend( ((show_l, self.show_c), (cmap_l,self.cmap_c)) )
 			
 		vbox(self, grid(buttons))
 		
 		if with_canvas:
-			#only connect in the end
+			# only connect in the end
 			self.fft_c.currentIndexChanged.connect(self.update_fft_settings)
 			self.overlap_c.currentIndexChanged.connect(self.update_fft_settings)
 			self.show_c.currentIndexChanged.connect(self.update_show_settings)
@@ -222,6 +221,7 @@ class DisplayWidget(QtWidgets.QWidget):
 				
 	def update_cmap(self):
 		self.canvas.set_colormap(self.cmap_c.currentText())	
+
 
 class TracingWidget(QtWidgets.QWidget):
 	def __init__(self,):

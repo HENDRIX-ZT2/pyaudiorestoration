@@ -200,7 +200,7 @@ class MainWindow(QtWidgets.QMainWindow):
 							right = np.mean(vol[peak_i+d:peak_i+2*d])
 							m = (left-right) / (2*d)
 							# only use it if slant is desirable
-							#actually better make this abs() to avoid adding reverb
+							# actually better make this abs() to avoid adding reverb
 							# if not m < -.5:
 							if abs(m) < max_slope:
 								# now interpolate a new patch and get gain from difference to original volume curve
@@ -217,6 +217,7 @@ class MainWindow(QtWidgets.QMainWindow):
 					signal[:,channel] += filters.butter_bandpass_filter(vol_corr, f_lower_band, f_upper_band, sr, order=3)
 			
 			io_ops.write_file(file_path, signal, sr, channels)
+
 
 if __name__ == '__main__':
 	widgets.startup( MainWindow )

@@ -5,7 +5,7 @@ from vispy import scene, gloo, visuals, color
 from vispy.geometry import Rect
 
 #custom modules
-from util import vispy_ext, fourier, io_ops, qt_threads, units
+from util import vispy_ext, fourier, io_ops, qt_threads, units, colormaps
 
 #log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)
 norm_luminance = """
@@ -115,7 +115,6 @@ class Spectrum:
 			t[0] += d
 			image.transform.transforms[0].translate = t
 
-
 class SpectrumPiece(scene.Image):
 	"""
 	The visualization of one part of the whole spectrogram.
@@ -128,13 +127,13 @@ class SpectrumPiece(scene.Image):
 		self._shape = (10.0, 22500)
 		self.tex = gloo.Texture2D(texdata, format='luminance', internalformat='r32f', interpolation="linear")
 		self.get_data = visuals.shaders.Function(norm_luminance)
-		self.get_data['vmin'] = -80
-		self.get_data['vmax'] = -40
+		self.get_data['vmin'] = -100
+		self.get_data['vmax'] = -30
 		self.get_data['texture'] = self.tex
 
 		self.bb = Rect((0, 0, 1, 1))
-		self.__cmap = color.get_colormap("viridis")
 
+		self.__cmap = colormaps.cmaps["inferno"]
 		scene.Image.__init__(self, method='subdivide', grid=(1000, 1), parent=parent)
 
 		# set in the main program
@@ -157,7 +156,7 @@ class SpectrumPiece(scene.Image):
 		self.update()
 
 	def set_cmap(self, colormap):
-		self.__cmap = color.get_colormap(colormap)
+		self.__cmap = colormaps.cmaps.get(colormap, "inferno")
 		if not self.overlay:
 			# update is needed
 			self.shared_program.frag['color_transform'] = visuals.shaders.Function(
@@ -202,9 +201,9 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 		# some default dummy values
 		self.props = None
-		self.vmin = -80
-		self.vmax = -40
-		self.cmap = "viridis"
+		self.vmin = -100
+		self.vmax = -30
+		self.cmap = "inferno"
 		self.num_cores = os.cpu_count()
 		self.fft_size = 1024
 		self.hop = 256
@@ -240,8 +239,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 		right_padding = grid.add_widget(row=1, col=2, row_span=1)
 		right_padding.width_max = 70
 
-		#create the color bar display
-		self.colorbar_display = scene.ColorBarWidget(label="Gain [dB]", clim=(self.vmin, self.vmax), cmap="viridis", orientation="right", border_width=1, label_color="white")
+		# create the color bar display
+		self.colorbar_display = scene.ColorBarWidget(label="Gain [dB]", clim=(self.vmin, self.vmax), cmap="inferno", orientation="right", border_width=1, label_color="white")
 		self.colorbar_display.label.font_size = 8
 		self.colorbar_display.ticks[0].font_size = 8
 		self.colorbar_display.ticks[1].font_size = 8
@@ -256,7 +255,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.speed_view.height_min = 150
 		self.spec_view = grid.add_view(row=2, col=1, border_color='white')
 		self.spec_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0, 10, 10), )
-		#link them, but use custom logic to only link the x view
+		# link them, but use custom logic to only link the x view
 		self.spec_view.camera.link(self.speed_view.camera)
 		self.speed_yaxis.link_view(self.speed_view)
 		self.spec_xaxis.link_view(self.spec_view)
@@ -382,15 +381,17 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.set_colormap(self.cmap)
 		# don't bother with audio until it is fixed
 		# self.props.audio_widget.set_data(signal[:,channel], self.sr)
-		#(re)set the spec_view
+		# (re)set the spec_view
 		self.speed_view.camera.rect = (0, -1, self.duration, 2)
 		self.spec_view.camera.rect = (0, 0, self.duration, to_mel(self.sr//2))
 
 	# fast stuff that does not require rebuilding everything
 	def set_colormap(self, cmap):
+		"""cmap is a string at this point"""
 		self.cmap = cmap
 		for spe in self.spectra:
 			spe.set_cmap(cmap)
+		# todo: fixme the colorbar needs to accept external color maps for updates
 		self.colorbar_display.cmap = cmap
 		self.colorbar_display.update()
 

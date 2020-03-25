@@ -37,7 +37,7 @@ vec4 simple_cmap(float x) {
 """
 
 
-class Spectrum():
+class Spectrum:
 	"""
 	The visualization of the whole spectrogram.
 	"""
@@ -94,6 +94,7 @@ class Spectrum():
 			image.set_clims(vmin, vmax)
 
 	def set_cmap(self, colormap):
+		print("spec set cmap", colormap)
 		for image in self.pieces:
 			image.set_cmap(colormap)
 
@@ -133,6 +134,7 @@ class SpectrumPiece(scene.Image):
 		self.get_data['texture'] = self.tex
 
 		self.bb = Rect((0, 0, 1, 1))
+		self.__cmap = color.get_colormap("viridis")
 
 		scene.Image.__init__(self, method='subdivide', grid=(1000, 1), parent=parent)
 
@@ -146,6 +148,9 @@ class SpectrumPiece(scene.Image):
 		elif self.overlay == "g":
 			self.set_gl_state('additive')
 			self.shared_program.frag['color_transform'] = visuals.shaders.Function(g_cmap)
+		else:
+			self.shared_program.frag['color_transform'] = visuals.shaders.Function(
+				self.__cmap.glsl_map)
 
 	def set_size(self, size):
 		# not sure if update is needed
@@ -153,11 +158,12 @@ class SpectrumPiece(scene.Image):
 		self.update()
 
 	def set_cmap(self, colormap):
+		print("piece set cmap", colormap)
+		self.__cmap = color.get_colormap(colormap)
 		if not self.overlay:
 			# update is needed
 			self.shared_program.frag['color_transform'] = visuals.shaders.Function(
-				color.get_colormap(colormap).glsl_map)
-			self.update()
+				self.__cmap.glsl_map)
 
 	def set_clims(self, vmin, vmax):
 		self.get_data['vmin'] = vmin
@@ -174,11 +180,19 @@ class SpectrumPiece(scene.Image):
 		if view._need_method_update:
 			self._update_method(view)
 
+		# new: for colormaps we need to set this
+		if self._need_colortransform_update:
+			prg = view.view_program
+			prg['texture2D_LUT'] = self.__cmap.texture_lut() \
+				if (hasattr(self.__cmap, 'texture_lut')) else None
+
 	def hide(self):
 		self.parent = None
 
 	def show(self):
 		self.parent = self._parent2
+
+
 class SpectrumCanvas(scene.SceneCanvas):
 	"""This class wraps the vispy canvas and controls all the visualization, as well as the interaction with it."""
 
@@ -188,7 +202,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		# long term: move a lot of these settings into the individual spectra - Spectrum class
 
 
-		#some default dummy values
+		# some default dummy values
 		self.props = None
 		self.vmin = -80
 		self.vmax = -40
@@ -376,10 +390,12 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 	# fast stuff that does not require rebuilding everything
 	def set_colormap(self, cmap):
+		print("canvas set cmap", cmap)
 		self.cmap = cmap
 		for spe in self.spectra:
-			spe.cmap = cmap
+			spe.set_cmap(cmap)
 		self.colorbar_display.cmap = cmap
+		self.colorbar_display.update()
 
 	def set_clims(self, vmin, vmax):
 		self.vmin = vmin

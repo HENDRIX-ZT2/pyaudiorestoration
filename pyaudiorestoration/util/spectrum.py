@@ -161,6 +161,7 @@ class SpectrumPiece(scene.Image):
 			# update is needed
 			self.shared_program.frag['color_transform'] = visuals.shaders.Function(
 				self.__cmap.glsl_map)
+			self.update()
 
 	def set_clims(self, vmin, vmax):
 		self.get_data['vmin'] = vmin
@@ -298,7 +299,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 		# TODO: implement adaptive / intelligent hop reusing data
 		# maybe move more into the thread
-
+		must_reset_view = False
 		self.dirty = False
 		if self.fourier_thread.jobs:
 			print("Fourier job is still running, wait!")
@@ -311,15 +312,17 @@ class SpectrumCanvas(scene.SceneCanvas):
 				# remove all ffts of the old file from storage
 				for k in [k for k in self.fft_storage if k[0] == self.filenames[i]]:
 					del self.fft_storage[k]
-
 				# now load new audio
 				self.signals[i], self.sr, self.channels = io_ops.read_file(filename)
 				self.filenames[i] = filename
+				must_reset_view = True
 		durations = [len(sig) / self.sr for sig in self.signals if sig is not None]
 		self.duration = max(durations) if durations else 0
 		self.keys = []
 		self.fft_size = fft_size
 		self.hop = fft_size // fft_overlap
+		if must_reset_view:
+			self.reset_view()
 		for filename, signal, channel in zip(self.filenames, self.signals, self.selected_channels):
 			if filename:
 				k = (filename, self.fft_size, channel, self.hop)
@@ -381,6 +384,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.set_colormap(self.cmap)
 		# don't bother with audio until it is fixed
 		# self.props.audio_widget.set_data(signal[:,channel], self.sr)
+
+	def reset_view(self,):
 		# (re)set the spec_view
 		self.speed_view.camera.rect = (0, -1, self.duration, 2)
 		self.spec_view.camera.rect = (0, 0, self.duration, to_mel(self.sr//2))
@@ -392,8 +397,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 		for spe in self.spectra:
 			spe.set_cmap(cmap)
 		# todo: fixme the colorbar needs to accept external color maps for updates
-		self.colorbar_display.cmap = cmap
-		self.colorbar_display.update()
+		# self.colorbar_display.cmap = cmap
+		# self.colorbar_display.update()
 
 	def set_clims(self, vmin, vmax):
 		self.vmin = vmin

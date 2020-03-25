@@ -94,7 +94,6 @@ class Spectrum:
 			image.set_clims(vmin, vmax)
 
 	def set_cmap(self, colormap):
-		print("spec set cmap", colormap)
 		for image in self.pieces:
 			image.set_cmap(colormap)
 
@@ -158,7 +157,6 @@ class SpectrumPiece(scene.Image):
 		self.update()
 
 	def set_cmap(self, colormap):
-		print("piece set cmap", colormap)
 		self.__cmap = color.get_colormap(colormap)
 		if not self.overlay:
 			# update is needed
@@ -390,7 +388,6 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 	# fast stuff that does not require rebuilding everything
 	def set_colormap(self, cmap):
-		print("canvas set cmap", cmap)
 		self.cmap = cmap
 		for spe in self.spectra:
 			spe.set_cmap(cmap)

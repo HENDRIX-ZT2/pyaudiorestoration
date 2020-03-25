@@ -1,0 +1,10 @@
+pyqt5
+librosa
+resampy
+pysoundfile
+matplotlib
+scipy
+numpy
+vispy
+pyfftw
+numba

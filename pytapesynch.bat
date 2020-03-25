@@ -1,1 +1,0 @@
-python pytapesynch_gui.py

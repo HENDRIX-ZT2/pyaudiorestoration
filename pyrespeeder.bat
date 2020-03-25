@@ -1,1 +1,0 @@
-python pyrespeeder_gui.py

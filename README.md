@@ -11,7 +11,9 @@ A set of tools to restore audio quality from a variety of old analog sources, su
 
 ### Installation
 You need to have installed:
-- python 3.6
+- python 3.6+
+- [FreeType](https://www.freetype.org/download.html)
+On Windows, make sure that freetype.dll is located in a folder in the system path.
 - numpy
 - numba
 - [resampy](https://resampy.readthedocs.io/)
@@ -30,6 +32,7 @@ These are just shortcuts that are equivalent to typing the following in the comm
 `python pyrespeeder_gui.py` or `python pytapesynch_gui.py` or `python difeq_gui.py` etc...
 
 Otherwise, specify the full paths to `python.exe` and the script.
+
 
 ### How to Use
 See the [wiki](https://github.com/HENDRIX-ZT2/pyaudiorestoration/wiki) for detailed instructions for the individual tools.

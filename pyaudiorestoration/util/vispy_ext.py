@@ -198,27 +198,29 @@ class MelTransform(BaseTransform):
 
 
 class ExtAxisWidget(AxisWidget):
-    """Widget containing an axis
+	"""Widget containing an axis
 
-    Parameters
-    ----------
-    orientation : str
-        Orientation of the axis, 'left' or 'bottom'.
-    **kwargs : dict
-        Keyword arguments to pass to AxisVisual.
-    """
+	Parameters
+	----------
+	orientation : str
+		Orientation of the axis, 'left' or 'bottom'.
+	**kwargs : dict
+		Keyword arguments to pass to AxisVisual.
+	"""
 
-    def __init__(self, orientation='left', **kwargs):
-        if 'tick_direction' not in kwargs:
-            tickdir = {'left': (-1, 0), 'right': (1, 0), 'bottom': (0, 1),
-                       'top': (0, -1)}[orientation]
-            kwargs['tick_direction'] = tickdir
-        self.axis = ExtAxisVisual(**kwargs)
-        self.orientation = orientation
-        self._linked_view = None
-        Widget.__init__(self)
-        self.add_subvisual(self.axis)		
-		
+	def __init__(self, orientation='left', **kwargs):
+		if 'tick_direction' not in kwargs:
+			tickdir = {'left': (-1, 0), 'right': (1, 0), 'bottom': (0, 1),
+					   'top': (0, -1)}[orientation]
+			kwargs['tick_direction'] = tickdir
+
+		self.axis = ExtAxisVisual(**kwargs)
+		self.orientation = orientation
+		self._linked_view = None
+		Widget.__init__(self)
+		self.add_subvisual(self.axis)
+
+
 class ExtAxisVisual(AxisVisual):
 	def __init__(self, pos=None, domain=(0., 1.), tick_direction=(-1., 0.),
 				 scale_type="linear", axis_color=(1, 1, 1),
@@ -248,21 +250,22 @@ class ExtAxisVisual(AxisVisual):
 		self.ticker = ExtTicker(self, anchors=anchors)
 		self.tick_direction = np.array(tick_direction, float)
 		self.scale_type = scale_type
-		self.axis_color = axis_color
-		self.tick_color = tick_color
 
 		self.minor_tick_length = minor_tick_length	# px
 		self.major_tick_length = major_tick_length	# px
 		self.tick_label_margin = tick_label_margin	# px
 		self.axis_label_margin = axis_label_margin	# px
 
-		self.axis_label = axis_label
+		self._axis_label_text = axis_label
 
 		self._need_update = True
 
-		self._line = LineVisual(method='gl', width=axis_width)
+		self._line = LineVisual(method='gl', width=axis_width, antialias=True,
+								color=axis_color)
 		self._ticks = LineVisual(method='gl', width=tick_width,
-								 connect='segments')
+								 connect='segments', antialias=True,
+								 color=tick_color)
+
 		self._text = TextVisual(font_size=tick_font_size, color=text_color)
 		self._axis_label = TextVisual(font_size=axis_font_size,
 									  color=text_color)

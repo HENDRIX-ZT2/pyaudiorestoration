@@ -1,5 +1,7 @@
 import os
 import numpy as np
+import vispy
+import sys
 from vispy import color
 from PyQt5 import QtGui, QtCore, QtWidgets
 
@@ -8,7 +10,16 @@ from util import units, config, qt_theme, colormaps
 myFont=QtGui.QFont()
 myFont.setBold(True)
 
+
+def print_version_info():
+	print("Running...")
+	print("Python:", sys.version)
+	print("Numpy:", np.__version__)
+	print("Vispy:", vispy.__version__)
+
+
 def startup(cls):
+	print_version_info()
 	appQt = QtWidgets.QApplication([])
 	
 	#style
@@ -45,7 +56,7 @@ def grid(buttons):
 	qgrid.setVerticalSpacing(0)
 	for i, line in enumerate(buttons):
 		for j, element in enumerate(line):
-			#we want to stretch that one
+			# we want to stretch that one
 			if 1 == len(line):
 				qgrid.addWidget(line[j], i, j, 1, 2)
 			else:

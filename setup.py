@@ -13,7 +13,7 @@ setup(
    author_email='',
    url="https://github.com/HENDRIX-ZT2/pyaudiorestoration",
    packages=['pyaudiorestoration'],  # same as name
-   install_requires=['pyqt5', 'librosa', 'resampy', 'pysoundfile', 'matplotlib', 'scipy', 'numpy', 'vispy', 'pyfftw', 'numba'], # external packages as dependencies
+   install_requires=['pyqt5', 'librosa', 'resampy', 'pysoundfile', 'matplotlib', 'scipy', 'numpy', 'vispy>=0.6.4', 'pyfftw', 'numba'], # external packages as dependencies
    # scripts=[
    #          'scripts/cool',
    #          'scripts/skype',

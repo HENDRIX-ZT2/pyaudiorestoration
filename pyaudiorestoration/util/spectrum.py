@@ -241,7 +241,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		right_padding.width_max = 70
 
 		# create the color bar display
-		self.colorbar_display = scene.ColorBarWidget(label="Gain [dB]", clim=(self.vmin, self.vmax), cmap="inferno", orientation="right", border_width=1, label_color="white")
+		self.colorbar_display = scene.ColorBarWidget(label="Gain [dB]", clim=(self.vmin, self.vmax), cmap="viridis", orientation="right", border_width=1, label_color="white")
 		self.colorbar_display.label.font_size = 8
 		self.colorbar_display.ticks[0].font_size = 8
 		self.colorbar_display.ticks[1].font_size = 8

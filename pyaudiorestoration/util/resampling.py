@@ -6,6 +6,7 @@ from numba import jit#, prange, guvectorize
 import math
 import threading
 
+
 def sinc_wrapper(sample_at, signal, lowpass, NT ):
 	# initialize arrays here because we can't do so in nopython mode
 	N = np.arange(-NT,NT+1, dtype="float32")
@@ -13,15 +14,15 @@ def sinc_wrapper(sample_at, signal, lowpass, NT ):
 	output = np.empty(len(sample_at), "float32")
 	sinc_core(sample_at, signal, lowpass, output, win_func, N )
 	return output
-	
-def sinc_wrapper_mt(sample_at, signal, lowpass, NT ):
+
+
+def sinc_wrapper_mt(output, sample_at, signal, lowpass, NT):
 	# manual parallelization with threading module
 	# from: http://numba.pydata.org/numba-doc/dev/user/examples.html#multi-threading
 	numthreads = os.cpu_count()
 	length = len(sample_at)
-	N = np.arange(-NT,NT+1, dtype="float32")
+	N = np.arange(-NT, NT+1, dtype="float32")
 	win_func = np.hanning(2*NT+1).astype("float32")
-	output = np.empty(length, dtype="float32")
 	chunklen = (length + numthreads - 1) // numthreads
 	# Create argument tuples for each input chunk
 	chunks = [ (sample_at[i * chunklen:(i + 1) * chunklen], signal, lowpass, output[i * chunklen:(i + 1) * chunklen], win_func, N) for i in range(numthreads)]
@@ -31,7 +32,6 @@ def sinc_wrapper_mt(sample_at, signal, lowpass, NT ):
 		thread.start()
 	for thread in threads:
 		thread.join()
-	return output
 	
 # lazy optimization is recommended
 # @jit('float32[:](float64[:], float64[:], float64[:], float32[:], float64[:], int32[:])', nopython=True, nogil=True, parallel=True)
@@ -149,7 +149,7 @@ def run(filenames, signal_data=None, speed_curve=None, resampling_mode = "Linear
 	if signal_data is None: signal_data = [None for filename in filenames]
 	for filename, sig_data in zip(filenames, signal_data):
 		start_time = time()
-		print('Resampling ' + filename + '...', resampling_mode, sinc_quality, use_channels)
+		print(f"Resampling '{os.path.basename(filename)}'...", resampling_mode, sinc_quality, use_channels)
 		#read the file
 		if sig_data:
 			signal, sr = sig_data
@@ -178,22 +178,31 @@ def run(filenames, signal_data=None, speed_curve=None, resampling_mode = "Linear
 			# speeds = np.diff(lag_curve[:,1])/np.diff(lag_curve[:,0])+1
 			# sampletimes = (lag_curve[:-1,0]+np.diff(lag_curve[:,0])/2)*sr
 			# sample_at = speed_to_pos(sampletimes, speeds)
-		dur = time() - start_time
-		print("Preparation took",dur)
+		print(f"Preparation took {time() - start_time:.3f} seconds.")
 		start_time = time()
-		#resample mono channels and export each separately
-		for progress, channel in enumerate(use_channels):
-			print('Processing channel ',channel)
-			outfilename = filename.rsplit('.', 1)[0]+str(channel)+'.wav'
-			with sf.SoundFile(outfilename, 'w+', sr, 1, subtype='FLOAT') as outfile:
-				if resampling_mode == "Sinc":
-					outfile.write( sinc_wrapper_mt(sample_at, signal[:,channel], lowpass, sinc_quality ) )
-				elif resampling_mode == "Linear":
-					outfile.write( np.interp(sample_at, samples_in, signal[:,channel]) )
-			if prog_sig: prog_sig.notifyProgress.emit((progress+1)/len(use_channels)*100)
+
+		length = len(sample_at)
+		# create multichannel output array
+		num_channels = len(use_channels)
+		# first create the output array
+		output = np.empty((length, num_channels), dtype="float32")
+
+		# enumerate because maybe we want to resample less channels than input has
+		for out_channel, in_channel in enumerate(use_channels):
+			if resampling_mode == "Sinc":
+				sinc_wrapper_mt(output[:, out_channel], sample_at, signal[:, in_channel], lowpass, sinc_quality)
+			elif resampling_mode == "Linear":
+				output[:, out_channel] = np.interp(sample_at, samples_in, signal[:, in_channel])
+			if prog_sig: prog_sig.notifyProgress.emit((out_channel + 1) / num_channels * 100)
+
+		# after all pieces have been resampled, write it out to the file
+		print(f"Resampling took {time() - start_time:.3f} seconds.")
+		start_time = time()
+		outfilename = filename.rsplit('.', 1)[0] + '_res.wav'
+		with sf.SoundFile(outfilename, 'w+', sr, num_channels, subtype='FLOAT') as outfile:
+			outfile.write(output)
 		if prog_sig: prog_sig.notifyProgress.emit(100)
-		dur = time() - start_time
-		print("Resampling took",dur)
+		print(f"Writing took {time() - start_time:.3f} seconds.")
 	print("Done!\n")
 	
 def timefunc(correct, s, func, *args, **kwargs):

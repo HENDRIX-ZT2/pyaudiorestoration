@@ -159,7 +159,9 @@ class DisplayWidget(QtWidgets.QWidget):
 		self.fft_c.addItems(("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768", "65536", "131072"))
 		self.fft_c.setToolTip("This determines the frequency resolution.")
 		self.fft_c.setCurrentIndex(5)
-		
+
+		self.clear_storage = QtWidgets.QPushButton("Clear Storage")
+
 		overlap_l = QtWidgets.QLabel("FFT Overlap")
 		self.overlap_c = QtWidgets.QComboBox(self)
 		self.overlap_c.addItems(("1", "2", "4", "8", "16", "32"))
@@ -179,7 +181,8 @@ class DisplayWidget(QtWidgets.QWidget):
 			# self.cmap_c.setCurrentText("viridis")
 
 			buttons.extend( ((show_l, self.show_c), (cmap_l,self.cmap_c)) )
-			
+
+		buttons.append((self.clear_storage,))
 		vbox(self, grid(buttons))
 		
 		if with_canvas:
@@ -188,6 +191,7 @@ class DisplayWidget(QtWidgets.QWidget):
 			self.overlap_c.currentIndexChanged.connect(self.update_fft_settings)
 			self.show_c.currentIndexChanged.connect(self.update_show_settings)
 			self.cmap_c.currentIndexChanged.connect(self.update_cmap)
+			self.clear_storage.clicked.connect(self.force_clear_storage)
 
 	@property
 	def fft_size(self): return int(self.fft_c.currentText())
@@ -233,6 +237,8 @@ class DisplayWidget(QtWidgets.QWidget):
 	def update_cmap(self):
 		self.canvas.set_colormap(self.cmap_c.currentText())	
 
+	def force_clear_storage(self):
+		self.canvas.clear_fft_storage()
 
 class TracingWidget(QtWidgets.QWidget):
 	def __init__(self,):

@@ -295,6 +295,13 @@ class SpectrumCanvas(scene.SceneCanvas):
 			self.parent.props.resampling_widget.refill(self.channels)
 			self.parent.update_file(self.filenames[0])
 
+	def clear_fft_storage(self):
+		print("Clearing FFT storage")
+		# clear all but the current spectrum (we need it for tracing)
+		for k in [k for k in self.fft_storage if k not in self.keys]:
+			print(f"deleting {k}")
+			del self.fft_storage[k]
+
 	def compute_spectra(self, filenames, fft_size, fft_overlap):
 
 		# TODO: implement adaptive / intelligent hop reusing data

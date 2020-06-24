@@ -45,7 +45,7 @@ def indent(e, level=0):
 	else:
 		if level and (not e.tail or not e.tail.strip()): e.tail = i
 		
-def write_eq(file_path, freqs, dB):
+def write_eq_xml(file_path, freqs, dB):
 	tree=ET.ElementTree()
 	equalizationeffect = ET.Element('equalizationeffect')
 	curve=ET.SubElement(equalizationeffect, 'curve')
@@ -57,7 +57,15 @@ def write_eq(file_path, freqs, dB):
 	tree._setroot(equalizationeffect)
 	indent(equalizationeffect)
 	tree.write(file_path)
-		
+
+
+def write_eq_txt(file_path, freqs, dB):
+	with open(file_path, "w") as out:
+		out.write('FilterCurve: FilterLength="8191" InterpolateLin="0" InterpolationMethod="B-spline" ')
+		for i, (f, d) in enumerate(zip(freqs, dB)):
+			out.write(f'f{i}="{f}" ')
+			out.write(f'v{i}="{d}" ')
+
 def get_eq(file_src, file_ref, channel_mode):
 	print("Comparing channels:",channel_mode)
 	#get the averaged spectrum for this audio file
@@ -237,9 +245,10 @@ class MainWindow(QtWidgets.QMainWindow):
 		if file_out:
 			try:
 				self.cfg["dir_out"], eq_name = os.path.split(file_out)
-				write_eq(file_base+"_AV.xml", self.freqs_av, np.mean(self.av, axis=0))
-				write_eq(file_base+"_L.xml", self.freqs_av, self.av[0])
-				write_eq(file_base+"_R.xml", self.freqs_av, self.av[1])
+				write_eq_xml(file_base+"_AV.xml", self.freqs_av, np.mean(self.av, axis=0))
+				write_eq_xml(file_base+"_L.xml", self.freqs_av, self.av[0])
+				write_eq_xml(file_base+"_R.xml", self.freqs_av, self.av[1])
+				write_eq_txt(file_base+".txt", self.freqs_av, np.mean(self.av, axis=0))
 			except PermissionError:
 				widgets.showdialog("Could not write files - do you have writing permissions there?")
 	

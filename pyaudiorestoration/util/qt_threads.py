@@ -21,6 +21,6 @@ class FourierThread(BaseThread):
 	result = {}
 	def run(self):
 		for signal_1d, fft_size, hop, window, num_cores, key in self.jobs:
-			self.result[key] = fourier.stft(signal_1d, fft_size, hop, window, num_cores, prog_sig=self.notifyProgress)
+			self.result[key] = fourier.get_mag(signal_1d, fft_size, hop, window, num_cores, prog_sig=self.notifyProgress)
 		self.jobs = []
 	

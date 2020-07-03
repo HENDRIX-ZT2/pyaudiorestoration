@@ -163,7 +163,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			for channel in range(channels):
 				print("Processing channel",channel)
 				#which range should dropouts be detected in?
-				imdata = fourier.stft(signal[:,channel], fft_size, hop, "hann")
+				imdata = fourier.get_mag(signal[:,channel], fft_size, hop, "hann")
 				imdata = units.to_dB(imdata)
 				#now what we generally don't want to do is "fix" dropouts of the lower bands only
 				#basically, the gain of a band should be always controlled by that of the band above

@@ -25,7 +25,7 @@ def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L"):
 			print("not enough channels for L/R comparison  - fallback to mono")
 			break
 		#get the magnitude spectrum
-		imdata = units.to_dB(fourier.stft(signal[:,channel], fft_size, hop, "hann"))
+		imdata = units.to_dB(fourier.get_mag(signal[:,channel], fft_size, hop, "hann"))
 		spec = np.mean(imdata, axis=1)
 		spectra.append(spec)
 	if len(spectra) > 1:

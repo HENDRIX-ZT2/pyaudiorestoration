@@ -26,7 +26,7 @@ def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L", star
 			break
 		#get the magnitude spectrum
 		#avoid divide by 0 error in log
-		imdata = units.to_dB(fourier.stft(signal[:,channel], fft_size, hop, "hann"))
+		imdata = units.to_dB(fourier.get_mag(signal[:,channel], fft_size, hop, "hann"))
 		spec = np.mean(imdata, axis=1)
 		spectra.append(spec)
 	#pad the data so we can compare this in a stereo setting if required

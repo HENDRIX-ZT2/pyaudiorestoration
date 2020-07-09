@@ -3,11 +3,15 @@
 # Distributed under the (new) BSD License. See LICENSE.txt for more info.
 
 import numpy as np
+from numba import jit
 import scipy
 try:
 	import pyfftw
 except:
 	print("Warning: pyfftw is not installed. Run 'pip install pyfftw' to speed up spectrogram generation.")
+
+# Constrain STFT block sizes to 256 KB
+MAX_MEM_BLOCK = 2**8 * 2**10
 
 def get_mag(*args, **kwargs):
 	"""Get the magnitude spectrum from complex input"""
@@ -297,13 +301,13 @@ def librosa_stft(y, n_fft=2048, hop_length=None, win_length=None, window='hann',
 	fft_window = get_window(window, win_length, fftbins=True)
 
 	# Pad the window out to n_fft size
-	fft_window = util.pad_center(fft_window, n_fft)
+	fft_window = pad_center(fft_window, n_fft)
 
 	# Reshape so that the window can be broadcast
 	fft_window = fft_window.reshape((-1, 1))
 
 	# Check audio is valid
-	util.valid_audio(y)
+	valid_audio(y)
 
 	# Pad the time series so that frames are centered
 	if center:
@@ -316,10 +320,10 @@ def librosa_stft(y, n_fft=2048, hop_length=None, win_length=None, window='hann',
 		raise ParameterError('n_fft={} is too small for input signal of length={}'.format(n_fft, y.shape[-1]))
 
 	# Window the time series.
-	y_frames = util.frame(y, frame_length=n_fft, hop_length=hop_length)
+	y_frames = frame(y, frame_length=n_fft, hop_length=hop_length)
 
 	if dtype is None:
-		dtype = util.dtype_r2c(y.dtype)
+		dtype = dtype_r2c(y.dtype)
 
 	# Pre-allocate the STFT matrix
 	stft_matrix = np.empty((int(1 + n_fft // 2), y_frames.shape[1]),
@@ -329,7 +333,7 @@ def librosa_stft(y, n_fft=2048, hop_length=None, win_length=None, window='hann',
 	fft = get_fftlib()
 
 	# how many columns can we fit within MAX_MEM_BLOCK?
-	n_columns = util.MAX_MEM_BLOCK // (stft_matrix.shape[0] *
+	n_columns = MAX_MEM_BLOCK // (stft_matrix.shape[0] *
 									   stft_matrix.itemsize)
 	n_columns = max(n_columns, 1)
 
@@ -340,6 +344,83 @@ def librosa_stft(y, n_fft=2048, hop_length=None, win_length=None, window='hann',
 											 y_frames[:, bl_s:bl_t],
 											 axis=0)
 	return stft_matrix
+
+def pad_center(data, size, axis=-1, **kwargs):
+    '''Pad an array to a target length along a target axis.
+    This differs from `np.pad` by centering the data prior to padding,
+    analogous to `str.center`
+    Parameters
+    ----------
+    data : np.ndarray
+        Vector to be padded and centered
+    size : int >= len(data) [scalar]
+        Length to pad ``data``
+    axis : int
+        Axis along which to pad and center the data
+    kwargs : additional keyword arguments
+      arguments passed to `np.pad`
+    Returns
+    -------
+    data_padded : np.ndarray
+        ``data`` centered and padded to length ``size`` along the
+        specified axis
+    Raises
+    ------
+    ParameterError
+        If ``size < data.shape[axis]``
+    See Also
+    --------
+    numpy.pad
+    '''
+
+    kwargs.setdefault('mode', 'constant')
+
+    n = data.shape[axis]
+
+    lpad = int((size - n) // 2)
+
+    lengths = [(0, 0)] * data.ndim
+    lengths[axis] = (lpad, int(size - n - lpad))
+
+    if lpad < 0:
+        raise ParameterError(('Target size ({:d}) must be '
+                              'at least input size ({:d})').format(size, n))
+
+    return np.pad(data, lengths, **kwargs)
+
+
+def tiny(x):
+    '''Compute the tiny-value corresponding to an input's data type.
+    This is the smallest "usable" number representable in ``x.dtype``
+    (e.g., float32).
+    This is primarily useful for determining a threshold for
+    numerical underflow in division or multiplication operations.
+    Parameters
+    ----------
+    x : number or np.ndarray
+        The array to compute the tiny-value for.
+        All that matters here is ``x.dtype``
+    Returns
+    -------
+    tiny_value : float
+        The smallest positive usable number for the type of ``x``.
+        If ``x`` is integer-typed, then the tiny value for ``np.float32``
+        is returned instead.
+    See Also
+    --------
+    numpy.finfo
+    '''
+
+    # Make sure we have an array view
+    x = np.asarray(x)
+
+    # Only floating types generate a tiny
+    if np.issubdtype(x.dtype, np.floating) or np.issubdtype(x.dtype, np.complexfloating):
+        dtype = x.dtype
+    else:
+        dtype = np.float32
+
+    return np.finfo(dtype).tiny
 
 def istft(stft_matrix, hop_length=None, win_length=None, window='hann', center=True, dtype=None, length=None):
 	"""
@@ -388,6 +469,8 @@ def istft(stft_matrix, hop_length=None, win_length=None, window='hann', center=T
 
 	n_fft = 2 * (stft_matrix.shape[0] - 1)
 
+	# librosa doesn't do this - should we? or do it in get_mag() only?
+	stft_matrix *= n_fft
 	# By default, use the entire frame
 	if win_length is None:
 		win_length = n_fft
@@ -399,7 +482,7 @@ def istft(stft_matrix, hop_length=None, win_length=None, window='hann', center=T
 	ifft_window = get_window(window, win_length, fftbins=True)
 
 	# Pad out to match n_fft, and add a broadcasting axis
-	ifft_window = util.pad_center(ifft_window, n_fft)[:, np.newaxis]
+	ifft_window = pad_center(ifft_window, n_fft)[:, np.newaxis]
 
 	# For efficiency, trim STFT frames according to signal length if available
 	if length:
@@ -415,22 +498,22 @@ def istft(stft_matrix, hop_length=None, win_length=None, window='hann', center=T
 	expected_signal_len = n_fft + hop_length * (n_frames - 1)
 
 	if dtype is None:
-		dtype = util.dtype_c2r(stft_matrix.dtype)
+		dtype = dtype_c2r(stft_matrix.dtype)
 
 	y = np.zeros(expected_signal_len, dtype=dtype)
 
-	n_columns = util.MAX_MEM_BLOCK // (stft_matrix.shape[0] *
+	n_columns = MAX_MEM_BLOCK // (stft_matrix.shape[0] *
 									   stft_matrix.itemsize)
 	n_columns = max(n_columns, 1)
 
-	fft = get_fftlib()
+	# fft = get_fftlib()
 
 	frame = 0
 	for bl_s in range(0, n_frames, n_columns):
 		bl_t = min(bl_s + n_columns, n_frames)
 
 		# invert the block and apply the window function
-		ytmp = ifft_window * fft.irfft(stft_matrix[:, bl_s:bl_t], axis=0)
+		ytmp = ifft_window * np.fft.irfft(stft_matrix[:, bl_s:bl_t], axis=0)
 
 		# Overlap-add the istft block starting at the i'th frame
 		__overlap_add(y[frame * hop_length:], ytmp, hop_length)
@@ -445,7 +528,7 @@ def istft(stft_matrix, hop_length=None, win_length=None, window='hann', center=T
 									   hop_length=hop_length,
 									   dtype=dtype)
 
-	approx_nonzero_indices = ifft_window_sum > util.tiny(ifft_window_sum)
+	approx_nonzero_indices = ifft_window_sum > tiny(ifft_window_sum)
 	y[approx_nonzero_indices] /= ifft_window_sum[approx_nonzero_indices]
 
 	if length is None:
@@ -464,9 +547,258 @@ def istft(stft_matrix, hop_length=None, win_length=None, window='hann', center=T
 			# If we're not centering, start at 0 and trim/pad as necessary
 			start = 0
 
-		y = util.fix_length(y[start:], length)
+		y = fix_length(y[start:], length)
 
 	return y
+
+
+def fix_length(data, size, axis=-1, **kwargs):
+    '''Fix the length an array ``data`` to exactly ``size`` along a target axis.
+    If ``data.shape[axis] < n``, pad according to the provided kwargs.
+    By default, ``data`` is padded with trailing zeros.
+    Parameters
+    ----------
+    data : np.ndarray
+      array to be length-adjusted
+    size : int >= 0 [scalar]
+      desired length of the array
+    axis : int, <= data.ndim
+      axis along which to fix length
+    kwargs : additional keyword arguments
+        Parameters to ``np.pad``
+    Returns
+    -------
+    data_fixed : np.ndarray [shape=data.shape]
+        ``data`` either trimmed or padded to length ``size``
+        along the specified axis.
+    See Also
+    --------
+    numpy.pad
+    '''
+
+    kwargs.setdefault('mode', 'constant')
+
+    n = data.shape[axis]
+
+    if n > size:
+        slices = [slice(None)] * data.ndim
+        slices[axis] = slice(0, size)
+        return data[tuple(slices)]
+
+    elif n < size:
+        lengths = [(0, 0)] * data.ndim
+        lengths[axis] = (0, size - n)
+        return np.pad(data, lengths, **kwargs)
+
+    return data
+
+@jit(nopython=True, cache=True)
+def __window_ss_fill(x, win_sq, n_frames, hop_length):  # pragma: no cover
+    '''Helper function for window sum-square calculation.'''
+
+    n = len(x)
+    n_fft = len(win_sq)
+    for i in range(n_frames):
+        sample = i * hop_length
+        x[sample:min(n, sample + n_fft)] += win_sq[:max(0, min(n_fft, n - sample))]
+
+
+def window_sumsquare(window, n_frames, hop_length=512, win_length=None, n_fft=2048,
+                     dtype=np.float32, norm=None):
+    '''Compute the sum-square envelope of a window function at a given hop length.
+    This is used to estimate modulation effects induced by windowing observations
+    in short-time Fourier transforms.
+    Parameters
+    ----------
+    window : string, tuple, number, callable, or list-like
+        Window specification, as in `get_window`
+    n_frames : int > 0
+        The number of analysis frames
+    hop_length : int > 0
+        The number of samples to advance between frames
+    win_length : [optional]
+        The length of the window function.  By default, this matches ``n_fft``.
+    n_fft : int > 0
+        The length of each analysis frame.
+    dtype : np.dtype
+        The data type of the output
+    Returns
+    -------
+    wss : np.ndarray, shape=``(n_fft + hop_length * (n_frames - 1))``
+        The sum-squared envelope of the window function
+    Examples
+    --------
+    For a fixed frame length (2048), compare modulation effects for a Hann window
+    at different hop lengths:
+    >>> n_frames = 50
+    >>> wss_256 = librosa.filters.window_sumsquare('hann', n_frames, hop_length=256)
+    >>> wss_512 = librosa.filters.window_sumsquare('hann', n_frames, hop_length=512)
+    >>> wss_1024 = librosa.filters.window_sumsquare('hann', n_frames, hop_length=1024)
+    >>> import matplotlib.pyplot as plt
+    >>> fig, ax = plt.subplots(nrows=3, sharey=True)
+    >>> ax[0].plot(wss_256)
+    >>> ax[0].set(title='hop_length=256')
+    >>> ax[1].plot(wss_512)
+    >>> ax[1].set(title='hop_length=512')
+    >>> ax[2].plot(wss_1024)
+    >>> ax[2].set(title='hop_length=1024')
+    '''
+    if win_length is None:
+        win_length = n_fft
+
+    n = n_fft + hop_length * (n_frames - 1)
+    x = np.zeros(n, dtype=dtype)
+
+    # Compute the squared window at the desired length
+    win_sq = get_window(window, win_length)
+    win_sq = normalize(win_sq, norm=norm) ** 2
+    win_sq = pad_center(win_sq, n_fft)
+
+    # Fill the envelope
+    __window_ss_fill(x, win_sq, n_frames, hop_length)
+
+    return x
+
+
+def normalize(S, norm=np.inf, axis=0, threshold=None, fill=None):
+    '''Normalize an array along a chosen axis.
+    Given a norm (described below) and a target axis, the input
+    array is scaled so that::
+        norm(S, axis=axis) == 1
+    For example, ``axis=0`` normalizes each column of a 2-d array
+    by aggregating over the rows (0-axis).
+    Similarly, ``axis=1`` normalizes each row of a 2-d array.
+    This function also supports thresholding small-norm slices:
+    any slice (i.e., row or column) with norm below a specified
+    ``threshold`` can be left un-normalized, set to all-zeros, or
+    filled with uniform non-zero values that normalize to 1.
+    Note: the semantics of this function differ from
+    `scipy.linalg.norm` in two ways: multi-dimensional arrays
+    are supported, but matrix-norms are not.
+    Parameters
+    ----------
+    S : np.ndarray
+        The matrix to normalize
+    norm : {np.inf, -np.inf, 0, float > 0, None}
+        - `np.inf`  : maximum absolute value
+        - `-np.inf` : mininum absolute value
+        - `0`    : number of non-zeros (the support)
+        - float  : corresponding l_p norm
+            See `scipy.linalg.norm` for details.
+        - None : no normalization is performed
+    axis : int [scalar]
+        Axis along which to compute the norm.
+    threshold : number > 0 [optional]
+        Only the columns (or rows) with norm at least ``threshold`` are
+        normalized.
+        By default, the threshold is determined from
+        the numerical precision of ``S.dtype``.
+    fill : None or bool
+        If None, then columns (or rows) with norm below ``threshold``
+        are left as is.
+        If False, then columns (rows) with norm below ``threshold``
+        are set to 0.
+        If True, then columns (rows) with norm below ``threshold``
+        are filled uniformly such that the corresponding norm is 1.
+        .. note:: ``fill=True`` is incompatible with ``norm=0`` because
+            no uniform vector exists with l0 "norm" equal to 1.
+    Returns
+    -------
+    S_norm : np.ndarray [shape=S.shape]
+        Normalized array
+    Raises
+    ------
+    ParameterError
+        If ``norm`` is not among the valid types defined above
+        If ``S`` is not finite
+        If ``fill=True`` and ``norm=0``
+    See Also
+    --------
+    scipy.linalg.norm
+    '''
+
+    # Avoid div-by-zero
+    if threshold is None:
+        threshold = tiny(S)
+
+    elif threshold <= 0:
+        raise ParameterError('threshold={} must be strictly '
+                             'positive'.format(threshold))
+
+    if fill not in [None, False, True]:
+        raise ParameterError('fill={} must be None or boolean'.format(fill))
+
+    if not np.all(np.isfinite(S)):
+        raise ParameterError('Input must be finite')
+
+    # All norms only depend on magnitude, let's do that first
+    mag = np.abs(S).astype(np.float)
+
+    # For max/min norms, filling with 1 works
+    fill_norm = 1
+
+    if norm == np.inf:
+        length = np.max(mag, axis=axis, keepdims=True)
+
+    elif norm == -np.inf:
+        length = np.min(mag, axis=axis, keepdims=True)
+
+    elif norm == 0:
+        if fill is True:
+            raise ParameterError('Cannot normalize with norm=0 and fill=True')
+
+        length = np.sum(mag > 0, axis=axis, keepdims=True, dtype=mag.dtype)
+
+    elif np.issubdtype(type(norm), np.number) and norm > 0:
+        length = np.sum(mag**norm, axis=axis, keepdims=True)**(1./norm)
+
+        if axis is None:
+            fill_norm = mag.size**(-1./norm)
+        else:
+            fill_norm = mag.shape[axis]**(-1./norm)
+
+    elif norm is None:
+        return S
+
+    else:
+        raise ParameterError('Unsupported norm: {}'.format(repr(norm)))
+
+    # indices where norm is below the threshold
+    small_idx = length < threshold
+
+    Snorm = np.empty_like(S)
+    if fill is None:
+        # Leave small indices un-normalized
+        length[small_idx] = 1.0
+        Snorm[:] = S / length
+
+    elif fill:
+        # If we have a non-zero fill value, we locate those entries by
+        # doing a nan-divide.
+        # If S was finite, then length is finite (except for small positions)
+        length[small_idx] = np.nan
+        Snorm[:] = S / length
+        Snorm[np.isnan(Snorm)] = fill_norm
+    else:
+        # Set small values to zero by doing an inf-divide.
+        # This is safe (by IEEE-754) as long as S is finite.
+        length[small_idx] = np.inf
+        Snorm[:] = S / length
+
+    return Snorm
+
+
+@jit(nopython=True, cache=True)
+def __overlap_add(y, ytmp, hop_length):
+    # numba-accelerated overlap add for inverse stft
+    # y is the pre-allocated output buffer
+    # ytmp is the windowed inverse-stft frames
+    # hop_length is the hop-length of the STFT analysis
+
+    n_fft = ytmp.shape[0]
+    for frame in range(ytmp.shape[1]):
+        sample = frame * hop_length
+        y[sample:(sample + n_fft)] += ytmp[:, frame]
 
 def fft_freqs(n_fft, fs):
 	"""Return frequencies for DFT

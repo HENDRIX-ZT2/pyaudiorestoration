@@ -2,7 +2,7 @@ import numpy as np
 import soundfile as sf
 import os
 import scipy.signal
-import librosa
+# import librosa
 
 from PyQt5 import QtWidgets, QtGui, QtCore
 
@@ -129,15 +129,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
 			n = len(signal)
 			# pad input stereo signal
-			y_pad = librosa.util.fix_length(signal, n + fft_size // 2, axis=0)
+			y_pad = fourier.fix_length(signal, n + fft_size // 2, axis=0)
 			# take FFT for each channel
-			D_L = librosa.stft(y_pad[:,0], n_fft=fft_size, hop_length=hop)
-			D_R = librosa.stft(y_pad[:,1], n_fft=fft_size, hop_length=hop)
+			D_L = fourier.stft(y_pad[:,0], n_fft=fft_size, step=hop)
+			D_R = fourier.stft(y_pad[:,1], n_fft=fft_size, step=hop)
 
 			# take the max of each bin
 			D_out = np.where( np.abs(D_L) > np.abs(D_R), D_L, D_R )
 			# take iFFT
-			y_out = librosa.istft(D_out, length=n, hop_length=hop)
+			y_out = fourier.istft(D_out, length=n, hop_length=hop)
 
 			io_ops.write_file(file_path, y_out, sr, 1)
 		

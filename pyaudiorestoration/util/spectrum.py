@@ -133,7 +133,7 @@ class SpectrumPiece(scene.Image):
 
 		self.bb = Rect((0, 0, 1, 1))
 
-		self.__cmap = colormaps.cmaps["inferno"]
+		self.__cmap = colormaps.cmaps["izo"]
 		scene.Image.__init__(self, method='subdivide', grid=(1000, 1), parent=parent)
 
 		# set in the main program
@@ -156,7 +156,7 @@ class SpectrumPiece(scene.Image):
 		self.update()
 
 	def set_cmap(self, colormap):
-		self.__cmap = colormaps.cmaps.get(colormap, "inferno")
+		self.__cmap = colormaps.cmaps.get(colormap, "izo")
 		if not self.overlay:
 			# update is needed
 			self.shared_program.frag['color_transform'] = visuals.shaders.Function(
@@ -204,7 +204,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.props = None
 		self.vmin = -100
 		self.vmax = -30
-		self.cmap = "inferno"
+		self.cmap = "izo"
 		self.num_cores = os.cpu_count()
 		self.fft_size = 1024
 		self.hop = 256
@@ -245,7 +245,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.colorbar_display.label.font_size = 8
 		self.colorbar_display.ticks[0].font_size = 8
 		self.colorbar_display.ticks[1].font_size = 8
-		self.colorbar_display.cmap = "inferno"
+		self.colorbar_display.cmap = "izo"
 
 		grid.add_widget(self.speed_yaxis, row=1, col=0)
 		grid.add_widget(self.spec_yaxis, row=2, col=0)

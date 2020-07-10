@@ -178,7 +178,7 @@ class DisplayWidget(QtWidgets.QWidget):
 			cmap_l = QtWidgets.QLabel("Colors")
 			self.cmap_c = QtWidgets.QComboBox(self)
 			self.cmap_c.addItems(sorted(colormaps.cmaps.keys()))
-			# self.cmap_c.setCurrentText("viridis")
+			self.cmap_c.setCurrentText("izo")
 
 			buttons.extend( ((show_l, self.show_c), (cmap_l,self.cmap_c)) )
 

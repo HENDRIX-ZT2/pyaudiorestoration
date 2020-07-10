@@ -241,10 +241,11 @@ class SpectrumCanvas(scene.SceneCanvas):
 		right_padding.width_max = 70
 
 		# create the color bar display
-		self.colorbar_display = scene.ColorBarWidget(label="Gain [dB]", clim=(self.vmin, self.vmax), cmap="viridis", orientation="right", border_width=1, label_color="white")
+		self.colorbar_display = vispy_ext.ColorBarWidgetExt(label="Gain [dB]", clim=(self.vmin, self.vmax), cmap="viridis", orientation="right", border_width=1, label_color="white")
 		self.colorbar_display.label.font_size = 8
 		self.colorbar_display.ticks[0].font_size = 8
 		self.colorbar_display.ticks[1].font_size = 8
+		self.colorbar_display.cmap = "inferno"
 
 		grid.add_widget(self.speed_yaxis, row=1, col=0)
 		grid.add_widget(self.spec_yaxis, row=2, col=0)
@@ -404,9 +405,14 @@ class SpectrumCanvas(scene.SceneCanvas):
 		for spe in self.spectra:
 			spe.set_cmap(cmap)
 		# todo: fixme the colorbar needs to accept external color maps for updates
-		# self.colorbar_display.cmap = cmap
-		# self.colorbar_display.update()
-
+		self.colorbar_display.cmap = cmap
+		self.colorbar_display.update()
+		# print(self.colorbar_display._ColorBarVisual__cmap)
+	#
+	# @cmap.setter
+	# def cmap(self, cmap):
+	# 	self._cmap = get_colormap(cmap)
+	# 	self._program.frag['color_transform'] = Function(self._cmap.glsl_map)
 	def set_clims(self, vmin, vmax):
 		self.vmin = vmin
 		self.vmax = vmax

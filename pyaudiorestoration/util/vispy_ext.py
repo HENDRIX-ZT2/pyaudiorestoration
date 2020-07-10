@@ -9,11 +9,11 @@ from vispy.visuals.axis import (AxisVisual, Ticker)
 from vispy.visuals.text import TextVisual
 from vispy.visuals.line import LineVisual
 from vispy.visuals import CompoundVisual
-from vispy.scene import PanZoomCamera, AxisWidget#, BaseCamera
-from vispy.scene.widgets import Widget
-#from vispy.visuals.transforms import STTransform
+from vispy.scene import PanZoomCamera, AxisWidget
+from vispy.scene.widgets import Widget, ColorBarWidget
 from vispy.geometry import Rect
-from util import units
+from vispy import scene, gloo, visuals, color
+from util import units, colormaps
 
 class PanZoomCameraExt(PanZoomCamera):
 	""" Camera implementing 2D pan/zoom mouse interaction.
@@ -196,6 +196,18 @@ class MelTransform(BaseTransform):
 	def __repr__(self):
 		return "<MelTransform>"
 
+class ColorBarWidgetExt(ColorBarWidget):
+
+	@property
+	def cmap(self):
+		return self._colorbar.cmap
+
+	@cmap.setter
+	def cmap(self, colormap):
+		core_color_vis = self._colorbar._colorbar
+		core_color_vis._cmap = colormaps.cmaps.get(colormap, "izo")
+		core_color_vis._program.frag['color_transform'] = visuals.shaders.Function(core_color_vis._cmap.glsl_map)
+		core_color_vis._update()
 
 class ExtAxisWidget(AxisWidget):
 	"""Widget containing an axis

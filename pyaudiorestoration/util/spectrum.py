@@ -404,15 +404,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.cmap = cmap
 		for spe in self.spectra:
 			spe.set_cmap(cmap)
-		# todo: fixme the colorbar needs to accept external color maps for updates
 		self.colorbar_display.cmap = cmap
-		self.colorbar_display.update()
-		# print(self.colorbar_display._ColorBarVisual__cmap)
-	#
-	# @cmap.setter
-	# def cmap(self, cmap):
-	# 	self._cmap = get_colormap(cmap)
-	# 	self._program.frag['color_transform'] = Function(self._cmap.glsl_map)
+
 	def set_clims(self, vmin, vmax):
 		self.vmin = vmin
 		self.vmax = vmax

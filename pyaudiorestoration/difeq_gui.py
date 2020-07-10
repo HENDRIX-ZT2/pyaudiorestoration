@@ -76,9 +76,10 @@ def get_eq(file_src, file_ref, channel_mode):
 	spectra_ref, sr_ref = spectrum_from_audio(file_ref, fft_size, hop, channel_mode)
 
 	freqs = fourier.fft_freqs(fft_size, sr_src)
-	#resample the ref spectrum to match the source
+	# resample the ref spectrum to match the source
 	if sr_src != sr_ref:
-		spectra_ref = np.interp(freqs, fourier.fft_freqs(fft_size, sr_ref), spectra_ref)
+		for channel_i, spectrum in enumerate(spectra_ref):
+			spectra_ref[channel_i] = np.interp(freqs, fourier.fft_freqs(fft_size, sr_ref), spectrum)
 	return freqs, np.asarray(spectra_ref)-np.asarray(spectra_src)
 	
 	

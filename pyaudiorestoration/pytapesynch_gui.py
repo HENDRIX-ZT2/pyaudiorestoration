@@ -109,8 +109,9 @@ class Canvas(spectrum.SpectrumCanvas):
 					self.lag_line.update()
 					print("raw accuracy (smp)",raw_lag)
 					print("extra accuracy (smp)",result)
-				except:
+				except BaseException as err:
 					print("Refining error!")
+					print(err)
 	
 	def select_all(self):
 		for trace in self.lag_samples:

@@ -455,7 +455,59 @@ class DropoutWidget(QtWidgets.QWidget):
 	@property
 	def max_width(self): return self.max_width_s.value()
 
+
+class HPSSWidget(QtWidgets.QWidget):
+	def __init__(self, ):
+		QtWidgets.QWidget.__init__(self, )
+
+		dropouts_l = QtWidgets.QLabel("\nHPSS")
+		dropouts_l.setFont(myFont)
+
+		self.h_kernel_l = QtWidgets.QLabel("Harmonic Kernel")
+		self.h_kernel_s = QtWidgets.QSpinBox()
+		self.h_kernel_s.setRange(1, 99)
+		self.h_kernel_s.setSingleStep(1)
+		self.h_kernel_s.setValue(31)
+		self.h_kernel_s.setToolTip("Kernel size for the harmonic median filter.")
 		
+		self.p_kernel_l = QtWidgets.QLabel("Percussive Kernel")
+		self.p_kernel_s = QtWidgets.QSpinBox()
+		self.p_kernel_s.setRange(1, 99)
+		self.p_kernel_s.setSingleStep(1)
+		self.p_kernel_s.setValue(31)
+		self.p_kernel_s.setToolTip("Kernel size for the percussive median filter.")
+
+		self.power_l = QtWidgets.QLabel("Power")
+		self.power_s = QtWidgets.QDoubleSpinBox()
+		self.power_s.setRange(0.0, 10)
+		self.power_s.setSingleStep(.1)
+		self.power_s.setValue(2.0)
+		self.power_s.setToolTip("Exponent for the Wiener filter when constructing soft mask matrices.")
+
+		self.margin_l = QtWidgets.QLabel("Margin")
+		self.margin_s = QtWidgets.QDoubleSpinBox()
+		self.margin_s.setRange(0.000001, 99)
+		self.margin_s.setSingleStep(.01)
+		self.margin_s.setValue(1.0)
+		self.margin_s.setToolTip("margin size(s) for the masks")
+
+		buttons = (
+		(dropouts_l,), (self.h_kernel_l, self.h_kernel_s), (self.p_kernel_l, self.p_kernel_s), (self.power_l, self.power_s), (self.margin_l, self.margin_s))
+		vbox(self, grid(buttons))
+
+	@property
+	def h_kernel(self): return self.h_kernel_s.value()
+
+	@property
+	def p_kernel(self): return self.p_kernel_s.value()
+
+	@property
+	def power(self): return self.power_s.value()
+
+	@property
+	def margin(self): return self.margin_s.value()
+
+
 class ResamplingWidget(QtWidgets.QWidget):
 	def __init__(self, ):
 		QtWidgets.QWidget.__init__(self,)

@@ -146,6 +146,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		max_width = self.dropout_widget.max_width
 		max_slope = self.dropout_widget.max_slope
 		num_bands = self.dropout_widget.num_bands
+		bottom_freedom = self.dropout_widget.bottom_freedom
 		f_upper = self.dropout_widget.f_upper
 		f_lower = self.dropout_widget.f_lower
 		
@@ -170,7 +171,7 @@ class MainWindow(QtWidgets.QMainWindow):
 				# only the top band acts freely
 				
 				# initialize correction
-				correction_fac = np.ones( imdata.shape[1] ) * 1000
+				correction_fac = np.ones(imdata.shape[1]) * 1000
 				
 				# go over all bands
 				for f_lower_band, f_upper_band in reversed(list(pairwise(bands))):
@@ -210,7 +211,7 @@ class MainWindow(QtWidgets.QMainWindow):
 					# we don't want to make pops more quiet, so clip at 1
 					# clip the upper boundary according to band above (was processed before)
 					# -> clip the factor to be between 1 and the factor of the band above (with some tolerance)
-					correction_fac = np.clip(np.power(10, gain_curve/20), 1, correction_fac*2)
+					correction_fac = np.clip(np.power(10, gain_curve/20), 1, correction_fac*bottom_freedom)
 					# resample to match the signal
 					vol_corr = signal[:,channel] * np.interp(np.linspace(0,1, len(signal[:,channel])), np.linspace(0,1, len(correction_fac)), correction_fac - 1)
 					# add the extra bits to the signal

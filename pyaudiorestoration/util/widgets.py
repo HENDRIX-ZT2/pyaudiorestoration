@@ -421,7 +421,14 @@ class DropoutWidget(QtWidgets.QWidget):
 		self.max_width_s.setSuffix(" s")
 		self.max_width_s.setToolTip("Maximum length of a dropout - increase to capture wider dropouts")
 		
-		buttons = ((dropouts_l,), (mode_l, self.mode_c,), (self.num_bands_l, self.num_bands_s), (self.f_upper_l, self.f_upper_s), (self.f_lower_l, self.f_lower_s), (self.max_slope_l, self.max_slope_s), (self.max_width_l, self.max_width_s)	)
+		self.bottom_freedom_l = QtWidgets.QLabel("Bottom Freedom")
+		self.bottom_freedom_s = QtWidgets.QDoubleSpinBox()
+		self.bottom_freedom_s.setRange(0.0000001, 5)
+		self.bottom_freedom_s.setSingleStep(.1)
+		self.bottom_freedom_s.setValue(2)
+		self.bottom_freedom_s.setToolTip("Clips the band's factor to x*gain of the band above")
+		
+		buttons = ((dropouts_l,), (mode_l, self.mode_c,), (self.num_bands_l, self.num_bands_s), (self.f_upper_l, self.f_upper_s), (self.f_lower_l, self.f_lower_s), (self.max_slope_l, self.max_slope_s), (self.max_width_l, self.max_width_s), (self.bottom_freedom_l, self.bottom_freedom_s)	)
 		vbox(self, grid(buttons))
 		
 	def toggle_mode(self):
@@ -454,6 +461,9 @@ class DropoutWidget(QtWidgets.QWidget):
 	
 	@property
 	def max_width(self): return self.max_width_s.value()
+
+	@property
+	def bottom_freedom(self): return self.bottom_freedom_s.value()
 
 
 class HPSSWidget(QtWidgets.QWidget):

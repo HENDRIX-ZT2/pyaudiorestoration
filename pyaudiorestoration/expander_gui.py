@@ -47,6 +47,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		# self.freqs = None
 		self.spectra = []
 		self.fft_size = 512
+		self.sr = 44100
 		self.fft_hop = self.fft_size // 8
 		self.marker_freqs = []
 		self.marker_dBs = []
@@ -165,7 +166,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			bU = freq2bin(band_upper)
 		
 			for i, spectrum in enumerate(self.spectra):
-				dBs = np.nanmean(spectrum[bL:bU,: ], axis=0)
+				dBs = np.nanmean(spectrum[bL:bU, :], axis=0)
 				dBs = savgol_filter(dBs, smoothing, 2)
 				self.vol_curves.append(dBs)
 		self.plot()

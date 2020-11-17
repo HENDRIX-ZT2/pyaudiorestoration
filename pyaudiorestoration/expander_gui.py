@@ -3,6 +3,7 @@ import soundfile as sf
 import os
 import sys
 from scipy.signal import kaiser, filtfilt, butter, resample, savgol_filter
+from scipy.ndimage.filters import uniform_filter1d
 
 from PyQt5 import QtWidgets, QtGui, QtCore
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
@@ -167,7 +168,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		
 			for i, spectrum in enumerate(self.spectra):
 				dBs = np.nanmean(spectrum[bL:bU, :], axis=0)
-				dBs = savgol_filter(dBs, smoothing, 2)
+				# dBs = savgol_filter(dBs, smoothing, 2)
+				dBs = uniform_filter1d(dBs, size=smoothing, mode="nearest")
 				self.vol_curves.append(dBs)
 		self.plot()
 		

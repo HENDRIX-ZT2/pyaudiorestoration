@@ -2,8 +2,9 @@ import numpy as np
 from vispy import scene
 from scipy import interpolate
 
-#custom modules
+# custom modules
 from util import wow_detection, filters
+
 
 class BaseMarker:
 	"""Stores and visualizes a trace fragment, including its speed offset."""
@@ -63,6 +64,7 @@ class BaseMarker:
 		for v in self.visuals: v.parent = None
 		#note: this has to search the list
 		self.container.remove(self)
+
 
 class RegLine(BaseMarker):
 	"""Stores a single sinc regression's data and displays it"""
@@ -132,7 +134,8 @@ class RegLine(BaseMarker):
 	def update_phase(self, v):
 		"""Adjust this regressions's phase offset according to the UI input."""
 		if self.selected: self.offset = v
-		
+
+
 class TraceLine(BaseMarker):
 	"""Stores and visualizes a trace fragment, including its speed offset."""
 	def __init__(self, vispy_canvas, times, freqs, offset=None, auto_align=False):
@@ -224,7 +227,8 @@ class TraceLine(BaseMarker):
 		self.speed += offset
 		self.speed_data[:, 1] = self.speed
 		self.visuals[0].set_data(pos = self.speed_data)
-				
+
+
 class PanSample(BaseMarker):
 	"""Stores a single sinc regression's data and displays it"""
 	def __init__(self, vispy_canvas, a, b, pan):
@@ -257,7 +261,8 @@ class PanSample(BaseMarker):
 	def set_color(self, c):
 		for v in self.visuals:
 			v.color = c
-	
+
+
 class LagSample(BaseMarker):
 	"""Stores a single sinc regression's data and displays it"""
 	def __init__(self, vispy_canvas, a, b, d=None):
@@ -274,19 +279,24 @@ class LagSample(BaseMarker):
 			self.d = vispy_canvas.spectra[-1].delta
 		else:
 			self.d = d
-		self.width= abs(a[0]-b[0])
+		self.width = abs(a[0]-b[0])
 		self.t = (a[0]+b[0])/2
 		self.f = (a[1]+b[1])/2
-		self.height= abs(a[1]-b[1])
+		self.height = abs(a[1]-b[1])
 		self.spec_center = (self.t, self.f)
 		self.speed_center = (self.t, self.d)
-		
 		# create & store visual
 		rect = scene.Rectangle(center=(self.t, self.f), width=self.width, height=self.height, radius=0, parent=vispy_canvas.spec_view.scene)
 		rect.color = (1, 1, 1, .5)
 		rect.transform = vispy_canvas.spectra[-1].mel_transform
 		rect.set_gl_state('additive')
-		self.visuals.append( rect )
+		self.visuals.append(rect)
+
+		# create & store visual
+		r = 0.1
+		rect = scene.Rectangle(center=(self.t, self.d), width=r, height=r, radius=0, parent=vispy_canvas.speed_view.scene)
+		rect.color = (1, 1, 1, .5)
+		self.visuals.append(rect)
 		
 		self.initialize()
 		
@@ -302,8 +312,7 @@ class LagSample(BaseMarker):
 		new_d = self.vispy_canvas.spectra[-1].delta
 		self.vispy_canvas.spectra[-1].translate(self.d-new_d)
 		
-		
-		
+
 class BaseLine:
 	def __init__(self, vispy_canvas, color=(1, 0, 0, .5)):
 		
@@ -334,7 +343,8 @@ class BaseLine:
 		out = np.array(self.data)
 		np.power(2, out[:,1], out[:,1])
 		return out
-	
+
+
 class MasterSpeedLine(BaseLine):
 	"""Stores and displays the average, ie. master speed curve."""
 		
@@ -362,6 +372,7 @@ class MasterSpeedLine(BaseLine):
 		else:
 			self.data = self.empty
 		self.line_speed.set_data(pos=self.data)
+
 
 class MasterRegLine(BaseLine):
 	"""Stores and displays the average, ie. master speed curve."""
@@ -403,6 +414,7 @@ class MasterRegLine(BaseLine):
 			self.data = self.empty
 		self.line_speed.set_data(pos=self.data)
 
+
 class PanLine(BaseLine):
 	"""Stores and displays the average, ie. master speed curve."""
 		
@@ -420,7 +432,8 @@ class PanLine(BaseLine):
 		else:
 			self.data = self.empty
 		self.line_speed.set_data(pos=self.data)
-	
+
+
 class LagLine(BaseLine):
 	"""Stores and displays the average, ie. master speed curve."""
 		
@@ -430,14 +443,13 @@ class LagLine(BaseLine):
 				self.vispy_canvas.lag_samples.sort(key=lambda tup: tup.t)
 				sample_times = [sample.t for sample in self.vispy_canvas.lag_samples]
 				sample_lags = [sample.d for sample in self.vispy_canvas.lag_samples]
-				
-				
+
 				times = self.get_times()
 				# lag = np.interp(times, sample_times, sample_lags)
 				lag = interpolate.interp1d(sample_times, sample_lags, fill_value="extrapolate")(times)
 
-				#quadratic interpolation does not give usable results
-				# interolator = scipy.interpolate.interp1d(sample_times, sample_lags, kind='quadratic', bounds_error=False, fill_value="extrapolate")
+				# # quadratic interpolation does not give usable results
+				# interolator = interpolate.interp1d(sample_times, sample_lags, kind='cubic', bounds_error=False, fill_value="extrapolate")
 				# lag = interolator(times)
 				
 				#using bezier splines; probably needs to be done segment by segment
@@ -447,7 +459,8 @@ class LagLine(BaseLine):
 				# x=out[0]
 				# y=out[1]
 				self.data = np.stack( (times, lag), axis=-1)
-			except: pass
+			except Exception as err:
+				print(err)
 		else:
 			self.data = self.empty
 		self.line_speed.set_data(pos=self.data)

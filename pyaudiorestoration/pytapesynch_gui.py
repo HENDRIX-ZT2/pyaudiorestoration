@@ -5,8 +5,9 @@ from vispy import scene, color
 from PyQt5 import QtGui, QtCore, QtWidgets
 from scipy import interpolate
 
-#custom modules
+# custom modules
 from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_threads, snd, widgets, filters, io_ops, markers
+
 
 class MainWindow(widgets.MainWindow):
 
@@ -25,7 +26,8 @@ class MainWindow(widgets.MainWindow):
 						(editMenu, "Delete Selected", self.canvas.delete_traces, "DEL"), \
 						)
 		self.add_to_menu(button_data)
-	
+
+
 class Canvas(spectrum.SpectrumCanvas):
 
 	def __init__(self, parent):
@@ -53,7 +55,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.lag_line.update()
 
 	def save_traces(self):
-		#get the data from the traces and regressions and save it
+		# get the data from the traces and regressions and save it
 		io_ops.write_lag(self.filenames[0], [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d) for lag in self.lag_samples ] )
 
 	def improve_lag(self):
@@ -118,7 +120,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			trace.select()
 			
 	def delete_traces(self, not_only_selected=False):
-		self.deltraces= []
+		self.deltraces = []
 		for trace in reversed(self.lag_samples):
 			if (trace.selected and not not_only_selected) or not_only_selected:
 				self.deltraces.append(trace)
@@ -161,14 +163,14 @@ class Canvas(spectrum.SpectrumCanvas):
 				event.handled = True
 	
 	def on_mouse_release(self, event):
-		#coords of the click on the vispy canvas
+		# coords of the click on the vispy canvas
 		if self.filenames[1] and (event.trail() is not None) and event.button == 1:
 			last_click = event.trail()[0]
 			click = event.pos
 			if last_click is not None:
 				a = self.click_spec_conversion(last_click)
 				b = self.click_spec_conversion(click)
-				#are they in spec_view?
+				# are they in spec_view?
 				if a is not None and b is not None:
 					if "Control" in event.modifiers:
 						d = b[0]-a[0]
@@ -217,7 +219,8 @@ class Canvas(spectrum.SpectrumCanvas):
 							# out[i, 1] = (int(d)+result)/sr
 						# self.lag_line.data =out
 						# self.lag_line.line_speed.set_data(pos=out)
-							
+
+
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
 	widgets.startup( MainWindow )

@@ -152,7 +152,7 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def resample_files(self, files):
 		channels = self.props.resampling_widget.channels
-		if self.filenames[1] and self.lag_samples and channels:
+		if self.filenames[0] and self.lag_samples and channels:
 			self.resampling_thread.settings = {
 				"filenames"			: files,
 				"speed_curve"		: self.get_speed_curve(),

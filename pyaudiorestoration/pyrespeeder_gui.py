@@ -21,6 +21,7 @@ class MainWindow(widgets.MainWindow):
 			(file_menu, "Open", self.props.file_widget.ask_open, "CTRL+O"),
 			(file_menu, "Save", self.canvas.save_traces, "CTRL+S"),
 			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R"),
+			(file_menu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B"),
 			(file_menu, "Exit", self.close, ""),
 			(edit_menu, "Undo", self.canvas.restore_traces, "CTRL+Z"),
 			# (edit_menu, "Redo", self.props.foo, "CTRL+Y"),
@@ -124,20 +125,41 @@ class Canvas(spectrum.SpectrumCanvas):
 		if self.filenames[0] and self.lines + self.regs:
 			channels = self.props.resampling_widget.channels
 			if channels:
-				if self.regs:
-					speed_curve = self.master_reg_speed.get_linspace()
-					print("Using regressed speed")
-				else:
-					speed_curve = self.master_speed.get_linspace()
-					print("Using measured speed")
 				self.resampling_thread.settings = {
 					"filenames": (self.filenames[0],),
 					"signal_data": ((self.signals[0], self.sr),),
-					"speed_curve": speed_curve,
+					"speed_curve": self.get_speed_curve(),
 					"resampling_mode": self.props.resampling_widget.mode,
 					"sinc_quality": self.props.resampling_widget.sinc_quality,
 					"use_channels": channels}
 				self.resampling_thread.start()
+
+	def get_speed_curve(self):
+		if self.regs:
+			speed_curve = self.master_reg_speed.get_linspace()
+			print("Using regressed speed")
+		else:
+			speed_curve = self.master_speed.get_linspace()
+			print("Using measured speed")
+		return speed_curve
+
+	def run_resample_batch(self):
+		filenames = QtWidgets.QFileDialog.getOpenFileNames(
+			self.parent, 'Open Files for Batch Resampling',
+			self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
+		if filenames:
+			self.resample_files(filenames)
+
+	def resample_files(self, files):
+		channels = self.props.resampling_widget.channels
+		if self.filenames[1] and self.lag_samples and channels:
+			self.resampling_thread.settings = {
+				"filenames"			: files,
+				"speed_curve"		: self.get_speed_curve(),
+				"resampling_mode"	: self.props.resampling_widget.mode,
+				"sinc_quality"		: self.props.resampling_widget.sinc_quality,
+				"use_channels"		: channels}
+			self.resampling_thread.start()
 
 	def select_all(self):
 		for trace in self.lines + self.regs:

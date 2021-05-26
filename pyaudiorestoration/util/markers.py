@@ -193,6 +193,14 @@ class TraceLine(BaseMarker):
 
 		self.initialize()
 
+	@property
+	def start(self):
+		return self.times[0]
+
+	@property
+	def end(self):
+		return self.times[-1]
+
 	def toggle(self):
 		"""Toggle this line's selection state"""
 		if self.selected:
@@ -386,6 +394,31 @@ class MasterSpeedLine(BaseLine):
 		else:
 			self.data = self.empty
 		self.line_speed.set_data(pos=self.data)
+
+	def get_overlapping_lines(self):
+		"""Return a list of lists with overlapping lines each"""
+		if not self.vispy_canvas.lines:
+			return
+		# sort the lines by their start time
+		sorted_lines = sorted(self.vispy_canvas.lines, key=lambda line_w: line_w.start)
+		# start with just the first line
+		merged = [
+			[sorted_lines[0]]
+		]
+		# go over the other lines
+		for higher_line in sorted_lines[1:]:
+			current_group = merged[-1]
+			upper_bound = max([line_w.end for line_w in current_group])
+			# example data
+			# 1---  3------------
+			#   2-----    4-
+			# this starts before any of the lines already merged end, it is part of this group
+			if higher_line.start <= upper_bound:
+				current_group.append(higher_line)
+			# else it is a new group
+			else:
+				merged.append([higher_line, ])
+		return merged
 
 
 class MasterRegLine(BaseLine):

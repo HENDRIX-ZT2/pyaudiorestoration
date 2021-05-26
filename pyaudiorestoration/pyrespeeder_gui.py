@@ -244,3 +244,11 @@ class Canvas(spectrum.SpectrumCanvas):
 
 if __name__ == '__main__':
 	widgets.startup(MainWindow)
+
+"""
+Design ideas
+1) merge overlapping traces destructively
+2) group overlapping traces, allow opening the group or collapsing it to disply only its evaluated line
+
+
+"""

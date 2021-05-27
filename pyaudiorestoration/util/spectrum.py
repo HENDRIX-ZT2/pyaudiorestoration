@@ -291,7 +291,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		# no issues, we can continue
 		else:
 			#Cleanup of old data
-			self.delete_traces(not_only_selected=True)
+			self.delete_traces(delete_all=True)
 			self.load_visuals()
 			self.parent.props.resampling_widget.refill(self.channels)
 			self.parent.update_file(self.filenames[0])

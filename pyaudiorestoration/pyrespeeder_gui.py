@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import soundfile as sf
+import logging
 from vispy import scene, color
 from PyQt5 import QtGui, QtWidgets
 
@@ -28,6 +29,7 @@ class MainWindow(widgets.MainWindow):
 			(edit_menu, "Select All", self.canvas.select_all, "CTRL+A"),
 			(edit_menu, "Invert Selection", self.canvas.invert_selection, "CTRL+I"),
 			(edit_menu, "Merge Selected", self.canvas.merge_selected_traces, "CTRL+M"),
+			(edit_menu, "Group", self.canvas.group_traces, "CTRL+G"),
 			(edit_menu, "Delete Selected", self.canvas.delete_traces, "DEL"),
 			# (edit_menu, "Play/Pause", self.canvas.audio_widget.play_pause, "SPACE"),
 			)
@@ -47,6 +49,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.show_lines = True
 		self.deltraces = []
 		self.lines = []
+		self.grouped_traces = []
 		self.regs = []
 		self.master_speed = markers.MasterSpeedLine(self)
 		self.master_reg_speed = markers.MasterRegLine(self, (0, 0, 1, .5))
@@ -76,43 +79,59 @@ class Canvas(spectrum.SpectrumCanvas):
 			self.filenames[0],
 			[(reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.regs])
 
-	def delete_traces(self, not_only_selected=False):
+	def delete_traces(self, delete_all=False):
 		self.deltraces = []
 		for trace in reversed(self.regs + self.lines):
-			if (trace.selected and not not_only_selected) or not_only_selected:
+			if (trace.selected and not delete_all) or delete_all:
 				self.deltraces.append(trace)
 		for trace in self.deltraces:
 			trace.remove()
 		self.master_speed.update()
 		self.master_reg_speed.update()
 		# this means a file was loaded, so clear the undo stack
-		if not_only_selected:
+		if delete_all:
 			self.deltraces = []
 
 	def merge_selected_traces(self):
 		self.deltraces = []
-		t0 = 999999
-		t1 = 0
-		means = []
-		offsets = []
 		for trace in reversed(self.lines):
 			if trace.selected:
 				self.deltraces.append(trace)
+		self.merge_traces(self.deltraces)
+		self.master_speed.update()
+
+	def merge_traces(self, traces_to_merge):
+		if traces_to_merge and len(traces_to_merge) > 1:
+			logging.info(f"Merging {len(traces_to_merge)} lines")
+			t0 = 999999
+			t1 = 0
+			means = []
+			offsets = []
+			for trace in traces_to_merge:
+				trace.remove()
 				t0 = min(t0, trace.speed_data[0, 0])
 				t1 = max(t1, trace.speed_data[-1, 0])
 				means.append(trace.spec_center[1])
 				offsets.append(trace.offset)
-		if self.deltraces:
-			for trace in self.deltraces:
-				trace.remove()
 			sr = self.sr
 			hop = self.hop
 			i0 = int(t0 * sr / hop)
 			i1 = int(t1 * sr / hop)
 			data = self.master_speed.data[i0:i1]
 			freqs = np.power(2, data[:, 1] + np.log2(np.mean(means)))
+			# todo - taking np.mean(offsets) here is wrong, as they need not be same length, should be weighted mean?
 			line = markers.TraceLine(self, data[:, 0], freqs, np.mean(offsets))
-			self.master_speed.update()
+
+	def group_traces(self):
+		"""Convert overlapping traces into grouped representations"""
+		groups = self.master_speed.get_overlapping_lines()
+		logging.info(f"Merging {len(groups)} groups")
+		for group in groups:
+			self.merge_traces(group)
+		self.master_speed.update()
+
+	def ungroup_traces(self):
+		pass
 
 	def restore_traces(self):
 		for trace in self.deltraces:

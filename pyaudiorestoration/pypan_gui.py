@@ -49,16 +49,16 @@ class Canvas(spectrum.SpectrumCanvas):
 		#get the data from the traces and regressions and save it
 		io_ops.write_lag(self.filenames[0], [ (lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.pan) for lag in self.pan_samples ] )
 			
-	def delete_traces(self, not_only_selected=False):
+	def delete_traces(self, delete_all=False):
 		self.deltraces= []
 		for trace in reversed(self.pan_samples):
-			if (trace.selected and not not_only_selected) or not_only_selected:
+			if (trace.selected and not delete_all) or delete_all:
 				self.deltraces.append(trace)
 		for trace in self.deltraces:
 			trace.remove()
 		self.pan_line.update()
 		#this means a file was loaded, so clear the undo stack
-		if not_only_selected:
+		if delete_all:
 			self.deltraces= []
 	
 	def run_resample(self):

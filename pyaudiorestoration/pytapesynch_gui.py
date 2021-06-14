@@ -231,4 +231,4 @@ class Canvas(spectrum.SpectrumCanvas):
 
 
 if __name__ == '__main__':
-	widgets.startup(MainWinow)
+	widgets.startup(MainWindow)

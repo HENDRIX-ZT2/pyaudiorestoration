@@ -486,14 +486,16 @@ class LagLine(BaseLine):
 
 	def update(self):
 		if self.vispy_canvas.lag_samples:
+			times = self.get_times()
 			try:
 				self.vispy_canvas.lag_samples.sort(key=lambda tup: tup.t)
 				sample_times = [sample.t for sample in self.vispy_canvas.lag_samples]
 				sample_lags = [sample.d for sample in self.vispy_canvas.lag_samples]
 
-				times = self.get_times()
-				# lag = np.interp(times, sample_times, sample_lags)
-				lag = interpolate.interp1d(sample_times, sample_lags, fill_value="extrapolate")(times)
+				if len(self.vispy_canvas.lag_samples) == 1:
+					lag = np.interp(times, sample_times, sample_lags)
+				else:
+					lag = interpolate.interp1d(sample_times, sample_lags, fill_value="extrapolate")(times)
 
 				# # quadratic interpolation does not give usable results
 				# interolator = interpolate.interp1d(sample_times, sample_lags, kind='cubic', bounds_error=False, fill_value="extrapolate")

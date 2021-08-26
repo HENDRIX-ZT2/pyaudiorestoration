@@ -6,6 +6,12 @@ from numba import jit#, prange, guvectorize
 import math
 import threading
 
+@jit(nopython=True, nogil=True, cache=True, fastmath=True)
+def find_cutoff(array, cutoff):
+    for idx, val in np.ndenumerate(array):
+        if val >= cutoff:
+            return idx
+
 
 def sinc_wrapper(sample_at, signal, lowpass, NT ):
 	# initialize arrays here because we can't do so in nopython mode
@@ -171,8 +177,19 @@ def run(filenames, signal_data=None, speed_curve=None, resampling_mode = "Linear
 			sampletimes = lag_curve[:,0]*sr
 			lags = lag_curve[:,1]*sr
 			# lag_to_pos(sampletimes, lags, len(signal))
-			sample_at = np.interp(np.arange( len(signal)+lags[-1] ), sampletimes, sampletimes-lags)
-			# ensure we have no sub-zero values, saves one max in sinc
+			# at this point we can not tell the exact duration as the sampling is too sparse
+			# delta_lag = np.max(lags) - np.min(lags)
+			# print(delta_lag)
+			num_output_samples = len(signal) + abs(lags[-1])
+			# print(num_output_samples)
+			# print(sampletimes, sampletimes-lags)
+			sample_at = np.interp(np.arange(num_output_samples), sampletimes, sampletimes-lags)
+			# print(sample_at[0], sample_at[-1])
+			trim_end = find_cutoff(sample_at, len(signal))
+			if trim_end is not None:
+				print(f"Trimmed to sample {trim_end[0]}")
+				sample_at = sample_at[:trim_end[0]]
+			# ensure we have no sub-zero values, saves one max() in sinc interpolator
 			np.clip(sample_at, 0, None, out=sample_at)
 			# with lerped speed curve
 			# speeds = np.diff(lag_curve[:,1])/np.diff(lag_curve[:,0])+1

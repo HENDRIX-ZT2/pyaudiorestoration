@@ -170,6 +170,14 @@ class Canvas(spectrum.SpectrumCanvas):
 			if closest_lag_sample:
 				closest_lag_sample.select_handle()
 				event.handled = True
+			# update the last spectrum with pan
+			click = self.click_spec_conversion(event.pos)
+			if click is not None:
+				# sample the lag curve at the click's time
+				lag = self.lag_line.sample_at(click[0])
+				old_d = self.spectra[-1].delta
+				# move the source spectrum
+				self.spectra[-1].translate(lag - old_d)
 	
 	def on_mouse_release(self, event):
 		# coords of the click on the vispy canvas

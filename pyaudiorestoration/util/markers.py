@@ -331,9 +331,6 @@ class LagSample(BaseMarker):
 		"""Toggle this line's selection state"""
 		self.selected = True
 		self.set_color(self.color_sel)
-		# update the last spectrum with pan
-		new_d = self.vispy_canvas.spectra[-1].delta
-		self.vispy_canvas.spectra[-1].translate(self.d - new_d)
 
 
 class BaseLine:
@@ -484,29 +481,33 @@ class PanLine(BaseLine):
 class LagLine(BaseLine):
 	"""Stores and displays the average, ie. master speed curve."""
 
+	def sample_at(self, times):
+		self.vispy_canvas.lag_samples.sort(key=lambda tup: tup.t)
+		sample_times = [sample.t for sample in self.vispy_canvas.lag_samples]
+		sample_lags = [sample.d for sample in self.vispy_canvas.lag_samples]
+
+		if len(self.vispy_canvas.lag_samples) == 1:
+			lag = np.interp(times, sample_times, sample_lags)
+		else:
+			lag = interpolate.interp1d(sample_times, sample_lags, fill_value="extrapolate")(times)
+
+		# # quadratic interpolation does not give usable results
+		# interolator = interpolate.interp1d(sample_times, sample_lags, kind='cubic', bounds_error=False, fill_value="extrapolate")
+		# lag = interolator(times)
+
+		# using bezier splines; probably needs to be done segment by segment
+		# tck,u = interpolate.splprep([times,lag],k=2,s=0)
+		# # u=np.linspace(0,1,num=10000,endpoint=True)
+		# out = interpolate.splev(u,tck)
+		# x=out[0]
+		# y=out[1]
+		return lag
+
 	def update(self):
 		if self.vispy_canvas.lag_samples:
 			times = self.get_times()
 			try:
-				self.vispy_canvas.lag_samples.sort(key=lambda tup: tup.t)
-				sample_times = [sample.t for sample in self.vispy_canvas.lag_samples]
-				sample_lags = [sample.d for sample in self.vispy_canvas.lag_samples]
-
-				if len(self.vispy_canvas.lag_samples) == 1:
-					lag = np.interp(times, sample_times, sample_lags)
-				else:
-					lag = interpolate.interp1d(sample_times, sample_lags, fill_value="extrapolate")(times)
-
-				# # quadratic interpolation does not give usable results
-				# interolator = interpolate.interp1d(sample_times, sample_lags, kind='cubic', bounds_error=False, fill_value="extrapolate")
-				# lag = interolator(times)
-
-				# using bezier splines; probably needs to be done segment by segment
-				# tck,u = interpolate.splprep([times,lag],k=2,s=0)
-				# # u=np.linspace(0,1,num=10000,endpoint=True)
-				# out = interpolate.splev(u,tck)
-				# x=out[0]
-				# y=out[1]
+				lag = self.sample_at(times)
 				self.data = np.stack((times, lag), axis=-1)
 			except Exception as err:
 				print(err)

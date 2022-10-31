@@ -1,9 +1,5 @@
-import os
 import numpy as np
-import soundfile as sf
-from vispy import scene, color
-from PyQt5 import QtGui, QtCore, QtWidgets
-from scipy import interpolate
+from PyQt5 import QtWidgets
 
 # custom modules
 from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_threads, snd, widgets, filters, io_ops, \

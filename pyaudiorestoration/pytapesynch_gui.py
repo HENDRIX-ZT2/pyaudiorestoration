@@ -110,12 +110,20 @@ class Canvas(spectrum.SpectrumCanvas):
 					res = np.correlate(
 						filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
 						filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3), mode="same")
+
 					# interpolate to get the most accurate fit
 					# we are not necessarily interested in the largest positive value if the correlation is negative
 					if self.parent.props.alignment_widget.align_abs:
 						print("absolute")
 						np.abs(res, out=res)
-					i_peak = wow_detection.parabolic(res, np.argmax(res[1:-1]))[0]
+
+					# get the index of the strongest correlation
+					max_index = np.argmax(res[1:-1])
+					# set it to be able to display it
+					# todo - normalize the correlation against frequency and duration
+					lag.corr = res[max_index]
+					# refine the index with interpolation
+					i_peak = wow_detection.parabolic(res, max_index)[0]
 					result = raw_lag + i_peak - len(ref_sig) // 2
 					# update the lag marker
 					lag.d = result / sr
@@ -166,15 +174,12 @@ class Canvas(spectrum.SpectrumCanvas):
 			self.resampling_thread.start()
 		
 	def on_mouse_press(self, event):
-		# #selection
-		# b = self.click_spec_conversion(event.pos)
-		# #are they in spec_view?
-		# if b is not None:
-		# 	self.props.audio_widget.cursor(b[0])
+		# selection
 		if event.button == 2:
 			closest_lag_sample = self.get_closest(self.lag_samples, event.pos)
 			if closest_lag_sample:
 				closest_lag_sample.select_handle()
+				self.parent.props.alignment_widget.corr_l.setText(str(closest_lag_sample.corr))
 				event.handled = True
 			# update the last spectrum with pan
 			click = self.click_spec_conversion(event.pos)

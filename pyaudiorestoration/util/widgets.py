@@ -74,8 +74,8 @@ def vbox(parent, grid_layout):
 	box = QtWidgets.QVBoxLayout(parent)
 	box.addLayout(grid_layout)
 	box.addStretch(1.0)
-	box.setSpacing(0)
-	box.setContentsMargins(0, 0, 0, 0)
+	box.setSpacing(3)
+	# box.setContentsMargins(0, 0, 0, 0)
 
 
 def vbox2(parent, buttons):
@@ -697,14 +697,14 @@ class MainWindow(QtWidgets.QMainWindow):
 			submenu.addAction(button)
 
 
-class FilesWidget(QtWidgets.QWidget):
+class FilesWidget(QtWidgets.QGroupBox):
 	"""
 	Holds several file widgets
 	controls what happens when they are loaded
 	"""
-
 	def __init__(self, parent, count, cfg={}, ask_user=True):
-		super(FilesWidget, self).__init__(parent)
+		# super(FilesWidget, self).__init__(parent)
+		super().__init__("Files")
 		self.parent = parent
 		# note: count must be 1 or 2
 		# idiosyncratic order here so the complicated stuff can remain as is

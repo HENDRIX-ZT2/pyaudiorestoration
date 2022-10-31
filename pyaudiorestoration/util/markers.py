@@ -284,7 +284,7 @@ class PanSample(BaseMarker):
 class LagSample(BaseMarker):
 	"""Stores a single sinc regression's data and displays it"""
 
-	def __init__(self, vispy_canvas, a, b, d=None):
+	def __init__(self, vispy_canvas, a, b, d=None, corr=None):
 
 		color_def = (1, 1, 1, .5)
 		color_sel = (0, 0, 1, 1)
@@ -293,6 +293,7 @@ class LagSample(BaseMarker):
 
 		self.a = a
 		self.b = b
+		self.corr = corr
 
 		if d is None:
 			self.d = vispy_canvas.spectra[-1].delta

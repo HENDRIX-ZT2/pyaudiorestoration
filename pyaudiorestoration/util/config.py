@@ -1,3 +1,14 @@
+import logging
+import json
+import os
+
+
+def save_config_json(cfg_path, cfg_dict):
+	logging.info(f"Saving config")
+	# cfg_path = os.path.join(root_dir, "config.json")
+	with open(cfg_path, "w") as json_writer:
+		json.dump(cfg_dict, json_writer, indent="\t", sort_keys=True)
+
 
 def read_config(cfg_path):
 	with open(cfg_path, 'r', encoding='utf-8') as cfg_file:

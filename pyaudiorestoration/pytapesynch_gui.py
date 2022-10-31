@@ -1,9 +1,13 @@
+import os
+
 import numpy as np
 from PyQt5 import QtWidgets
 
 # custom modules
 from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_threads, snd, widgets, filters, io_ops, \
 	markers
+
+from pyaudiorestoration.util.config import save_config_json
 
 
 def xcorr(a, b, mode='full'):
@@ -71,6 +75,15 @@ class Canvas(spectrum.SpectrumCanvas):
 		io_ops.write_lag(
 			self.filenames[0],
 			[(lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d) for lag in self.lag_samples])
+		# write current state to json
+		sync = {}
+		sync["ref"], sync["src"] = self.filenames
+		sync["smoothing"] = self.lag_line.smoothing
+		sync["fft_size"] = self.parent.props.display_widget.fft_size
+		sync["fft_overlap"] = self.parent.props.display_widget.fft_overlap
+		sync["data"] = [(lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d, lag.corr) for lag in self.lag_samples]
+		cfg_path = os.path.splitext(self.filenames[0])[0]+".tapesync"
+		save_config_json(cfg_path, sync)
 
 	def improve_lag(self):
 		for lag in self.lag_samples:
@@ -182,7 +195,8 @@ class Canvas(spectrum.SpectrumCanvas):
 			closest_lag_sample = self.get_closest(self.lag_samples, event.pos)
 			if closest_lag_sample:
 				closest_lag_sample.select_handle()
-				self.parent.props.alignment_widget.corr_l.setText(f"{closest_lag_sample.corr:.3f}")
+				v = "None" if closest_lag_sample.corr is None else f"{closest_lag_sample.corr:.3f}"
+				self.parent.props.alignment_widget.corr_l.setText(v)
 				event.handled = True
 			# update the last spectrum with pan
 			click = self.click_spec_conversion(event.pos)

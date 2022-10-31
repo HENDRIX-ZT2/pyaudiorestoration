@@ -105,14 +105,9 @@ def read_regs(filename):
 					data.append( [float(v) for v in l.split(" ")])
 	return data
 
+
 def write_lag(filename, data):
-	"""
-	TODO: rewrite into BIN format
-	filename: the name of the original audio file
-	data:	 a list of sine parameters
-	"""
-	
-	#write the data to the speed file
+	# TODO: rewrite into BIN format
 	if data:
 		print("Writing",len(data),"lag")
 		speedfilename = filename.rsplit('.', 1)[0]+".syn"
@@ -120,23 +115,17 @@ def write_lag(filename, data):
 		text_file = open(speedfilename, "w")
 		text_file.write(outstr)
 		text_file.close()
-	
+
+
 def read_lag(filename):
-	"""
-	TODO: rewrite into BIN format
-	filename: the name of the original audio file
-	returns:
-	data:	 a list of sine parameters
-	"""
-	
-	#write the data to the speed file
+	# TODO: rewrite into BIN format
+	# write the data to the speed file
 	print("Reading lag data")
 	speedfilename = filename.rsplit('.', 1)[0]+".syn"
 	data = []
 	if os.path.isfile(speedfilename):
 		with open(speedfilename, "r") as text_file:
-			for l in text_file:
-				#just for completeness
-				if l:
-					data.append( [float(v) for v in l.split(" ")])
+			for line in text_file:
+				if line:
+					data.append([float(v) for v in line.split(" ")])
 	return data

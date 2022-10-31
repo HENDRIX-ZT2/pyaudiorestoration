@@ -157,12 +157,9 @@ class FileWidget(QtWidgets.QLineEdit):
 		self.ask_open()
 
 
-class DisplayWidget(QtWidgets.QWidget):
+class DisplayWidget(QtWidgets.QGroupBox):
 	def __init__(self, with_canvas=True):
-		QtWidgets.QWidget.__init__(self, )
-
-		display_l = QtWidgets.QLabel("Display")
-		display_l.setFont(myFont)
+		super().__init__("Display")
 
 		fft_l = QtWidgets.QLabel("FFT Size")
 		self.fft_c = QtWidgets.QComboBox(self)
@@ -179,7 +176,7 @@ class DisplayWidget(QtWidgets.QWidget):
 		self.overlap_c.setToolTip("Increase to improve temporal resolution.")
 		self.overlap_c.setCurrentIndex(2)
 
-		buttons = [(display_l,), (fft_l, self.fft_c), (overlap_l, self.overlap_c)]
+		buttons = [(fft_l, self.fft_c), (overlap_l, self.overlap_c)]
 
 		if with_canvas:
 			show_l = QtWidgets.QLabel("Show")
@@ -376,17 +373,16 @@ class TracingWidget(QtWidgets.QWidget):
 		self.canvas.master_speed.update()
 
 
-class AlignmentWidget(QtWidgets.QWidget):
+class AlignmentWidget(QtWidgets.QGroupBox):
 	def __init__(self, ):
-		QtWidgets.QWidget.__init__(self, )
-		align_l = QtWidgets.QLabel("\nAlignment")
-		align_l.setFont(myFont)
-
+		super().__init__("Alignment")
 		self.align_abs_b = QtWidgets.QCheckBox("Absolute match")
 		self.align_abs_b.setChecked(False)
 		self.align_abs_b.setToolTip("Turn on if phase does not match.")
 
-		buttons = ((align_l,), (self.align_abs_b,),)
+		corr_l = QtWidgets.QLabel("Correlation")
+		self.corr_l = QtWidgets.QLabel("None")
+		buttons = ((self.align_abs_b,), (corr_l, self.corr_l))
 		vbox(self, grid(buttons))
 
 	@property
@@ -545,12 +541,9 @@ class HPSSWidget(QtWidgets.QWidget):
 	def margin(self): return self.margin_s.value()
 
 
-class ResamplingWidget(QtWidgets.QWidget):
+class ResamplingWidget(QtWidgets.QGroupBox):
 	def __init__(self, ):
-		QtWidgets.QWidget.__init__(self, )
-
-		resampling_l = QtWidgets.QLabel("\nResampling")
-		resampling_l.setFont(myFont)
+		super().__init__("Resampling")
 		mode_l = QtWidgets.QLabel("Mode")
 		self.mode_c = QtWidgets.QComboBox(self)
 		self.mode_c.addItems(("Linear", "Sinc"))
@@ -574,7 +567,7 @@ class ResamplingWidget(QtWidgets.QWidget):
 		self.scroll.setWidgetResizable(True)
 		self.channel_checkboxes = []
 
-		buttons = ((resampling_l,), (mode_l, self.mode_c,), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,))
+		buttons = ((mode_l, self.mode_c,), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,))
 		vbox(self, grid(buttons))
 
 	def toggle_resampling_quality(self):

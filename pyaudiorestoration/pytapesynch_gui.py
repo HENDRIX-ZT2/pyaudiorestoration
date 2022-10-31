@@ -10,6 +10,14 @@ from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_thr
 	markers
 
 
+def xcorr(a, b, mode='full'):
+	norm_a = np.linalg.norm(a)
+	a = a / norm_a
+	norm_b = np.linalg.norm(b)
+	b = b / norm_b
+	return np.correlate(a, b, mode=mode)
+
+
 class MainWindow(widgets.MainWindow):
 
 	def __init__(self):
@@ -107,7 +115,7 @@ class Canvas(spectrum.SpectrumCanvas):
 					src_sig = np.pad(src_sig[src_t0:src_t1, 0], (src_pad_l, src_pad_r), "constant", constant_values=0)
 
 					# correlate both sources
-					res = np.correlate(
+					res = xcorr(
 						filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
 						filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3), mode="same")
 
@@ -120,7 +128,6 @@ class Canvas(spectrum.SpectrumCanvas):
 					# get the index of the strongest correlation
 					max_index = np.argmax(res[1:-1])
 					# set it to be able to display it
-					# todo - normalize the correlation against frequency and duration
 					lag.corr = res[max_index]
 					# refine the index with interpolation
 					i_peak = wow_detection.parabolic(res, max_index)[0]
@@ -179,7 +186,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			closest_lag_sample = self.get_closest(self.lag_samples, event.pos)
 			if closest_lag_sample:
 				closest_lag_sample.select_handle()
-				self.parent.props.alignment_widget.corr_l.setText(str(closest_lag_sample.corr))
+				self.parent.props.alignment_widget.corr_l.setText(f"{closest_lag_sample.corr:.3f}")
 				event.handled = True
 			# update the last spectrum with pan
 			click = self.click_spec_conversion(event.pos)

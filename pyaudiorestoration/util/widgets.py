@@ -43,10 +43,10 @@ def abort_open_new_file(parent, newfile, oldfile):
 			newfile) + "? You will lose unsaved work on " + os.path.basename(oldfile) + "!", qm.Yes | qm.No)
 
 
-def showdialog(str):
+def showdialog(msg):
 	msg = QtWidgets.QMessageBox()
 	msg.setIcon(QtWidgets.QMessageBox.Information)
-	msg.setText(str)
+	msg.setText(msg)
 	# msg.setInformativeText("This is additional information")
 	msg.setWindowTitle("Error")
 	# msg.setDetailedText("The details are as follows:")
@@ -382,7 +382,15 @@ class AlignmentWidget(QtWidgets.QGroupBox):
 
 		corr_l = QtWidgets.QLabel("Correlation")
 		self.corr_l = QtWidgets.QLabel("None")
-		buttons = ((self.align_abs_b,), (corr_l, self.corr_l))
+
+		self.smoothing_l = QtWidgets.QLabel("Smoothing")
+		self.smoothing_s = QtWidgets.QSpinBox()
+		self.smoothing_s.setRange(1, 5)
+		self.smoothing_s.setSingleStep(1)
+		self.smoothing_s.setValue(3)
+		self.smoothing_s.setToolTip("Degree of the smoothing spline")
+
+		buttons = ((self.align_abs_b,), (corr_l, self.corr_l), (self.smoothing_l, self.smoothing_s))
 		vbox(self, grid(buttons))
 
 	@property

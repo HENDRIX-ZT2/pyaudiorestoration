@@ -50,6 +50,12 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.display_widget.canvas = self
 		self.parent.props.tracing_widget.setVisible(False)
 		self.freeze()
+		self.parent.props.alignment_widget.smoothing_s.valueChanged.connect(self.update_smoothing)
+
+	def update_smoothing(self, k):
+		print("setting k", k)
+		self.lag_line.smoothing = k
+		self.lag_line.update()
 
 	def load_visuals(self, ):
 		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):

@@ -77,8 +77,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.toolbar = NavigationToolbar(self.canvas, self)
 
 		# Just some button connected to `plot` method
-		self.file_widget = widgets.FilesWidget(self, 1, self.cfg)
-		self.file_widget.on_load_file = self.open_file
+		self.files_widget = widgets.FilesWidget(self, 1, self.cfg)
+		self.files_widget.on_load_file = self.open_file
 		
 		self.b_expand = QtWidgets.QPushButton('Expand')
 		self.b_expand.setToolTip("Write expanded audio to a new file.")
@@ -130,7 +130,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.qgrid.setVerticalSpacing(0)
 		self.qgrid.addWidget(self.toolbar, 0, 0, 1, 8)
 		self.qgrid.addWidget(self.canvas, 1, 0, 1, 8)
-		self.qgrid.addWidget(self.file_widget, 2, 0)
+		self.qgrid.addWidget(self.files_widget, 2, 0)
 		self.qgrid.addWidget(self.b_expand, 2, 1)
 		self.qgrid.addWidget(self.c_channels, 2, 2)
 		self.qgrid.addWidget(self.s_band_lower, 2, 3)

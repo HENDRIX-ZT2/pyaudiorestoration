@@ -19,7 +19,7 @@ class MainWindow(widgets.MainWindow):
 		# view_menu = main_menu.addMenu('View')
 		# help_menu = main_menu.addMenu('Help')
 		button_data = (
-			(file_menu, "Open", self.props.file_widget.ask_open, "CTRL+O"),
+			(file_menu, "Open", self.props.files_widget.ask_open, "CTRL+O"),
 			(file_menu, "Save", self.canvas.save_traces, "CTRL+S"),
 			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R"),
 			(file_menu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B"),

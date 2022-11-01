@@ -122,8 +122,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.toolbar = NavigationToolbar(self.canvas, self)
 
 		# Just some button connected to `plot` method
-		self.file_widget = widgets.FilesWidget(self, 2, self.cfg, ask_user=False)
-		self.file_widget.on_load_file = self.foo
+		self.files_widget = widgets.FilesWidget(self, 2, self.cfg, ask_user=False)
+		self.files_widget.on_load_file = self.foo
 		self.b_add = QtWidgets.QPushButton('+')
 		self.b_add.setToolTip("Add a source - reference pair to the list.")
 		self.b_add.clicked.connect(self.open)
@@ -183,7 +183,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.qgrid.addWidget(self.toolbar, 0, 0, 1, 2)
 		self.qgrid.addWidget(self.canvas, 1, 0, 1, 2)
 		self.qgrid.addWidget(self.listWidget, 2, 0, 9, 1)
-		self.qgrid.addWidget(self.file_widget, 2, 1)
+		self.qgrid.addWidget(self.files_widget, 2, 1)
 		self.qgrid.addWidget(self.b_add, 3, 1)
 		self.qgrid.addWidget(self.b_delete, 4, 1)
 		self.qgrid.addWidget(self.b_save, 5, 1)
@@ -203,7 +203,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		pass
 
 	def open(self, ):
-		filepaths = self.file_widget.filepaths
+		filepaths = self.files_widget.filepaths
 		if filepaths and len(filepaths) == 2:
 			file_src = filepaths[1]
 			file_ref = filepaths[0]

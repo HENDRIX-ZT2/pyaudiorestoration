@@ -284,13 +284,13 @@ class SpectrumCanvas(scene.SceneCanvas):
 			self.selected_channels = channels
 		# called by the files widget
 		try:
-			self.compute_spectra( filenames, self.parent.props.display_widget.fft_size, self.parent.props.display_widget.fft_overlap )
+			self.compute_spectra(filenames, self.parent.props.display_widget.fft_size, self.parent.props.display_widget.fft_overlap )
 		# file could not be opened
 		except RuntimeError as err:
 			print(err)
 		# no issues, we can continue
 		else:
-			#Cleanup of old data
+			# Cleanup of old data
 			self.delete_traces(delete_all=True)
 			self.load_visuals()
 			self.parent.props.resampling_widget.refill(self.channels)
@@ -377,7 +377,6 @@ class SpectrumCanvas(scene.SceneCanvas):
 		# this happens when only loading from storage is required
 		elif self.dirty:
 			self.continue_spectra()
-
 
 	def retrieve_fft(self,):
 		print("Retrieving FFT from processing thread")

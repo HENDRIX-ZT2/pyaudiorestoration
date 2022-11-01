@@ -209,6 +209,14 @@ class DisplayWidget(QtWidgets.QGroupBox):
 	def fft_overlap(self):
 		return int(self.overlap_c.currentText())
 
+	@fft_size.setter
+	def fft_size(self, v):
+		self.fft_c.setCurrentText(str(v))
+
+	@fft_overlap.setter
+	def fft_overlap(self, v):
+		self.overlap_c.setCurrentText(str(v))
+
 	def update_fft_settings(self, ):
 		self.canvas.compute_spectra(self.canvas.filenames, fft_size=self.fft_size, fft_overlap=self.fft_overlap)
 
@@ -392,6 +400,14 @@ class AlignmentWidget(QtWidgets.QGroupBox):
 
 		buttons = ((self.align_abs_b,), (corr_l, self.corr_l), (self.smoothing_l, self.smoothing_s))
 		vbox(self, grid(buttons))
+
+	@property
+	def smoothing(self):
+		return self.smoothing_s.value()
+
+	@smoothing.setter
+	def smoothing(self, v):
+		self.smoothing_s.setValue(v)
 
 	@property
 	def align_abs(self): return self.align_abs_b.isChecked()
@@ -678,7 +694,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.props = object_widget(parent=self, count=count)
 		self.canvas = canvas_widget(parent=self)
 		self.canvas.props = self.props
-		self.props.file_widget.on_load_file = self.canvas.load_audio
+		self.props.files_widget.on_load_file = self.canvas.load_audio
 
 		splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 		splitter.addWidget(self.canvas.native)
@@ -703,7 +719,6 @@ class FilesWidget(QtWidgets.QGroupBox):
 	controls what happens when they are loaded
 	"""
 	def __init__(self, parent, count, cfg={}, ask_user=True):
-		# super(FilesWidget, self).__init__(parent)
 		super().__init__("Files")
 		self.parent = parent
 		# note: count must be 1 or 2
@@ -718,9 +733,12 @@ class FilesWidget(QtWidgets.QGroupBox):
 		for w in self.files:
 			w.ask_open()
 
+	@property
+	def filepaths(self):
+		return [w.filepath for w in self.files]
+
 	def poll(self):
 		# called by the child widgets after they have received a file
-		self.filepaths = [w.filepath for w in self.files]
 		# only continue if all slots are filled with files
 		if all(self.filepaths):
 			self.load()
@@ -742,7 +760,7 @@ class ParamWidget(QtWidgets.QWidget):
 
 		self.parent = parent
 
-		self.file_widget = FilesWidget(self, count, self.parent.cfg)
+		self.files_widget = FilesWidget(self, count, self.parent.cfg)
 		self.display_widget = DisplayWidget()
 		self.tracing_widget = TracingWidget()
 		self.resampling_widget = ResamplingWidget()
@@ -750,7 +768,7 @@ class ParamWidget(QtWidgets.QWidget):
 		# self.audio_widget = snd.AudioWidget()
 		self.inspector_widget = InspectorWidget()
 		self.alignment_widget = AlignmentWidget()
-		buttons = [self.file_widget, self.display_widget, self.tracing_widget, self.alignment_widget,
+		buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget,
 				   self.resampling_widget, self.progress_widget,  # self.audio_widget,
 				   self.inspector_widget]
 		vbox2(self, buttons)

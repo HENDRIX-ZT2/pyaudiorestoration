@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 from vispy import scene
 from scipy import interpolate
@@ -284,17 +286,16 @@ class PanSample(BaseMarker):
 class LagSample(BaseMarker):
 	"""Stores a single sinc regression's data and displays it"""
 
-	def __init__(self, vispy_canvas, a, b, d=None, corr=None):
+	color_def = (1, 1, 1, .5)
+	color_sel = (0, 0, 1, 1)
 
-		color_def = (1, 1, 1, .5)
-		color_sel = (0, 0, 1, 1)
-		BaseMarker.__init__(self, vispy_canvas, vispy_canvas.lag_samples, color_def, color_sel)
+	def __init__(self, vispy_canvas, a, b, d=None, corr=None):
+		BaseMarker.__init__(self, vispy_canvas, vispy_canvas.lag_samples, self.color_def, self.color_sel)
 		self.parents = (self.vispy_canvas.spec_view.scene,)
 
 		self.a = a
 		self.b = b
 		self.corr = corr
-
 		if d is None:
 			self.d = vispy_canvas.spectra[-1].delta
 		else:
@@ -309,7 +310,7 @@ class LagSample(BaseMarker):
 		rect = scene.Rectangle(
 			center=(self.t, self.f), width=self.width, height=self.height, radius=0,
 			parent=vispy_canvas.spec_view.scene)
-		rect.color = (1, 1, 1, .5)
+		rect.color = self.color_def
 		rect.transform = vispy_canvas.spectra[-1].mel_transform
 		rect.set_gl_state('additive')
 		self.visuals.append(rect)
@@ -319,7 +320,7 @@ class LagSample(BaseMarker):
 		rect = scene.Rectangle(
 			center=(self.t, self.d), width=r, height=r, radius=0,
 			parent=vispy_canvas.speed_view.scene)
-		rect.color = (1, 1, 1, .5)
+		rect.color = self.color_def
 		self.visuals.append(rect)
 
 		self.initialize()
@@ -493,24 +494,19 @@ class LagLine(BaseLine):
 		if len(self.vispy_canvas.lag_samples) == 1:
 			return np.interp(times, sample_times, sample_lags)
 		else:
-			# lag = interpolate.interp1d(sample_times, sample_lags, fill_value="extrapolate")(times)
-
-			# # quadratic interpolation does not give usable results
-			# interolator = interpolate.interp1d(sample_times, sample_lags, kind='cubic', bounds_error=False, fill_value="extrapolate")
-			# lag = interolator(times)
-
 			# using bezier splines
 			s = interpolate.InterpolatedUnivariateSpline(sample_times, sample_lags, k=self.smoothing)
 			return s(times)
 
 	def update(self):
+		logging.info(f"Updating sync line")
 		if self.vispy_canvas.lag_samples:
 			times = self.get_times()
 			try:
 				lag = self.sample_at(times)
 				self.data = np.stack((times, lag), axis=-1)
-			except Exception as err:
-				print(err)
+			except:
+				logging.exception(f"LagLine.update failed")
 		else:
 			self.data = self.empty
 		self.line_speed.set_data(pos=self.data)

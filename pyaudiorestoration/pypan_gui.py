@@ -15,7 +15,7 @@ class MainWindow(widgets.MainWindow):
 		mainMenu = self.menuBar() 
 		fileMenu = mainMenu.addMenu('File')
 		editMenu = mainMenu.addMenu('Edit')
-		button_data = ( (fileMenu, "Open", self.props.file_widget.ask_open, "CTRL+O"), \
+		button_data = ( (fileMenu, "Open", self.props.files_widget.ask_open, "CTRL+O"), \
 						(fileMenu, "Save", self.canvas.save_traces, "CTRL+S"), \
 						(fileMenu, "Resample", self.canvas.run_resample, "CTRL+R"), \
 						(fileMenu, "Exit", self.close, ""), \

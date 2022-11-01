@@ -1,3 +1,4 @@
+import logging
 import os
 
 import numpy as np
@@ -7,7 +8,10 @@ from PyQt5 import QtWidgets
 from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_threads, snd, widgets, filters, io_ops, \
 	markers
 
-from pyaudiorestoration.util.config import save_config_json
+from pyaudiorestoration.util.config import save_config_json, load_config_json, logging_setup
+
+logging_setup()
+EXT = ".tapesync"
 
 
 def xcorr(a, b, mode='full'):
@@ -26,7 +30,7 @@ class MainWindow(widgets.MainWindow):
 		file_menu = main_menu.addMenu('File')
 		edit_menu = main_menu.addMenu('Edit')
 		button_data = (
-			(file_menu, "Open", self.props.file_widget.ask_open, "CTRL+O"),
+			(file_menu, "Open", self.canvas.load_project, "CTRL+O"),
 			(file_menu, "Save", self.canvas.save_traces, "CTRL+S"),
 			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R"),
 			(file_menu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B"),
@@ -66,22 +70,37 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.lag_line.update()
 
 	def load_visuals(self, ):
+		# legacy code path
 		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):
 			markers.LagSample(self, (a0, a1), (b0, b1), d)
 		self.lag_line.update()
 
+	def load_project(self):
+		"""Load project with all required settings"""
+		cfg_path = QtWidgets.QFileDialog.getOpenFileName(self.parent, 'Open Project', self.parent.cfg["dir_in"],
+														 f"Tape Sync project files (*{EXT})")[0]
+		if os.path.isfile(cfg_path):
+			sync = load_config_json(cfg_path)
+			self.parent.props.display_widget.fft_size = sync["fft_size"]
+			self.parent.props.display_widget.fft_overlap = sync["fft_overlap"]
+			self.parent.props.alignment_widget.smoothing = sync["smoothing"]
+			for file_widget, fp in zip(self.parent.props.files_widget.files, (sync["ref"], sync["src"])):
+				if not os.path.isfile(fp):
+					logging.warning(f"Could not find {fp}")
+					return
+				file_widget.accept_file(fp)
+			for a0, a1, b0, b1, d, corr in sync["data"]:
+				markers.LagSample(self, (a0, a1), (b0, b1), d, corr)
+			self.lag_line.update()
+
 	def save_traces(self):
-		# get the data from the traces and regressions and save it
-		io_ops.write_lag(
-			self.filenames[0],
-			[(lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d) for lag in self.lag_samples])
-		# write current state to json
+		"""Save project with all required settings"""
 		sync = {}
 		sync["ref"], sync["src"] = self.filenames
-		sync["smoothing"] = self.lag_line.smoothing
+		sync["smoothing"] = self.parent.props.alignment_widget.smoothing
 		sync["fft_size"] = self.parent.props.display_widget.fft_size
 		sync["fft_overlap"] = self.parent.props.display_widget.fft_overlap
-		sync["data"] = [(lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d, lag.corr) for lag in self.lag_samples]
+		sync["data"] = list(sorted(set((lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d, lag.corr) for lag in self.lag_samples)))
 		cfg_path = os.path.splitext(self.filenames[0])[0]+".tapesync"
 		save_config_json(cfg_path, sync)
 

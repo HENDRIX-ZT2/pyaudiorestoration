@@ -80,8 +80,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.toolbar = NavigationToolbar(self.canvas, self)
 
 		# Just some button connected to `plot` method
-		self.file_widget = widgets.FilesWidget(self, 1, self.cfg)
-		self.file_widget.on_load_file = self.open_file
+		self.files_widget = widgets.FilesWidget(self, 1, self.cfg)
+		self.files_widget.on_load_file = self.open_file
 		
 		self.b_resample = QtWidgets.QPushButton('Resample')
 		self.b_resample.setToolTip("Write speed-corrected audio to a new file.")
@@ -117,7 +117,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.qgrid.setVerticalSpacing(0)
 		self.qgrid.addWidget(self.toolbar, 0, 0, 1, 7)
 		self.qgrid.addWidget(self.canvas, 1, 0, 1, 7)
-		self.qgrid.addWidget(self.file_widget, 2, 0)
+		self.qgrid.addWidget(self.files_widget, 2, 0)
 		self.qgrid.addWidget(self.b_resample, 2, 1)
 		self.qgrid.addWidget(self.c_channels, 2, 2)
 		self.qgrid.addWidget(self.s_base_hum, 2, 3)

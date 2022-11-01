@@ -45,8 +45,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.b_process.setToolTip("Process these files according to the current settings.")
 		self.b_process.clicked.connect(self.process)
 		
-		self.file_widget = QtWidgets.QListWidget()
-		self.file_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+		self.files_widget = QtWidgets.QListWidget()
+		self.files_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
 		
 		self.qgrid = QtWidgets.QGridLayout()
 		self.qgrid.setHorizontalSpacing(0)
@@ -54,7 +54,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.qgrid.addWidget(self.b_add, 0, 0)
 		self.qgrid.addWidget(self.b_remove, 0, 1)
 		self.qgrid.addWidget(self.b_process, 0, 2)
-		self.qgrid.addWidget(self.file_widget, 1, 0, 1, 3)
+		self.qgrid.addWidget(self.files_widget, 1, 0, 1, 3)
 		self.qgrid.addWidget(self.hpss_widget, 2, 0, 1, 3)
 		self.qgrid.addWidget(self.display_widget, 3, 0, 1, 3)
 		
@@ -96,17 +96,17 @@ class MainWindow(QtWidgets.QMainWindow):
 			self.cfg["dir_in"], file_name = os.path.split(audio_path)
 			if file_name not in self.file_names:
 				self.file_names.append(file_name)
-				self.file_widget.addItem(file_name)
+				self.files_widget.addItem(file_name)
 				self.names_to_full_paths[file_name] = audio_path
 		
 	def remove_files(self):
-		for item in self.file_widget.selectedItems():
+		for item in self.files_widget.selectedItems():
 			file_name = item.text()
 			for i in reversed(range(0, len(self.file_names))):
 				if self.file_names[i] == file_name:
 					self.file_names.pop(i)
 					break
-			self.file_widget.takeItem(self.file_widget.row(item))
+			self.files_widget.takeItem(self.files_widget.row(item))
 
 	def process(self):
 		# get params from gui

@@ -1,5 +1,8 @@
+import logging
+
 import numpy as np
-from scipy.signal import butter, filtfilt
+from scipy.signal import butter, filtfilt, sosfiltfilt
+
 
 def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
 	"""Performs a low, high or bandpass filter if low & highcut are in range"""
@@ -8,16 +11,19 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
 	high = highcut / nyq
 	low_in_range = 0 < low < 1
 	high_in_range = 0 < high < 1
+	# logging.debug(f"low_in_range {low_in_range}, high_in_range {high_in_range}")
 	if low_in_range and high_in_range:
-		b, a = butter(order, [low, high], btype='band')
+		sos = butter(order, [low, high], btype='band', output='sos')
 	elif low_in_range and not high_in_range:
-		b, a = butter(order, low, btype='high')
+		sos = butter(order, low, btype='high', output='sos')
 	elif not low_in_range and high_in_range:
-		b, a = butter(order, high, btype='low')
+		sos = butter(order, high, btype='low', output='sos')
 	else:
 		return data
-	return filtfilt(b, a, data)
-	
+	# return filtfilt(b, a, data)
+	return sosfiltfilt(sos, data)
+
+
 def moving_average(a, n=3) :
 	ret = np.cumsum(a, dtype=float)
 	ret[n:] = ret[n:] - ret[:-n]

@@ -1,12 +1,9 @@
-import os
 import numpy as np
-import soundfile as sf
 import logging
-from vispy import scene, color
-from PyQt5 import QtGui, QtWidgets
+from PyQt5 import QtWidgets
 
 # custom modules
-from util import spectrum, resampling, wow_detection, qt_threads, widgets, io_ops, config, markers
+from util import spectrum, wow_detection, qt_threads, widgets, io_ops, markers
 
 
 class MainWindow(widgets.MainWindow):

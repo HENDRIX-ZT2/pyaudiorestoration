@@ -44,18 +44,19 @@ def get_group_delay(ref_sig, src_sig):
 
 	t0 = 153.2
 	t1 = 156.0
+	min_corr = 0.6
 	s_start = int(t0 * sr)
 	s_end = int(t1 * sr)
 	s_dur = s_end-s_start
 	s_window = np.hanning(s_dur)
 	# or logspace?
-	band_limits = np.linspace(f_lower, f_upper, num_bands)
-	# band_limits = np.logspace(np.log2(f_lower), np.log2(f_upper), num=num_bands, endpoint=True, base=2, dtype=np.uint16)
+	# band_limits = np.linspace(f_lower, f_upper, num_bands)
+	band_limits = np.logspace(np.log2(f_lower), np.log2(f_upper), num=num_bands, endpoint=True, base=2, dtype=np.uint16)
 	lags = []
 	correlations = []
 	band_centers = []
 	for f_lower_band, f_upper_band in pairwise(band_limits):
-		logging.info(f"lower {f_lower_band:02f}, upper {f_upper_band}:02f")
+		logging.info(f"lower {f_lower_band:.1f}, upper {f_upper_band:.1f}, width {f_upper_band-f_lower_band:.1f}")
 		ref_s = filters.butter_bandpass_filter(ref_sig[s_start:s_end], f_lower_band, f_upper_band, sr, order=1)
 		src_s = filters.butter_bandpass_filter(src_sig[s_start:s_end], f_lower_band, f_upper_band, sr, order=1)
 		# plt.plot(ref_s, label="ref_s")
@@ -70,10 +71,13 @@ def get_group_delay(ref_sig, src_sig):
 		# interpolate the most accurate fit
 		i_interp, corr = parabolic(res, i_peak)
 		v = (s_dur // 2) - i_interp
-		lags.append(v)
-		correlations.append(corr)
-		band_center = (f_lower_band+f_upper_band)/2
-		band_centers.append(band_center)
+		if corr > min_corr:
+			lags.append(v)
+			correlations.append(corr)
+			band_center = (f_lower_band+f_upper_band)/2
+			band_centers.append(band_center)
+		else:
+			logging.warning(f"Band had too little correlation {corr}")
 
 		#
 		# plt.title('Digital filter group delay')

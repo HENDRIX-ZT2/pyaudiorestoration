@@ -147,7 +147,7 @@ class Canvas(spectrum.SpectrumCanvas):
 						np.abs(res, out=res)
 
 					# get the index of the strongest correlation
-					max_index = np.argmax(res[1:-1])
+					max_index = np.argmax(res)
 					# set it to be able to display it
 					lag.corr = res[max_index]
 					# refine the index with interpolation
@@ -156,12 +156,12 @@ class Canvas(spectrum.SpectrumCanvas):
 					# update the lag marker
 					lag.d = result / sr
 					lag.select()
-					self.lag_line.update()
 					print("raw accuracy (smp)", raw_lag)
 					print("extra accuracy (smp)", result)
 				except BaseException as err:
 					print("Refining error!")
 					print(err)
+		self.lag_line.update()
 
 	def select_all(self):
 		for trace in self.lag_samples:

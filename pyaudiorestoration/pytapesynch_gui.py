@@ -142,7 +142,7 @@ class Canvas(spectrum.SpectrumCanvas):
 
 					# interpolate to get the most accurate fit
 					# we are not necessarily interested in the largest positive value if the correlation is negative
-					if self.parent.props.alignment_widget.align_abs:
+					if self.parent.props.alignment_widget.ignore_phase:
 						print("absolute")
 						np.abs(res, out=res)
 
@@ -158,9 +158,8 @@ class Canvas(spectrum.SpectrumCanvas):
 					lag.select()
 					print("raw accuracy (smp)", raw_lag)
 					print("extra accuracy (smp)", result)
-				except BaseException as err:
-					print("Refining error!")
-					print(err)
+				except:
+					logging.exception(f"Refining failed")
 		self.lag_line.update()
 
 	def select_all(self):

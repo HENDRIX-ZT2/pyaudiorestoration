@@ -384,9 +384,9 @@ class TracingWidget(QtWidgets.QWidget):
 class AlignmentWidget(QtWidgets.QGroupBox):
 	def __init__(self, ):
 		super().__init__("Alignment")
-		self.align_abs_b = QtWidgets.QCheckBox("Absolute match")
-		self.align_abs_b.setChecked(False)
-		self.align_abs_b.setToolTip("Turn on if phase does not match.")
+		self.ignore_phase_b = QtWidgets.QCheckBox("Ignore phase")
+		self.ignore_phase_b.setChecked(False)
+		self.ignore_phase_b.setToolTip("Turn on if phase of sources does not match and you want the strongest relationship. Consistent negative values indicate you should invert one source.")
 
 		corr_l = QtWidgets.QLabel("Correlation")
 		self.corr_l = QtWidgets.QLabel("None")
@@ -398,7 +398,7 @@ class AlignmentWidget(QtWidgets.QGroupBox):
 		self.smoothing_s.setValue(3)
 		self.smoothing_s.setToolTip("Degree of the smoothing spline")
 
-		buttons = ((self.align_abs_b,), (corr_l, self.corr_l), (self.smoothing_l, self.smoothing_s))
+		buttons = ((self.ignore_phase_b,), (corr_l, self.corr_l), (self.smoothing_l, self.smoothing_s))
 		vbox(self, grid(buttons))
 
 	@property
@@ -410,7 +410,7 @@ class AlignmentWidget(QtWidgets.QGroupBox):
 		self.smoothing_s.setValue(v)
 
 	@property
-	def align_abs(self): return self.align_abs_b.isChecked()
+	def ignore_phase(self): return self.ignore_phase_b.isChecked()
 
 
 class DropoutWidget(QtWidgets.QWidget):

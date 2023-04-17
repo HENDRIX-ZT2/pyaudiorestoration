@@ -3,9 +3,8 @@
 # plot x: freq, y: phase delay, correlation
 import logging
 
-import scipy
-
 from pyaudiorestoration.util.wow_detection import parabolic
+from pyaudiorestoration.util.correlation import xcorr
 
 logging.basicConfig(level=logging.INFO)
 # logging.basicConfig(level=logging.DEBUG)
@@ -17,16 +16,6 @@ from scipy import signal
 import matplotlib.pyplot as plt
 
 from pyaudiorestoration.util import filters
-
-
-def xcorr(a, b, mode='full'):
-	norm_a = np.linalg.norm(a)
-	a = a / norm_a
-	norm_b = np.linalg.norm(b)
-	b = b / norm_b
-	# return np.correlate(a, b, mode=mode)
-	# return scipy.signal.correlate(ref_s*s_window, src_s*s_window, mode='same', method='auto')
-	return scipy.signal.correlate(a, b, mode=mode, method='auto')
 
 
 def get_group_delay(ref_sig, src_sig):

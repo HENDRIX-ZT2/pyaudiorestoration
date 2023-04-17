@@ -5,21 +5,14 @@ import numpy as np
 from PyQt5 import QtWidgets
 
 # custom modules
-from util import vispy_ext, fourier, spectrum, resampling, wow_detection, qt_threads, snd, widgets, filters, io_ops, \
+from pyaudiorestoration.util.correlation import xcorr
+from util import spectrum, wow_detection, qt_threads, widgets, filters, io_ops, \
 	markers
 
 from pyaudiorestoration.util.config import save_config_json, load_config_json, logging_setup
 
 logging_setup()
 EXT = ".tapesync"
-
-
-def xcorr(a, b, mode='full'):
-	norm_a = np.linalg.norm(a)
-	a = a / norm_a
-	norm_b = np.linalg.norm(b)
-	b = b / norm_b
-	return np.correlate(a, b, mode=mode)
 
 
 class MainWindow(widgets.MainWindow):

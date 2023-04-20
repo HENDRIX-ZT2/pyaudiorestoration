@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 16 16"
+   xml:space="preserve"
+   version="1.1"
+   id="svg778"
+   sodipodi:docname="select_extend.svg"
+   width="16"
+   height="16"
+   inkscape:version="1.2.1 (9c6d41e410, 2022-07-14)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"><defs
+   id="defs782" /><sodipodi:namedview
+   id="namedview780"
+   pagecolor="#ffffff"
+   bordercolor="#000000"
+   borderopacity="0.25"
+   inkscape:showpageshadow="2"
+   inkscape:pageopacity="0.0"
+   inkscape:pagecheckerboard="0"
+   inkscape:deskcolor="#d1d1d1"
+   showgrid="false"
+   inkscape:zoom="43.85"
+   inkscape:cx="9.9885975"
+   inkscape:cy="9.9885975"
+   inkscape:window-width="1920"
+   inkscape:window-height="1057"
+   inkscape:window-x="-8"
+   inkscape:window-y="-8"
+   inkscape:window-maximized="1"
+   inkscape:current-layer="svg778" />
+    <path
+   fill="#ffffff"
+   d="m 5.492,1 a 0.5,0.5 0 0 0 -0.5,0.502 L 4.998,5.008 1.5,5.01 A 0.5,0.5 0 0 0 1,5.51 v 9 a 0.5,0.5 0 0 0 0.5,0.5 h 9 a 0.5,0.5 0 0 0 0.5,-0.5 v -3.5 h 3.5 a 0.5,0.5 0 0 0 0.5,-0.5 v -9 a 0.5,0.5 0 0 0 -0.5,-0.5 z"
+   id="path776" />
+</svg>

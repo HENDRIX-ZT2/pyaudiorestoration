@@ -24,16 +24,16 @@ class MainWindow(widgets.MainWindow):
 		file_menu = main_menu.addMenu('File')
 		edit_menu = main_menu.addMenu('Edit')
 		button_data = (
-			(file_menu, "Open", self.canvas.load_project, "CTRL+O"),
-			(file_menu, "Save", self.canvas.save_traces, "CTRL+S"),
-			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R"),
-			(file_menu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B"),
-			(file_menu, "Exit", self.close, ""),
-			(edit_menu, "Select All", self.canvas.select_all, "CTRL+A"),
+			(file_menu, "Open", self.props.files_widget.ask_open, "CTRL+O", "dir"),
+			(file_menu, "Save", self.canvas.save_traces, "CTRL+S", "save"),
+			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R", "curve"),
+			(file_menu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B", "curve2"),
+			(file_menu, "Exit", self.close, "", "exit"),
+			(edit_menu, "Select All", self.canvas.select_all, "CTRL+A", "select_extend"),
 			(edit_menu, "Improve", self.canvas.improve_lag, "CTRL+I"),
-			(edit_menu, "Delete Selected", self.canvas.delete_traces, "DEL"),
-			(edit_menu, "Undo", self.props.undo_stack.undo, "CTRL+Z"),
-			(edit_menu, "Redo", self.props.undo_stack.redo, "CTRL+Y"),
+			(edit_menu, "Delete Selected", self.canvas.delete_traces, "DEL", "x"),
+			(edit_menu, "Undo", self.props.undo_stack.undo, "CTRL+Z", "undo"),
+			(edit_menu, "Redo", self.props.undo_stack.redo, "CTRL+Y", "redo"),
 		)
 		self.add_to_menu(button_data)
 

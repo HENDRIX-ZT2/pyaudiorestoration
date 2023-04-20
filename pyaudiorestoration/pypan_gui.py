@@ -13,14 +13,14 @@ class MainWindow(widgets.MainWindow):
 		file_menu = main_menu.addMenu('File')
 		edit_menu = main_menu.addMenu('Edit')
 		button_data = (
-			(file_menu, "Open", self.props.files_widget.ask_open, "CTRL+O"),
-			(file_menu, "Save", self.canvas.save_traces, "CTRL+S"),
-			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R"),
-			(file_menu, "Exit", self.close, ""),
-			(edit_menu, "Undo", self.props.undo_stack.undo, "CTRL+Z"),
-			(edit_menu, "Redo", self.props.undo_stack.redo, "CTRL+Y"),
-			(edit_menu, "Select All", self.canvas.select_all, "CTRL+A"),
-			(edit_menu, "Delete Selected", self.canvas.delete_traces, "DEL"),
+			(file_menu, "Open", self.props.files_widget.ask_open, "CTRL+O", "dir"),
+			(file_menu, "Save", self.canvas.save_traces, "CTRL+S", "save"),
+			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R", "curve"),
+			(file_menu, "Exit", self.close, "", "exit"),
+			(edit_menu, "Undo", self.props.undo_stack.undo, "CTRL+Z", "undo"),
+			(edit_menu, "Redo", self.props.undo_stack.redo, "CTRL+Y", "redo"),
+			(edit_menu, "Select All", self.canvas.select_all, "CTRL+A", "select_extend"),
+			(edit_menu, "Delete Selected", self.canvas.delete_traces, "DEL", "x"),
 		)
 		self.add_to_menu(button_data)
 

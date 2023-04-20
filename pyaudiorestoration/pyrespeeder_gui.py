@@ -21,18 +21,18 @@ class MainWindow(widgets.MainWindow):
 		# view_menu = main_menu.addMenu('View')
 		# help_menu = main_menu.addMenu('Help')
 		button_data = (
-			(file_menu, "Open", self.props.files_widget.ask_open, "CTRL+O"),
-			(file_menu, "Save", self.canvas.save_traces, "CTRL+S"),
-			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R"),
-			(file_menu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B"),
-			(file_menu, "Exit", self.close, ""),
-			(edit_menu, "Undo", self.props.undo_stack.undo, "CTRL+Z"),
-			(edit_menu, "Redo", self.props.undo_stack.redo, "CTRL+Y"),
-			(edit_menu, "Select All", self.canvas.select_all, "CTRL+A"),
-			(edit_menu, "Invert Selection", self.canvas.invert_selection, "CTRL+I"),
+			(file_menu, "Open", self.props.files_widget.ask_open, "CTRL+O", "dir"),
+			(file_menu, "Save", self.canvas.save_traces, "CTRL+S", "save"),
+			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R", "curve"),
+			(file_menu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B", "curve2"),
+			(file_menu, "Exit", self.close, "", "exit"),
+			(edit_menu, "Undo", self.props.undo_stack.undo, "CTRL+Z", "undo"),
+			(edit_menu, "Redo", self.props.undo_stack.redo, "CTRL+Y", "redo"),
+			(edit_menu, "Select All", self.canvas.select_all, "CTRL+A", "select_extend"),
+			(edit_menu, "Invert Selection", self.canvas.invert_selection, "CTRL+I", "select_intersect"),
 			(edit_menu, "Merge Selected", self.canvas.merge_selected_traces, "CTRL+M"),
 			(edit_menu, "Merge Overlapping", self.canvas.group_traces, "CTRL+G"),
-			(edit_menu, "Delete Selected", self.canvas.delete_traces, "DEL"),
+			(edit_menu, "Delete Selected", self.canvas.delete_traces, "DEL", "x"),
 			# (edit_menu, "Play/Pause", self.canvas.audio_widget.play_pause, "SPACE"),
 			)
 		self.add_to_menu(button_data)

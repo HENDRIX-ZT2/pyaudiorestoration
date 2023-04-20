@@ -297,16 +297,16 @@ class LagSample(BaseMarker):
 		self.t = (a[0] + b[0]) / 2
 		self.f = (a[1] + b[1]) / 2
 		self.height = abs(a[1] - b[1])
-		self.spec_center = (self.t, self.f)
 		self.speed_center = (self.t, self.d)
+		self.spec_center = (self.t, self.f)
 		# create & store speed visual
 		r = 0.1
-		rect = scene.Rectangle(center=(self.t, self.d), width=r, height=r, radius=0)
+		rect = scene.Rectangle(center=self.speed_center, width=r, height=r, radius=0)
 		rect.color = self.color_def
 		self.visuals.append(rect)
 
 		# create & store spec visual
-		rect = scene.Rectangle(center=(self.t, self.f), width=self.width, height=self.height, radius=0)
+		rect = scene.Rectangle(center=self.spec_center, width=self.width, height=self.height, radius=0)
 		rect.color = self.color_def
 		rect.transform = vispy_canvas.spectra[-1].mel_transform
 		rect.set_gl_state('additive')

@@ -7,6 +7,7 @@ from vispy.geometry import Rect
 from util import vispy_ext, io_ops, qt_threads, units, colormaps
 
 # log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)
+from pyaudiorestoration.util.undo import AddAction
 
 norm_luminance = """
 float norm_luminance(vec2 pos) {
@@ -289,8 +290,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 			self.selected_channels = channels
 		# called by the files widget
 		try:
-			self.compute_spectra(filenames, self.parent.props.display_widget.fft_size,
-								 self.parent.props.display_widget.fft_overlap)
+			self.compute_spectra(
+				filenames, self.parent.props.display_widget.fft_size,  self.parent.props.display_widget.fft_overlap)
 		# file could not be opened
 		except RuntimeError as err:
 			print(err)
@@ -298,9 +299,12 @@ class SpectrumCanvas(scene.SceneCanvas):
 		else:
 			# Cleanup of old data
 			self.delete_traces(delete_all=True)
-			self.load_visuals()
+			self.add_markers(self.load_visuals())
 			self.parent.props.resampling_widget.refill(self.channels)
 			self.parent.update_file(self.filenames[0])
+
+	def add_markers(self, markers):
+		self.parent.props.undo_stack.push(AddAction(list(markers)))
 
 	def clear_fft_storage(self):
 		print("Clearing FFT storage")

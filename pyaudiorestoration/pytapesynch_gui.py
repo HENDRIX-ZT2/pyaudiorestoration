@@ -32,8 +32,8 @@ class MainWindow(widgets.MainWindow):
 			(edit_menu, "Select All", self.canvas.select_all, "CTRL+A"),
 			(edit_menu, "Improve", self.canvas.improve_lag, "CTRL+I"),
 			(edit_menu, "Delete Selected", self.canvas.delete_traces, "DEL"),
-			(edit_menu, "Undo", self.canvas.undo_stack.undo, "CTRL+Z"),
-			(edit_menu, "Redo", self.canvas.undo_stack.redo, "CTRL+Y"),
+			(edit_menu, "Undo", self.props.undo_stack.undo, "CTRL+Z"),
+			(edit_menu, "Redo", self.props.undo_stack.redo, "CTRL+Y"),
 		)
 		self.add_to_menu(button_data)
 
@@ -47,7 +47,6 @@ class Canvas(spectrum.SpectrumCanvas):
 
 		self.unfreeze()
 		self.parent = parent
-		self.undo_stack = UndoStack(self.parent, self)
 		self.lag_samples = []
 		self.lag_line = markers.LagLine(self)
 
@@ -55,7 +54,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.resampling_thread = qt_threads.ResamplingThread()
 		self.resampling_thread.notifyProgress.connect(self.parent.props.progress_widget.onProgress)
 		self.fourier_thread.notifyProgress.connect(self.parent.props.progress_widget.onProgress)
-		self.parent.props.stack_widget.view.setStack(self.undo_stack)
 		self.parent.props.display_widget.canvas = self
 		self.parent.props.tracing_widget.setVisible(False)
 		self.freeze()
@@ -71,10 +69,8 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def load_visuals(self, ):
 		"""legacy code path"""
-		_markers = []
 		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):
-			_markers.append(markers.LagSample(self, (a0, a1), (b0, b1), d))
-		self.undo_stack.push(AddAction(_markers))
+			yield markers.LagSample(self, (a0, a1), (b0, b1), d)
 
 	def load_project(self):
 		"""Load project with all required settings"""
@@ -93,7 +89,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			_markers = []
 			for a0, a1, b0, b1, d, corr in sync["data"]:
 				_markers.append(markers.LagSample(self, (a0, a1), (b0, b1), d, corr))
-			self.undo_stack.push(AddAction(_markers))
+			self.props.undo_stack.push(AddAction(_markers))
 
 	def save_traces(self):
 		"""Save project with all required settings"""
@@ -170,7 +166,7 @@ class Canvas(spectrum.SpectrumCanvas):
 				print(f"extra accuracy (smp) {result}")
 			except:
 				logging.exception(f"Refining failed")
-		self.undo_stack.push(DeltaAction(selected, deltas))
+		self.props.undo_stack.push(DeltaAction(selected, deltas))
 
 	def select_all(self):
 		for trace in self.lag_samples:
@@ -185,7 +181,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		for trace in reversed(self.lag_samples):
 			if (trace.selected and not delete_all) or delete_all:
 				deltraces.append(trace)
-		self.undo_stack.push(DeleteAction(deltraces))
+		self.props.undo_stack.push(DeleteAction(deltraces))
 
 	def run_resample(self):
 		self.resample_files((self.filenames[1],))
@@ -242,7 +238,7 @@ class Canvas(spectrum.SpectrumCanvas):
 						self.spectra[1].translate(d)
 					elif "Shift" in event.modifiers:
 						marker = markers.LagSample(self, a, b)
-						self.undo_stack.push(AddAction((marker,)))
+						self.props.undo_stack.push(AddAction((marker,)))
 					# elif "Alt" in event.modifiers:
 						# print()
 						# print("Start")

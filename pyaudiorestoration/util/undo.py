@@ -5,9 +5,9 @@ from PyQt5.QtWidgets import QUndoCommand, QUndoStack
 
 class UndoStack(QUndoStack):
 
-	def __init__(self, main_widget, canvas):
-		super(UndoStack, self).__init__(main_widget)
-		self.canvas = canvas
+	def __init__(self, parent):
+		super(UndoStack, self).__init__(parent)
+		self.canvas = None
 		self.indexChanged.connect(self.update)
 
 	def push(self, cmd: QUndoCommand) -> None:

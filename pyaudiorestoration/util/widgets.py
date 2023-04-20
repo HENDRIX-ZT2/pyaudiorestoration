@@ -8,6 +8,8 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 
 from util import units, config, qt_theme, colormaps
 
+from pyaudiorestoration.util.undo import UndoStack
+
 myFont = QtGui.QFont()
 myFont.setBold(True)
 
@@ -567,9 +569,9 @@ class HPSSWidget(QtWidgets.QWidget):
 
 
 class StackWidget(QtWidgets.QGroupBox):
-	def __init__(self, ):
+	def __init__(self, stack):
 		super().__init__("History")
-		self.view = QtWidgets.QUndoView()
+		self.view = QtWidgets.QUndoView(stack)
 		buttons = ((self.view, ),)
 		vbox(self, grid(buttons))
 
@@ -698,7 +700,7 @@ class InspectorWidget(QtWidgets.QLabel):
 
 class MainWindow(QtWidgets.QMainWindow):
 
-	def __init__(self, name, object_widget, canvas_widget, count):
+	def __init__(self, name, props_widget_cls, canvas_widget_cls, count):
 		QtWidgets.QMainWindow.__init__(self)
 
 		self.name = name
@@ -712,10 +714,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		self.cfg = config.read_config("config.ini")
 
-		self.props = object_widget(parent=self, count=count)
-		self.canvas = canvas_widget(parent=self)
+		self.props = props_widget_cls(parent=self, count=count)
+		self.canvas = canvas_widget_cls(parent=self)
 		self.canvas.props = self.props
 		self.props.files_widget.on_load_file = self.canvas.load_audio
+		self.props.undo_stack.canvas = self.canvas
 
 		splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 		splitter.addWidget(self.canvas.native)
@@ -789,7 +792,8 @@ class ParamWidget(QtWidgets.QWidget):
 		# self.audio_widget = snd.AudioWidget()
 		self.inspector_widget = InspectorWidget()
 		self.alignment_widget = AlignmentWidget()
-		self.stack_widget = StackWidget()
+		self.undo_stack = UndoStack(self)
+		self.stack_widget = StackWidget(self.undo_stack)
 		buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget,
 				   self.resampling_widget, self.stack_widget, self.progress_widget,  # self.audio_widget,
 				   self.inspector_widget]

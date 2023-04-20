@@ -26,8 +26,8 @@ class MainWindow(widgets.MainWindow):
 			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R"),
 			(file_menu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B"),
 			(file_menu, "Exit", self.close, ""),
-			(edit_menu, "Undo", self.canvas.undo_stack.undo, "CTRL+Z"),
-			(edit_menu, "Redo", self.canvas.undo_stack.redo, "CTRL+Y"),
+			(edit_menu, "Undo", self.props.undo_stack.undo, "CTRL+Z"),
+			(edit_menu, "Redo", self.props.undo_stack.redo, "CTRL+Y"),
 			(edit_menu, "Select All", self.canvas.select_all, "CTRL+A"),
 			(edit_menu, "Invert Selection", self.canvas.invert_selection, "CTRL+I"),
 			(edit_menu, "Merge Selected", self.canvas.merge_selected_traces, "CTRL+M"),
@@ -53,8 +53,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.grouped_traces = []
 		self.regs = []
 		self.regs = []
-		self.undo_stack = UndoStack(self.parent, self)
-		self.parent.props.stack_widget.view.setStack(self.undo_stack)
 		self.master_speed = markers.MasterSpeedLine(self)
 		self.master_reg_speed = markers.MasterRegLine(self, (0, 0, 1, .5))
 
@@ -69,12 +67,10 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def load_visuals(self, ):
 		# read any saved traces or regressions
-		_markers = []
 		for offset, times, freqs in io_ops.read_trace(self.filenames[0]):
-			_markers.append(markers.TraceLine(self, times, freqs, offset=offset))
+			yield markers.TraceLine(self, times, freqs, offset=offset)
 		for t0, t1, amplitude, omega, phase, offset in io_ops.read_regs(self.filenames[0]):
-			_markers.append(markers.RegLine(self, t0, t1, amplitude, omega, phase, offset))
-		self.undo_stack.push(AddAction(_markers))
+			yield markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
 
 	def save_traces(self):
 		# get the data from the traces and regressions and save it
@@ -88,7 +84,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		for trace in reversed(self.regs + self.lines):
 			if (trace.selected and not delete_all) or delete_all:
 				deltraces.append(trace)
-		self.undo_stack.push(DeleteAction(deltraces))
+		self.props.undo_stack.push(DeleteAction(deltraces))
 
 	def merge_selected_traces(self):
 		deltraces = []
@@ -117,7 +113,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			freqs = np.power(2, data[:, 1] + np.log2(np.mean(means)))
 			# todo - taking np.mean(offsets) here is wrong, as they need not be same length, should be weighted mean?
 			line = markers.TraceLine(self, data[:, 0], freqs, np.mean(offsets))
-			self.undo_stack.push(MergeAction((line,), traces_to_merge))
+			self.props.undo_stack.push(MergeAction((line,), traces_to_merge))
 
 	def group_traces(self):
 		"""Convert overlapping traces into grouped representations"""
@@ -215,7 +211,7 @@ class Canvas(spectrum.SpectrumCanvas):
 						amplitude, omega, phase, offset = wow_detection.trace_sine_reg(
 							self.master_reg_speed.get_linspace(), t0, t1, settings.rpm)
 					marker = markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
-					self.undo_stack.push(AddAction((marker,)))
+					self.props.undo_stack.push(AddAction((marker,)))
 				else:
 					self.track_wow(settings, trail)
 				return
@@ -228,14 +224,14 @@ class Canvas(spectrum.SpectrumCanvas):
 				a = trail[0]
 				b = trail[-1]
 				traces = [trace for trace in self.lines + self.regs if trace.selected]
-				self.undo_stack.push(MoveAction(traces, a[1], b[1]))
+				self.props.undo_stack.push(MoveAction(traces, a[1], b[1]))
 
 	def track_wow(self, settings, trail):
 		track = wow_detection.Track(
 			settings.mode, self.fft_storage[self.keys[0]], trail, self.fft_size,
 			self.hop, self.sr, settings.tolerance, settings.adapt)
 		marker = markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
-		self.undo_stack.push(AddAction((marker,)))
+		self.props.undo_stack.push(AddAction((marker,)))
 
 	def get_closest_line(self, click):
 		if click is not None:

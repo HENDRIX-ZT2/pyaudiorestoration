@@ -61,7 +61,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.resampling_thread = qt_threads.ResamplingThread()
 		self.resampling_thread.notifyProgress.connect(self.parent.props.progress_widget.onProgress)
 		self.fourier_thread.notifyProgress.connect(self.parent.props.progress_widget.onProgress)
-		# self.parent.props.stack_widget.selection.selectionChanged.connect(self.undo_stack.set_state)
 		self.parent.props.display_widget.canvas = self
 		self.parent.props.tracing_widget.canvas = self
 		self.parent.props.alignment_widget.setVisible(False)

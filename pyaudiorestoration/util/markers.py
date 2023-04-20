@@ -60,9 +60,7 @@ class BaseMarker:
 
 	def select_handle(self, multi=False):
 		if not multi:
-			# for trace in self.vispy_canvas.regs+self.vispy_canvas.lines:
-			for trace in self.container:
-				trace.deselect()
+			self.vispy_canvas.deselect_all()
 		self.toggle()
 
 	def remove(self):
@@ -313,10 +311,9 @@ class LagSample(BaseMarker):
 		self.visuals.append(rect)
 
 	def set_offset(self, d):
-		delta = d - self.d
-		self.d = d
+		self.d += d
 		speed_vis = self.visuals[0]
-		speed_vis.pos[:, 1] += delta
+		speed_vis.pos[:, 1] += d
 		speed_vis.pos = np.array(speed_vis.pos)
 
 	def set_color(self, c):

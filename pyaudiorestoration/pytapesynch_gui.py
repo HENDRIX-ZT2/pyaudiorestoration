@@ -6,7 +6,7 @@ from PyQt5 import QtWidgets
 
 # custom modules
 from pyaudiorestoration.util.correlation import xcorr
-from pyaudiorestoration.util.undo import AddAction, UndoStack, DeleteAction
+from pyaudiorestoration.util.undo import AddAction, UndoStack, DeleteAction, DeltaAction
 from util import spectrum, wow_detection, qt_threads, widgets, filters, io_ops, \
 	markers
 
@@ -103,73 +103,74 @@ class Canvas(spectrum.SpectrumCanvas):
 		sync["fft_size"] = self.parent.props.display_widget.fft_size
 		sync["fft_overlap"] = self.parent.props.display_widget.fft_overlap
 		sync["data"] = list(sorted(set((lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d, lag.corr) for lag in self.lag_samples)))
-		cfg_path = os.path.splitext(self.filenames[0])[0]+".tapesync"
+		cfg_path = os.path.splitext(self.filenames[0])[0]+EXT
 		save_config_json(cfg_path, sync)
 
 	def improve_lag(self):
-		for lag in self.lag_samples:
-			if lag.selected:
-				try:
-					# prepare some values
-					sr = self.sr
-					raw_lag = int(lag.d * sr)
-					ref_t0 = int(sr * lag.a[0])
-					ref_t1 = int(sr * lag.b[0])
-					src_t0 = ref_t0 - raw_lag
-					src_t1 = ref_t1 - raw_lag
-					freqs = sorted((lag.a[1], lag.b[1]))
-					lower = max(freqs[0], 1)
-					upper = min(freqs[1], sr // 2 - 1)
-					ref_pad_l = 0
-					ref_pad_r = 0
-					src_pad_l = 0
-					src_pad_r = 0
-					# channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
+		deltas = []
+		selected = [lag for lag in self.lag_samples if lag.selected]
+		for lag in selected:
+			try:
+				# prepare some values
+				sr = self.sr
+				raw_lag = int(lag.d * sr)
+				ref_t0 = int(sr * lag.a[0])
+				ref_t1 = int(sr * lag.b[0])
+				src_t0 = ref_t0 - raw_lag
+				src_t1 = ref_t1 - raw_lag
+				freqs = sorted((lag.a[1], lag.b[1]))
+				lower = max(freqs[0], 1)
+				upper = min(freqs[1], sr // 2 - 1)
+				ref_pad_l = 0
+				ref_pad_r = 0
+				src_pad_l = 0
+				src_pad_r = 0
+				# channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
 
-					# trim and pad both sources
-					ref_sig = self.signals[0]
-					src_sig = self.signals[1]
-					if ref_t0 < 0:
-						ref_pad_l = abs(ref_t0)
-						ref_t0 = 0
-					if ref_t1 > len(ref_sig):
-						ref_pad_r = ref_t1 - len(ref_sig)
+				# trim and pad both sources
+				ref_sig = self.signals[0]
+				src_sig = self.signals[1]
+				if ref_t0 < 0:
+					ref_pad_l = abs(ref_t0)
+					ref_t0 = 0
+				if ref_t1 > len(ref_sig):
+					ref_pad_r = ref_t1 - len(ref_sig)
 
-					if src_t0 < 0:
-						src_pad_l = abs(src_t0)
-						src_t0 = 0
-					if src_t1 > len(src_sig):
-						src_pad_r = src_t1 - len(src_sig)
+				if src_t0 < 0:
+					src_pad_l = abs(src_t0)
+					src_t0 = 0
+				if src_t1 > len(src_sig):
+					src_pad_r = src_t1 - len(src_sig)
 
-					ref_sig = np.pad(ref_sig[ref_t0:ref_t1, 0], (ref_pad_l, ref_pad_r), "constant", constant_values=0)
-					src_sig = np.pad(src_sig[src_t0:src_t1, 0], (src_pad_l, src_pad_r), "constant", constant_values=0)
+				ref_sig = np.pad(ref_sig[ref_t0:ref_t1, 0], (ref_pad_l, ref_pad_r), "constant", constant_values=0)
+				src_sig = np.pad(src_sig[src_t0:src_t1, 0], (src_pad_l, src_pad_r), "constant", constant_values=0)
 
-					# correlate both sources
-					res = xcorr(
-						filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
-						filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3), mode="same")
+				# correlate both sources
+				res = xcorr(
+					filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
+					filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3), mode="same")
 
-					# interpolate to get the most accurate fit
-					# we are not necessarily interested in the largest positive value if the correlation is negative
-					if self.parent.props.alignment_widget.ignore_phase:
-						print("absolute")
-						np.abs(res, out=res)
+				# interpolate to get the most accurate fit
+				# we are not necessarily interested in the largest positive value if the correlation is negative
+				if self.parent.props.alignment_widget.ignore_phase:
+					print("absolute")
+					np.abs(res, out=res)
 
-					# get the index of the strongest correlation
-					max_index = np.argmax(res)
-					# set it to be able to display it
-					lag.corr = res[max_index]
-					# refine the index with interpolation
-					i_peak = wow_detection.parabolic(res, max_index)[0]
-					result = raw_lag + i_peak - len(ref_sig) // 2
-					# update the lag marker
-					lag.set_offset(result / sr)
-					# lag.select()
-					print(f"raw accuracy (smp) {raw_lag}")
-					print(f"extra accuracy (smp) {result}")
-				except:
-					logging.exception(f"Refining failed")
-		self.lag_line.update()
+				# get the index of the strongest correlation
+				max_index = np.argmax(res)
+				# set it to be able to display it
+				lag.corr = res[max_index]
+				# refine the index with interpolation
+				i_peak = wow_detection.parabolic(res, max_index)[0]
+				result = raw_lag + i_peak - len(ref_sig) // 2
+				# update the lag marker
+				delta = (result / sr) - lag.d
+				deltas.append(delta)
+				print(f"raw accuracy (smp) {raw_lag}")
+				print(f"extra accuracy (smp) {result}")
+			except:
+				logging.exception(f"Refining failed")
+		self.undo_stack.push(DeltaAction(selected, deltas))
 
 	def select_all(self):
 		for trace in self.lag_samples:

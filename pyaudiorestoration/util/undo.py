@@ -87,3 +87,13 @@ class MoveAction(Action):
 	def redo(self):
 		for trace in self.traces:
 			trace.set_offset(*self.args)
+
+
+class DeltaAction(Action):
+	def undo(self):
+		for trace, delta in zip(self.traces, self.args[0]):
+			trace.set_offset(-delta)
+
+	def redo(self):
+		for trace, delta in zip(self.traces, self.args[0]):
+			trace.set_offset(delta)

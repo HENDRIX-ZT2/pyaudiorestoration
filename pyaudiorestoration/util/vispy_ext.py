@@ -13,9 +13,7 @@ from vispy.scene import PanZoomCamera, AxisWidget
 from vispy.scene.widgets import Widget, ColorBarWidget
 from vispy.geometry import Rect
 from vispy import visuals
-from util import units, colormaps
-
-from pyaudiorestoration.util.spectrum import to_Hz
+from util import units, colormaps, spectrum
 
 
 class PanZoomCameraExt(PanZoomCamera):
@@ -332,7 +330,7 @@ class ExtTicker(Ticker):
 			# labels = ['%g' % x for x in major]
 			labels = [units.t_2_m_s_ms(x) for x in major]
 		elif self.axis.scale_type == 'logarithmic':
-			labels = [str(int(to_Hz(x))) for x in major]
+			labels = [str(int(units.to_Hz(x))) for x in major]
 		majstep = major[1] - major[0]
 		minor = []
 		minstep = majstep / (minor_num + 1)

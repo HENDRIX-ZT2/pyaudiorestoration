@@ -1,13 +1,13 @@
 import os
 import numpy as np
-import soundfile as sf
-from vispy import scene, gloo, visuals, color
+from vispy import scene, gloo, visuals
 from vispy.geometry import Rect
 
-#custom modules
-from util import vispy_ext, fourier, io_ops, qt_threads, units, colormaps
+# custom modules
+from util import vispy_ext, io_ops, qt_threads, units, colormaps
 
-#log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)
+# log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)
+
 norm_luminance = """
 float norm_luminance(vec2 pos) {
 	if( pos.x < 0 || pos.x > 1 || pos.y < 0 || pos.y > 1 ) {
@@ -56,7 +56,7 @@ class Spectrum:
 		num_bins, self.num_ffts = imdata.shape
 		# determine how many pieces we will create
 		num_pieces_new = ((self.num_ffts - 1) // self.MAX_TEXTURE_SIZE + 1) * (
-					(num_bins - 1) // self.MAX_TEXTURE_SIZE + 1)
+				(num_bins - 1) // self.MAX_TEXTURE_SIZE + 1)
 		num_pieces_old = len(self.pieces)
 		# we have too many pieces and need to discard some
 		for i in reversed(range(num_pieces_new, num_pieces_old)):
@@ -72,9 +72,9 @@ class Spectrum:
 			num_piece_bins, num_piece_ffts = imdata_piece.shape
 
 			# to get correct heights for subsequent pieces, the start y has to be added in mel space
-			height_Hz_in = int(num_piece_bins / num_bins * sr / 2)
-			ystart_Hz = (y / num_bins * sr / 2)
-			height_Hz_corrected = to_Hz(to_mel(height_Hz_in + ystart_Hz) - to_mel(ystart_Hz))
+			height_Hz_in = num_piece_bins / num_bins * sr / 2
+			ystart_Hz = y / num_bins * sr / 2
+			height_Hz_corrected = units.to_Hz(units.to_mel(height_Hz_in + ystart_Hz) - units.to_mel(ystart_Hz))
 			x_start = x * hop / sr + self.delta
 			x_len = num_piece_ffts * hop / sr
 
@@ -83,7 +83,7 @@ class Spectrum:
 			self.pieces[i].set_size((x_len, height_Hz_corrected))
 			# add this piece's offset with STT
 			self.pieces[i].transform = visuals.transforms.STTransform(
-				translate=(x_start, to_mel(ystart_Hz))) * self.mel_transform
+				translate=(x_start, units.to_mel(ystart_Hz))) * self.mel_transform
 			self.pieces[i].bb.left = x_start
 			self.pieces[i].bb.right = x_start + x_len
 			self.pieces[i].update()
@@ -114,6 +114,7 @@ class Spectrum:
 			image.bb.right += d
 			t[0] += d
 			image.transform.transforms[0].translate = t
+
 
 class SpectrumPiece(scene.Image):
 	"""
@@ -194,11 +195,10 @@ class SpectrumPiece(scene.Image):
 class SpectrumCanvas(scene.SceneCanvas):
 	"""This class wraps the vispy canvas and controls all the visualization, as well as the interaction with it."""
 
-	def __init__(self, spectra_colors=("r","g"), y_axis='Src. Lag', bgcolor="#353535"):
+	def __init__(self, spectra_colors=("r", "g"), y_axis='Src. Lag', bgcolor="#353535"):
 
 		# todo: make sure duration is for each spectrum
 		# long term: move a lot of these settings into the individual spectra - Spectrum class
-
 
 		# some default dummy values
 		self.props = None
@@ -223,15 +223,18 @@ class SpectrumCanvas(scene.SceneCanvas):
 		grid = self.central_widget.add_grid(margin=10)
 		grid.spacing = 0
 
-		#speed chart
-		self.speed_yaxis = scene.AxisWidget(orientation='left', axis_label=y_axis, axis_font_size=8, axis_label_margin=35, tick_label_margin=5)
+		# speed chart
+		self.speed_yaxis = scene.AxisWidget(orientation='left', axis_label=y_axis, axis_font_size=8,
+											axis_label_margin=35, tick_label_margin=5)
 		self.speed_yaxis.width_max = 55
 
-		#spectrum
-		self.spec_yaxis = vispy_ext.ExtAxisWidget(orientation='left', axis_label='Hz', axis_font_size=8, axis_label_margin=35, tick_label_margin=5, scale_type="logarithmic")
+		# spectrum
+		self.spec_yaxis = vispy_ext.ExtAxisWidget(orientation='left', axis_label='Hz', axis_font_size=8,
+												  axis_label_margin=35, tick_label_margin=5, scale_type="logarithmic")
 		self.spec_yaxis.width_max = 55
 
-		self.spec_xaxis = vispy_ext.ExtAxisWidget(orientation='bottom', axis_label='m:s:ms', axis_font_size=8, axis_label_margin=35, tick_label_margin=5)
+		self.spec_xaxis = vispy_ext.ExtAxisWidget(orientation='bottom', axis_label='m:s:ms', axis_font_size=8,
+												  axis_label_margin=35, tick_label_margin=5)
 		self.spec_xaxis.height_max = 55
 
 		top_padding = grid.add_widget(row=0)
@@ -241,7 +244,9 @@ class SpectrumCanvas(scene.SceneCanvas):
 		right_padding.width_max = 70
 
 		# create the color bar display
-		self.colorbar_display = vispy_ext.ColorBarWidgetExt(label="Gain [dB]", clim=(self.vmin, self.vmax), cmap="viridis", orientation="right", border_width=1, label_color="white")
+		self.colorbar_display = vispy_ext.ColorBarWidgetExt(label="Gain [dB]", clim=(self.vmin, self.vmax),
+															cmap="viridis", orientation="right", border_width=1,
+															label_color="white")
 		self.colorbar_display.label.font_size = 8
 		self.colorbar_display.ticks[0].font_size = 8
 		self.colorbar_display.ticks[1].font_size = 8
@@ -272,8 +277,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.fft_storage = {}
 		self.selected_channels = [0 for x in self.spectra]
 
-		#nb. this is a vispy.util.event.EventEmitter object
-		#can this be linked somewhere to the camera? base_camera connects a few events, too
+		# nb. this is a vispy.util.event.EventEmitter object
+		# can this be linked somewhere to the camera? base_camera connects a few events, too
 		for spe in self.spectra:
 			self.spec_view.transforms.changed.connect(spe.update_frustum)
 
@@ -284,7 +289,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 			self.selected_channels = channels
 		# called by the files widget
 		try:
-			self.compute_spectra(filenames, self.parent.props.display_widget.fft_size, self.parent.props.display_widget.fft_overlap )
+			self.compute_spectra(filenames, self.parent.props.display_widget.fft_size,
+								 self.parent.props.display_widget.fft_overlap)
 		# file could not be opened
 		except RuntimeError as err:
 			print(err)
@@ -356,46 +362,48 @@ class SpectrumCanvas(scene.SceneCanvas):
 									more_dense = key
 					# prefer reduction via strides
 					if more_dense:
-						print("reducing resolution via stride",more_dense[3],k[3])
-						step = k[3]//more_dense[3]
-						self.fft_storage[k] = np.array(self.fft_storage[more_dense][:,::step])
+						print("reducing resolution via stride", more_dense[3], k[3])
+						step = k[3] // more_dense[3]
+						self.fft_storage[k] = np.array(self.fft_storage[more_dense][:, ::step])
 						self.continue_spectra()
 					# TODO: implement gap filling, will need changes to stft function
 					# # then fill missing gaps
 					# elif more_sparse:
-						# print("increasing resolution by filling gaps",self.fft_size)
-						# self.fft_storage[k] = self.fft_storage[more_sparse]
+					# print("increasing resolution by filling gaps",self.fft_size)
+					# self.fft_storage[k] = self.fft_storage[more_sparse]
 					else:
-						print("storing new fft",k)
+						print("storing new fft", k)
 						# append to the fourier job list
-						self.fourier_thread.jobs.append( (signal[:,channel], self.fft_size, self.hop, "hann", self.num_cores, k) )
-						# all tasks are started below
+						self.fourier_thread.jobs.append(
+							(signal[:, channel], self.fft_size, self.hop, "hann", self.num_cores, k))
+					# all tasks are started below
 		# perform all fourier jobs
 		if self.fourier_thread.jobs:
 			self.fourier_thread.start()
-			# we continue when the thread emits a "finished" signal, conntected to retrieve_fft()
+		# we continue when the thread emits a "finished" signal, conntected to retrieve_fft()
 		# this happens when only loading from storage is required
 		elif self.dirty:
 			self.continue_spectra()
 
-	def retrieve_fft(self,):
+	def retrieve_fft(self, ):
 		print("Retrieving FFT from processing thread")
 		self.fft_storage.update(self.fourier_thread.result)
 		self.fourier_thread.result = {}
 		self.continue_spectra()
 
-	def continue_spectra(self,):
+	def continue_spectra(self, ):
 		for k, spec in zip(self.keys, self.spectra):
 			spec.update_data(self.fft_storage[k], self.hop, self.sr)
 		self.set_clims(self.vmin, self.vmax)
 		self.set_colormap(self.cmap)
-		# don't bother with audio until it is fixed
-		# self.props.audio_widget.set_data(signal[:,channel], self.sr)
 
-	def reset_view(self,):
+	# don't bother with audio until it is fixed
+	# self.props.audio_widget.set_data(signal[:,channel], self.sr)
+
+	def reset_view(self, ):
 		# (re)set the spec_view
 		self.speed_view.camera.rect = (0, -1, self.duration, 2)
-		self.spec_view.camera.rect = (0, 0, self.duration, to_mel(self.sr//2))
+		self.spec_view.camera.rect = (0, 0, self.duration, units.to_mel(self.sr // 2))
 
 	# fast stuff that does not require rebuilding everything
 	def set_colormap(self, cmap):
@@ -413,16 +421,16 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.colorbar_display.clim = (vmin, vmax)
 
 	def on_mouse_wheel(self, event):
-		#coords of the click on the vispy canvas
-		click = np.array([event.pos[0],event.pos[1],0,1])
+		# coords of the click on the vispy canvas
+		click = np.array([event.pos[0], event.pos[1], 0, 1])
 
-		#colorbar scroll
+		# colorbar scroll
 		if self.click_on_widget(click, self.colorbar_display):
 			y_pos = self.colorbar_display._colorbar.transform.imap(click)[1]
 			d = int(event.delta[1])
-			#now split Y in three parts
-			lower = self.colorbar_display.size[1]/3
-			upper = lower*2
+			# now split Y in three parts
+			lower = self.colorbar_display.size[1] / 3
+			upper = lower * 2
 			if y_pos < lower:
 				self.vmax += d
 			elif lower < y_pos < upper:
@@ -432,50 +440,50 @@ class SpectrumCanvas(scene.SceneCanvas):
 				self.vmin += d
 			self.set_clims(self.vmin, self.vmax)
 
-		#spec & speed X axis scroll
+		# spec & speed X axis scroll
 		if self.click_on_widget(click, self.spec_xaxis):
-			#the center of zoom should be assigned a new x coordinate
+			# the center of zoom should be assigned a new x coordinate
 			grid_space = self.spec_view.transform.imap(click)
 			scene_space = self.spec_view.scene.transform.imap(grid_space)
 			c = (scene_space[0], self.spec_view.camera.center[1])
 			self.spec_view.camera.zoom(((1 + self.spec_view.camera.zoom_factor) ** (-event.delta[1] * 30), 1), c)
 
-		#spec Y axis scroll
+		# spec Y axis scroll
 		if self.click_on_widget(click, self.spec_yaxis):
-			#the center of zoom should be assigned a new y coordinate
+			# the center of zoom should be assigned a new y coordinate
 			grid_space = self.spec_view.transform.imap(click)
 			scene_space = self.spec_view.scene.transform.imap(grid_space)
 			c = (self.spec_view.camera.center[0], scene_space[1])
 			self.spec_view.camera.zoom((1, (1 + self.spec_view.camera.zoom_factor) ** (-event.delta[1] * 30)), c)
 
-		#speed Y axis scroll
+		# speed Y axis scroll
 		if self.click_on_widget(click, self.speed_yaxis):
-			#the center of zoom should be assigned a new y coordinate
+			# the center of zoom should be assigned a new y coordinate
 			grid_space = self.speed_view.transform.imap(click)
 			scene_space = self.speed_view.scene.transform.imap(grid_space)
 			c = (self.speed_view.camera.center[0], scene_space[1])
 			self.speed_view.camera.zoom((1, (1 + self.speed_view.camera.zoom_factor) ** (-event.delta[1] * 30)), c)
 
 	def on_mouse_move(self, event):
-		#update the inspector label
+		# update the inspector label
 		click = self.click_spec_conversion(event.pos)
 		self.props.inspector_widget.update_text(click, self.sr)
 
-	def get_closest(self, items, click,):
+	def get_closest(self, items, click, ):
 		if click is not None:
 			c = self.click_spec_conversion(click)
-			#convert the samples to screen space!
+			# convert the samples to screen space!
 			if c is not None:
 				A = np.array([self.pt_spec_conversion(sample.spec_center)[0:2] for sample in items])
-			#check in speed view
+			# check in speed view
 			else:
 				c = self.click_speed_conversion(click)
 				if c is not None:
 					A = np.array([self.pt_spec_conversion(sample.speed_center)[0:2] for sample in items])
-			#returns the sample (if any exists) whose center is closest to pt
+			# returns the sample (if any exists) whose center is closest to pt
 			if c is not None and len(A):
-				#actually, we don't need the euclidean distance here, just a relative distance metric, so we can avoid the sqrt and just take the squared distance
-				ind = np.sum((A-click[0:2])**2, axis = 1).argmin()
+				# actually, we don't need the euclidean distance here, just a relative distance metric, so we can avoid the sqrt and just take the squared distance
+				ind = np.sum((A - click[0:2]) ** 2, axis=1).argmin()
 				return items[ind]
 
 	def click_on_widget(self, click, wid):
@@ -484,32 +492,23 @@ class SpectrumCanvas(scene.SceneCanvas):
 		return (0 < grid_space[0] < dim[0]) and (0 < grid_space[1] < dim[1])
 
 	def click_speed_conversion(self, click):
-		#in the grid on the canvas
+		# in the grid on the canvas
 		grid_space = self.speed_view.transform.imap(click)
-		#is the mouse over the spectrum spec_view area?
+		# is the mouse over the spectrum spec_view area?
 		if self.click_on_widget(click, self.speed_view):
 			return self.speed_view.scene.transform.imap(grid_space)
 
 	def click_spec_conversion(self, click):
-		#in the grid on the canvas
+		# in the grid on the canvas
 		grid_space = self.spec_view.transform.imap(click)
-		#is the mouse over the spectrum spec_view area?
+		# is the mouse over the spectrum spec_view area?
 		if self.click_on_widget(click, self.spec_view):
 			scene_space = self.spec_view.scene.transform.imap(grid_space)
 			return self.spectra[0].mel_transform.imap(scene_space)
 
 	def pt_spec_conversion(self, pt):
-		#converts a point from Hz space to screen space
+		# converts a point from Hz space to screen space
 		melspace = self.spectra[0].mel_transform.map(pt)
 		scene_space = self.spec_view.scene.transform.map(melspace)
 		return self.spec_view.transform.map(scene_space)
 
-
-
-def to_mel(val):
-	### just to set the image size correctly
-	return np.log(val / 700 + 1) * 1127
-
-def to_Hz(val):
-	### just to set the image size correctly
-	return (np.exp(val / 1127) - 1) * 700

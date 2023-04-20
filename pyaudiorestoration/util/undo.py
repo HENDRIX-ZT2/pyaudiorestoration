@@ -1,78 +1,41 @@
 import logging
 
+from PyQt5.QtWidgets import QUndoCommand, QUndoStack
 
-class UndoStack:
 
-	def __init__(self, canvas):
-		# if current is a valid index, actions[current] is the last active action
-		self.actions = []
-		self.current = -1
+class UndoStack(QUndoStack):
+
+	def __init__(self, main_widget, canvas):
+		super(UndoStack, self).__init__(main_widget)
 		self.canvas = canvas
+		self.indexChanged.connect(self.update)
 
-	@property
-	def action_name(self):
-		action_type = type(self.action).__name__.replace('Action', '')
-		return f"{action_type}[{len(self.action.traces)}]"
+	def push(self, cmd: QUndoCommand) -> None:
+		if cmd.traces:
+			super(UndoStack, self).push(cmd)
 
-	@property
-	def action(self):
-		return self.actions[self.current]
+	def undo(self) -> None:
+		if self.canUndo():
+			super(UndoStack, self).undo()
 
-	def set_state(self, ind):
-		logging.info(f"Going to state {ind}")
-
-	def add(self, action):
-		self.discard_future()
-		self.actions.append(action)
-		self.current = len(self.actions) - 1
-		self.action.do()
-		self.update()
-		self.canvas.parent.props.stack_widget.add(self.action_name)
-
-	def undo(self):
-		if self.current > -1:
-			logging.info(f"Undoing action {self.current}: {self.action_name}")
-			self.action.undo()
-			self.current -= 1
-			self.update()
-		else:
-			logging.info(f"Nothing to undo")
-
-	def redo(self):
-		if self.current + 1 < len(self.actions):
-			self.current += 1
-			logging.info(f"Redoing action {self.current}: {self.action_name}")
-			self.action.do()
-			self.update()
-		else:
-			logging.info(f"Nothing to redo")
+	def redo(self) -> None:
+		if self.canRedo():
+			super(UndoStack, self).redo()
 
 	def update(self):
-		self.canvas.parent.props.stack_widget.select_index(self.current)
 		self.canvas.master_speed.update()
 		self.canvas.master_reg_speed.update()
 
-	def discard_future(self):
-		"""Ensure that no actions from the future are purged from the stack"""
-		if self.current > -1:
-			# is the action the last action
-			if self.action != self.actions[-1]:
-				logging.info(f"Discarding future actions")
-				# then delete all actions up to the last action
-				self.actions[:] = self.actions[:self.current+1]
 
+class Action(QUndoCommand):
 
-class Action:
-
-	def __init__(self, traces, *args):
+	def __init__(self, traces, *args, **kwargs):
+		super(Action, self).__init__()
 		self.traces = traces
 		self.args = args
-
-	def undo(self):
-		pass
-
-	def do(self):
-		pass
+		self.kwargs = kwargs
+		action_type = type(self).__name__.replace('Action', '')
+		self.setText(f"{action_type}[{len(self.traces)}]")
 
 
 class AddAction(Action):
@@ -80,7 +43,8 @@ class AddAction(Action):
 		for trace in self.traces:
 			trace.remove()
 
-	def do(self):
+	def redo(self):
+		# logging.info(f"Adding {len(self.traces)} traces")
 		for trace in self.traces:
 			trace.initialize()
 
@@ -90,7 +54,7 @@ class DeleteAction(Action):
 		for trace in self.traces:
 			trace.initialize()
 
-	def do(self):
+	def redo(self):
 		for trace in self.traces:
 			trace.remove()
 
@@ -100,6 +64,6 @@ class MoveAction(Action):
 		for trace in self.traces:
 			trace.set_offset(*reversed(self.args))
 
-	def do(self):
+	def redo(self):
 		for trace in self.traces:
 			trace.set_offset(*self.args)

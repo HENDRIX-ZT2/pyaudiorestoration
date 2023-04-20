@@ -567,33 +567,11 @@ class HPSSWidget(QtWidgets.QWidget):
 
 
 class StackWidget(QtWidgets.QGroupBox):
-
-	indexSelected = QtCore.pyqtSignal(int)
-
 	def __init__(self, ):
 		super().__init__("History")
-		self.view = QtWidgets.QListView()
-		self.model = QtGui.QStandardItemModel()
-		self.view.setModel(self.model)
-		self.selection = self.view.selectionModel()
-		self.view.setSelectionRectVisible(True)
-		# self.selection.selectionChanged.connect(self.log)
+		self.view = QtWidgets.QUndoView()
 		buttons = ((self.view, ),)
 		vbox(self, grid(buttons))
-
-	def add(self, item):
-		self.model.appendRow(QtGui.QStandardItem(item))
-
-	def select_index(self, i):
-		ind = self.model.index(i, 0)
-		self.view.setCurrentIndex(ind)
-		# sm = self.view.selectionModel()
-		# sm.select(ind, QtCore.QItemSelectionModel.Select)
-
-	def log(self, selection):
-		# logging.info(i)
-		logging.info(selection.indexes()[0].index())
-		# indexSelected.emit(
 
 
 class ResamplingWidget(QtWidgets.QGroupBox):

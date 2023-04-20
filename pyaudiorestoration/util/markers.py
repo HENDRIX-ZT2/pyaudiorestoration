@@ -124,7 +124,7 @@ class RegLine(BaseMarker):
 			(clipped_times, self.amplitude * np.sin(self.omega * clipped_times + self.phase)), axis=-1)
 		# sine_on_hz = np.power(2, sine + np.log2(2000))
 		self.visuals.append(scene.Line(pos=self.speed_data, color=(0, 0, 1, .5), method='gl'))
-		self.initialize()
+		# self.initialize()
 
 	def set_offset(self, a, b):
 		# user manipulation: custom amplitude for sample
@@ -418,6 +418,9 @@ class MasterSpeedLine(BaseLine):
 			else:
 				merged.append([higher_line, ])
 		return merged
+
+	def __repr__(self):
+		return f"{type(self).__name__}[{len(self.vispy_canvas.lines)}]"
 
 
 class MasterRegLine(BaseLine):

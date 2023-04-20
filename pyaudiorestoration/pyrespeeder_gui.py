@@ -52,7 +52,8 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.lines = []
 		self.grouped_traces = []
 		self.regs = []
-		self.undo_stack = UndoStack(self)
+		self.undo_stack = UndoStack(self.parent, self)
+		self.parent.props.stack_widget.view.setStack(self.undo_stack)
 		self.master_speed = markers.MasterSpeedLine(self)
 		self.master_reg_speed = markers.MasterRegLine(self, (0, 0, 1, .5))
 
@@ -74,7 +75,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			_markers.append(marker)
 		for t0, t1, amplitude, omega, phase, offset in io_ops.read_regs(self.filenames[0]):
 			markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
-		self.undo_stack.add(AddAction(_markers))
+		self.undo_stack.push(AddAction(_markers))
 
 	def save_traces(self):
 		# get the data from the traces and regressions and save it
@@ -88,7 +89,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		for trace in reversed(self.regs + self.lines):
 			if (trace.selected and not delete_all) or delete_all:
 				deltraces.append(trace)
-		self.undo_stack.add(DeleteAction(deltraces))
+		self.undo_stack.push(DeleteAction(deltraces))
 
 	def merge_selected_traces(self):
 		deltraces = []
@@ -226,15 +227,16 @@ class Canvas(spectrum.SpectrumCanvas):
 				a = trail[0]
 				b = trail[-1]
 				traces = [trace for trace in self.lines + self.regs if trace.selected]
-				self.undo_stack.add(MoveAction(traces, a[1], b[1]))
+				self.undo_stack.push(MoveAction(traces, a[1], b[1]))
 
 	def track_wow(self, settings, trail):
 		track = wow_detection.Track(
 			settings.mode, self.fft_storage[self.keys[0]], trail, self.fft_size,
 			self.hop, self.sr, settings.tolerance, settings.adapt)
 		marker = markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
-		self.undo_stack.add(AddAction((marker,)))
-		self.master_speed.update()
+		self.undo_stack.push(AddAction((marker,)))
+		print(self.master_speed)
+		# self.master_speed.update()
 
 	def get_closest_line(self, click):
 		if click is not None:

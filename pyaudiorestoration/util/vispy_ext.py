@@ -15,6 +15,8 @@ from vispy.geometry import Rect
 from vispy import visuals
 from util import units, colormaps
 
+from pyaudiorestoration.util.spectrum import to_Hz
+
 
 class PanZoomCameraExt(PanZoomCamera):
 	""" Camera implementing 2D pan/zoom mouse interaction.
@@ -238,7 +240,6 @@ class ExtAxisWidget(AxisWidget):
 
 
 class ExtAxisVisual(AxisVisual):
-	SUPPORTED_SCALES = ("linear", "logarithmic")
 
 	def __init__(self, pos=None, domain=(0., 1.),
 				 tick_direction=(-1., 0.),
@@ -257,10 +258,6 @@ class ExtAxisVisual(AxisVisual):
 				 axis_font_size=10,
 				 font_size=None,
 				 anchors=None):
-
-		if scale_type not in self.SUPPORTED_SCALES:
-			raise NotImplementedError(
-				f'Scale type {scale_type} is not supported. The following scales are supported: {self.SUPPORTED_SCALES}')
 
 		if font_size is not None:
 			tick_font_size = font_size
@@ -305,87 +302,53 @@ class ExtAxisVisual(AxisVisual):
 
 class ExtTicker(Ticker):
 
+	SUPPORTED_SCALES = ("linear", "logarithmic")
+
 	def _get_tick_frac_labels(self):
 		"""Get the major ticks, minor ticks, and major labels"""
+		if self.axis.scale_type not in self.SUPPORTED_SCALES:
+			raise NotImplementedError(
+				f'Scale type {self.axis.scale_type} is not supported. The following scales are supported: {self.SUPPORTED_SCALES}')
+
 		minor_num = 4  # number of minor ticks per major division
-		if (self.axis.scale_type == 'linear'):
-			domain = self.axis.domain
-			if domain[1] < domain[0]:
-				flip = True
-				domain = domain[::-1]
-			else:
-				flip = False
-			offset = domain[0]
-			scale = domain[1] - domain[0]
+		# domain = np.log2(self.axis.domain)
+		domain = self.axis.domain
+		if domain[1] < domain[0]:
+			flip = True
+			domain = domain[::-1]
+		else:
+			flip = False
+		offset = domain[0]
+		scale = domain[1] - domain[0]
+		transforms = self.axis.transforms
+		length = self.axis.pos[1] - self.axis.pos[0]  # in logical coords
+		n_inches = np.sqrt(np.sum(length ** 2)) / transforms.dpi
 
-			transforms = self.axis.transforms
-			length = self.axis.pos[1] - self.axis.pos[0]  # in logical coords
-			n_inches = np.sqrt(np.sum(length ** 2)) / transforms.dpi
+		# major = np.linspace(domain[0], domain[1], num=11)
+		# major = MaxNLocator(10).tick_values(*domain)
+		major = _get_ticks_talbot(domain[0], domain[1], n_inches, 2)
 
-			# major = np.linspace(domain[0], domain[1], num=11)
-			# major = MaxNLocator(10).tick_values(*domain)
-			major = _get_ticks_talbot(domain[0], domain[1], n_inches, 2)
-
+		if self.axis.scale_type == 'linear':
 			# labels = ['%g' % x for x in major]
-			labels = [units.t_2_m_s_ms(x) % x for x in major]
-			majstep = major[1] - major[0]
-			minor = []
-			minstep = majstep / (minor_num + 1)
-			minstart = 0 if self.axis._stop_at_major[0] else -1
-			minstop = -1 if self.axis._stop_at_major[1] else 0
-			for i in range(minstart, len(major) + minstop):
-				maj = major[0] + i * majstep
-				minor.extend(np.linspace(maj + minstep,
-										 maj + majstep - minstep,
-										 minor_num))
-			major_frac = (major - offset) / scale
-			minor_frac = (np.array(minor) - offset) / scale
-			major_frac = major_frac[::-1] if flip else major_frac
-			use_mask = (major_frac > -0.0001) & (major_frac < 1.0001)
-			major_frac = major_frac[use_mask]
-			labels = [l for li, l in enumerate(labels) if use_mask[li]]
-			minor_frac = minor_frac[(minor_frac > -0.0001) &
-									(minor_frac < 1.0001)]
+			labels = [units.t_2_m_s_ms(x) for x in major]
 		elif self.axis.scale_type == 'logarithmic':
-			#domain = np.log2(self.axis.domain)
-			domain = self.axis.domain
-			if domain[1] < domain[0]:
-				flip = True
-				domain = domain[::-1]
-			else:
-				flip = False
-			offset = domain[0]
-			scale = domain[1] - domain[0]
-
-			transforms = self.axis.transforms
-			length = self.axis.pos[1] - self.axis.pos[0]  # in logical coords
-			n_inches = np.sqrt(np.sum(length ** 2)) / transforms.dpi
-
-			# major = np.linspace(domain[0], domain[1], num=11)
-			# major = MaxNLocator(10).tick_values(*domain)
-			major = _get_ticks_talbot(domain[0], domain[1], n_inches, 2)
-			#print(major)
-			#np.exp(x / 1127) - 1) * 700
-			#labels = ['%g' % np.exp(x / 1127) - 1 * 700 for x in major]
-			labels = [str(int((np.exp(x / 1127) - 1) * 700)) for x in major]
-			majstep = major[1] - major[0]
-			minor = []
-			minstep = majstep / (minor_num + 1)
-			minstart = 0 if self.axis._stop_at_major[0] else -1
-			minstop = -1 if self.axis._stop_at_major[1] else 0
-			for i in range(minstart, len(major) + minstop):
-				maj = major[0] + i * majstep
-				minor.extend(np.linspace(maj + minstep,
-										 maj + majstep - minstep,
-										 minor_num))
-			major_frac = (major - offset) / scale
-			minor_frac = (np.array(minor) - offset) / scale
-			major_frac = major_frac[::-1] if flip else major_frac
-			use_mask = (major_frac > -0.0001) & (major_frac < 1.0001)
-			major_frac = major_frac[use_mask]
-			labels = [l for li, l in enumerate(labels) if use_mask[li]]
-			minor_frac = minor_frac[(minor_frac > -0.0001) &
-									(minor_frac < 1.0001)]
-		elif self.axis.scale_type == 'power':
-			return NotImplementedError
+			labels = [str(int(to_Hz(x))) for x in major]
+		majstep = major[1] - major[0]
+		minor = []
+		minstep = majstep / (minor_num + 1)
+		minstart = 0 if self.axis._stop_at_major[0] else -1
+		minstop = -1 if self.axis._stop_at_major[1] else 0
+		for i in range(minstart, len(major) + minstop):
+			maj = major[0] + i * majstep
+			minor.extend(np.linspace(maj + minstep,
+									 maj + majstep - minstep,
+									 minor_num))
+		major_frac = (major - offset) / scale
+		minor_frac = (np.array(minor) - offset) / scale
+		major_frac = major_frac[::-1] if flip else major_frac
+		use_mask = (major_frac > -0.0001) & (major_frac < 1.0001)
+		major_frac = major_frac[use_mask]
+		labels = [l for li, l in enumerate(labels) if use_mask[li]]
+		minor_frac = minor_frac[(minor_frac > -0.0001) &
+								(minor_frac < 1.0001)]
 		return major_frac, minor_frac, labels

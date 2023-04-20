@@ -4,16 +4,17 @@
 # vispy: gallery 2
 
 import numpy as np
-from vispy.visuals.transforms import (arg_to_array, BaseTransform)
-from vispy.visuals.axis import (AxisVisual, Ticker)
+from vispy.visuals.transforms import arg_to_array, BaseTransform
+from vispy.visuals.axis import AxisVisual, Ticker, _get_ticks_talbot
 from vispy.visuals.text import TextVisual
 from vispy.visuals.line import LineVisual
 from vispy.visuals import CompoundVisual
 from vispy.scene import PanZoomCamera, AxisWidget
 from vispy.scene.widgets import Widget, ColorBarWidget
 from vispy.geometry import Rect
-from vispy import scene, gloo, visuals, color
+from vispy import visuals
 from util import units, colormaps
+
 
 class PanZoomCameraExt(PanZoomCamera):
 	""" Camera implementing 2D pan/zoom mouse interaction.
@@ -57,19 +58,19 @@ class PanZoomCameraExt(PanZoomCamera):
 		event : instance of Event
 			The event.
 		"""
-		
+
 		if event.handled or not self.interactive:
 			return
 
 		if event.type == 'mouse_wheel':
 			center = self._scene_transform.imap(event.pos)
-			#stretch Y
+			# stretch Y
 			if "Shift" in event.mouse_event.modifiers:
 				self.zoom((1, (1 + self.zoom_factor) ** (-event.delta[1] * 30)), center)
-			#standard zoom
+			# standard zoom
 			elif "Control" in event.mouse_event.modifiers:
 				self.zoom((1 + self.zoom_factor) ** (-event.delta[1] * 30), center)
-			#stretch X
+			# stretch X
 			else:
 				self.zoom(((1 + self.zoom_factor) ** (-event.delta[1] * 30), 1), center)
 			event.handled = True
@@ -88,17 +89,17 @@ class PanZoomCameraExt(PanZoomCamera):
 				p2 = np.array(event.pos)[:2]
 				p1s = self._transform.imap(p1)
 				p2s = self._transform.imap(p2)
-				self.pan(p1s-p2s)
+				self.pan(p1s - p2s)
 				event.handled = True
 			# elif 2 in event.buttons and not modifiers:
-				# # Zoom
-				# p1c = np.array(event.last_event.pos)[:2]
-				# p2c = np.array(event.pos)[:2]
-				# scale = ((1 + self.zoom_factor) **
-						 # ((p1c-p2c) * np.array([1, -1])))
-				# center = self._transform.imap(event.press_event.pos[:2])
-				# self.zoom(scale, center)
-				# event.handled = True
+			# # Zoom
+			# p1c = np.array(event.last_event.pos)[:2]
+			# p2c = np.array(event.pos)[:2]
+			# scale = ((1 + self.zoom_factor) **
+			# ((p1c-p2c) * np.array([1, -1])))
+			# center = self._transform.imap(event.press_event.pos[:2])
+			# self.zoom(scale, center)
+			# event.handled = True
 			else:
 				event.handled = False
 		elif event.type == 'mouse_press':
@@ -107,7 +108,7 @@ class PanZoomCameraExt(PanZoomCamera):
 			event.handled = event.button in [1, 2]
 		else:
 			event.handled = False
-		
+
 	def _set_scene_transform(self, tr):
 		""" Called by subclasses to configure the viewbox scene transform.
 		"""
@@ -123,13 +124,13 @@ class PanZoomCameraExt(PanZoomCamera):
 		# Mark the transform dynamic so that it will not be collapsed with
 		# others 
 		self._scene_transform.dynamic = True
-		
+
 		# Update scene
 		self._viewbox.scene.transform = self._scene_transform
 		self._viewbox.update()
 
-		#Apply same state to linked cameras, but prevent that camera
-		#to return the favor
+		# Apply same state to linked cameras, but prevent that camera
+		# to return the favor
 		for cam in self._linked_cameras:
 			if cam is self._linked_cameras_no_update:
 				continue
@@ -142,7 +143,8 @@ class PanZoomCameraExt(PanZoomCamera):
 				cam.view_changed()
 			finally:
 				cam._linked_cameras_no_update = None
-				
+
+
 class MelTransform(BaseTransform):
 	""" Transform perfoming melodic scale transform on the Y axis.
 	"""
@@ -156,7 +158,7 @@ class MelTransform(BaseTransform):
 		vec4 sineTransform(vec4 pos) {
 			return vec4(pos.x, (exp(pos.y / 1127) -1) * 700, pos.z, 1);
 		}"""
-	
+
 	Linear = False
 	Orthogonal = True
 	NonScaling = False
@@ -196,6 +198,7 @@ class MelTransform(BaseTransform):
 	def __repr__(self):
 		return "<MelTransform>"
 
+
 class ColorBarWidgetExt(ColorBarWidget):
 
 	@property
@@ -208,6 +211,7 @@ class ColorBarWidgetExt(ColorBarWidget):
 		core_color_vis._cmap = colormaps.cmaps.get(colormap, "izo")
 		core_color_vis._program.frag['color_transform'] = visuals.shaders.Function(core_color_vis._cmap.glsl_map)
 		core_color_vis._update()
+
 
 class ExtAxisWidget(AxisWidget):
 	"""Widget containing an axis
@@ -234,18 +238,29 @@ class ExtAxisWidget(AxisWidget):
 
 
 class ExtAxisVisual(AxisVisual):
-	def __init__(self, pos=None, domain=(0., 1.), tick_direction=(-1., 0.),
-				 scale_type="linear", axis_color=(1, 1, 1),
-				 tick_color=(0.7, 0.7, 0.7), text_color='w',
-				 minor_tick_length=5, major_tick_length=10,
-				 tick_width=2, tick_label_margin=5, tick_font_size=8,
-				 axis_width=3,	axis_label=None,
-				 axis_label_margin=35, axis_font_size=10,
-				 font_size=None, anchors=None):
+	SUPPORTED_SCALES = ("linear", "logarithmic")
 
-		if scale_type not in ('linear', 'logarithmic'):
-			raise NotImplementedError('only linear scaling is currently '
-									  'supported')
+	def __init__(self, pos=None, domain=(0., 1.),
+				 tick_direction=(-1., 0.),
+				 scale_type="linear",
+				 axis_color=(1, 1, 1),
+				 tick_color=(0.7, 0.7, 0.7),
+				 text_color='w',
+				 minor_tick_length=5,
+				 major_tick_length=10,
+				 tick_width=2,
+				 tick_label_margin=12,
+				 tick_font_size=8,
+				 axis_width=3,
+				 axis_label=None,
+				 axis_label_margin=35,
+				 axis_font_size=10,
+				 font_size=None,
+				 anchors=None):
+
+		if scale_type not in self.SUPPORTED_SCALES:
+			raise NotImplementedError(
+				f'Scale type {scale_type} is not supported. The following scales are supported: {self.SUPPORTED_SCALES}')
 
 		if font_size is not None:
 			tick_font_size = font_size
@@ -263,12 +278,12 @@ class ExtAxisVisual(AxisVisual):
 		self.tick_direction = np.array(tick_direction, float)
 		self.scale_type = scale_type
 
-		self.minor_tick_length = minor_tick_length	# px
-		self.major_tick_length = major_tick_length	# px
-		self.tick_label_margin = tick_label_margin	# px
-		self.axis_label_margin = axis_label_margin	# px
+		self._minor_tick_length = minor_tick_length  # px
+		self._major_tick_length = major_tick_length  # px
+		self._tick_label_margin = tick_label_margin  # px
+		self._axis_label_margin = axis_label_margin  # px
 
-		self._axis_label_text = axis_label
+		self._axis_label = axis_label
 
 		self._need_update = True
 
@@ -279,15 +294,14 @@ class ExtAxisVisual(AxisVisual):
 								 color=tick_color)
 
 		self._text = TextVisual(font_size=tick_font_size, color=text_color)
-		self._axis_label = TextVisual(font_size=axis_font_size,
-									  color=text_color)
+		self._axis_label_vis = TextVisual(font_size=axis_font_size,
+										  color=text_color)
 		CompoundVisual.__init__(self, [self._line, self._text, self._ticks,
-									   self._axis_label])
+									   self._axis_label_vis])
 		if pos is not None:
 			self.pos = pos
 		self.domain = domain
 
-	
 
 class ExtTicker(Ticker):
 
@@ -375,124 +389,3 @@ class ExtTicker(Ticker):
 		elif self.axis.scale_type == 'power':
 			return NotImplementedError
 		return major_frac, minor_frac, labels
-
-
-def _coverage(dmin, dmax, lmin, lmax):
-	return 1 - 0.5 * ((dmax - lmax) ** 2 +
-					  (dmin - lmin) ** 2) / (0.1 * (dmax - dmin)) ** 2
-
-
-def _coverage_max(dmin, dmax, span):
-	range_ = dmax - dmin
-	if span <= range_:
-		return 1.
-	else:
-		half = (span - range_) / 2.0
-		return 1 - half ** 2 / (0.1 * range_) ** 2
-
-
-def _density(k, m, dmin, dmax, lmin, lmax):
-	r = (k-1.0) / (lmax-lmin)
-	rt = (m-1.0) / (max(lmax, dmax) - min(lmin, dmin))
-	return 2 - max(r / rt, rt / r)
-
-
-def _density_max(k, m):
-	return 2 - (k-1.0) / (m-1.0) if k >= m else 1.
-
-
-def _simplicity(q, Q, j, lmin, lmax, lstep):
-	eps = 1e-10
-	n = len(Q)
-	i = Q.index(q) + 1
-	if ((lmin % lstep) < eps or
-			(lstep - lmin % lstep) < eps) and lmin <= 0 and lmax >= 0:
-		v = 1
-	else:
-		v = 0
-	return (n - i) / (n - 1.0) + v - j
-
-
-def _simplicity_max(q, Q, j):
-	n = len(Q)
-	i = Q.index(q) + 1
-	return (n - i)/(n - 1.0) + 1. - j
-def _get_ticks_talbot(dmin, dmax, n_inches, density=1.):
-	# density * size gives target number of intervals,
-	# density * size + 1 gives target number of tick marks,
-	# the density function converts this back to a density in data units
-	# (not inches)
-	n_inches = max(n_inches, 2.0)  # Set minimum otherwise code can crash :(
-	m = density * n_inches + 1.0
-	only_inside = False	 # we cull values outside ourselves
-	Q = [1, 5, 2, 2.5, 4, 3]
-	w = [0.25, 0.2, 0.5, 0.05]
-	best_score = -2.0
-	best = None
-
-	j = 1.0
-	n_max = 1000
-	while j < n_max:
-		for q in Q:
-			sm = _simplicity_max(q, Q, j)
-
-			if w[0] * sm + w[1] + w[2] + w[3] < best_score:
-				j = n_max
-				break
-
-			k = 2.0
-			while k < n_max:
-				dm = _density_max(k, n_inches)
-
-				if w[0] * sm + w[1] + w[2] * dm + w[3] < best_score:
-					break
-
-				delta = (dmax-dmin)/(k+1.0)/j/q
-				z = np.ceil(np.log10(delta))
-
-				while z < float('infinity'):
-					step = j * q * 10 ** z
-					cm = _coverage_max(dmin, dmax, step*(k-1.0))
-
-					if (w[0] * sm +
-							w[1] * cm +
-							w[2] * dm +
-							w[3] < best_score):
-						break
-
-					min_start = np.floor(dmax/step)*j - (k-1.0)*j
-					max_start = np.ceil(dmin/step)*j
-
-					if min_start > max_start:
-						z = z+1
-						break
-
-					for start in range(int(min_start), int(max_start)+1):
-						lmin = start * (step/j)
-						lmax = lmin + step*(k-1.0)
-						lstep = step
-
-						s = _simplicity(q, Q, j, lmin, lmax, lstep)
-						c = _coverage(dmin, dmax, lmin, lmax)
-						d = _density(k, m, dmin, dmax, lmin, lmax)
-						leg = 1.  # _legibility(lmin, lmax, lstep)
-
-						score = w[0] * s + w[1] * c + w[2] * d + w[3] * leg
-
-						if (score > best_score and
-								(not only_inside or (lmin >= dmin and
-													 lmax <= dmax))):
-							best_score = score
-							best = (lmin, lmax, lstep, q, k)
-					z += 1
-				k += 1
-			if k == n_max:
-				raise RuntimeError('could not converge on ticks')
-		j += 1
-	if j == n_max:
-		raise RuntimeError('could not converge on ticks')
-
-	if best is None:
-		raise RuntimeError('could not converge on ticks')
-	return np.arange(best[4]) * best[2] + best[0]
-

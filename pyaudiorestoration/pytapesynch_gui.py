@@ -6,6 +6,7 @@ from PyQt5 import QtWidgets
 
 # custom modules
 from pyaudiorestoration.util.correlation import xcorr
+from pyaudiorestoration.util.undo import AddAction, UndoStack, DeleteAction
 from util import spectrum, wow_detection, qt_threads, widgets, filters, io_ops, \
 	markers
 
@@ -31,6 +32,8 @@ class MainWindow(widgets.MainWindow):
 			(edit_menu, "Select All", self.canvas.select_all, "CTRL+A"),
 			(edit_menu, "Improve", self.canvas.improve_lag, "CTRL+I"),
 			(edit_menu, "Delete Selected", self.canvas.delete_traces, "DEL"),
+			(edit_menu, "Undo", self.canvas.undo_stack.undo, "CTRL+Z"),
+			(edit_menu, "Redo", self.canvas.undo_stack.redo, "CTRL+Y"),
 		)
 		self.add_to_menu(button_data)
 
@@ -44,7 +47,7 @@ class Canvas(spectrum.SpectrumCanvas):
 
 		self.unfreeze()
 		self.parent = parent
-		self.deltraces = []
+		self.undo_stack = UndoStack(self.parent, self)
 		self.lag_samples = []
 		self.lag_line = markers.LagLine(self)
 
@@ -52,21 +55,26 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.resampling_thread = qt_threads.ResamplingThread()
 		self.resampling_thread.notifyProgress.connect(self.parent.props.progress_widget.onProgress)
 		self.fourier_thread.notifyProgress.connect(self.parent.props.progress_widget.onProgress)
+		self.parent.props.stack_widget.view.setStack(self.undo_stack)
 		self.parent.props.display_widget.canvas = self
 		self.parent.props.tracing_widget.setVisible(False)
 		self.freeze()
 		self.parent.props.alignment_widget.smoothing_s.valueChanged.connect(self.update_smoothing)
 
+	def update_lines(self):
+		self.lag_line.update()
+
 	def update_smoothing(self, k):
-		print("setting k", k)
+		logging.info(f"setting k={k}")
 		self.lag_line.smoothing = k
 		self.lag_line.update()
 
 	def load_visuals(self, ):
-		# legacy code path
+		"""legacy code path"""
+		_markers = []
 		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):
-			markers.LagSample(self, (a0, a1), (b0, b1), d)
-		self.lag_line.update()
+			_markers.append(markers.LagSample(self, (a0, a1), (b0, b1), d))
+		self.undo_stack.push(AddAction(_markers))
 
 	def load_project(self):
 		"""Load project with all required settings"""
@@ -82,9 +90,10 @@ class Canvas(spectrum.SpectrumCanvas):
 					logging.warning(f"Could not find {fp}")
 					return
 				file_widget.accept_file(fp)
+			_markers = []
 			for a0, a1, b0, b1, d, corr in sync["data"]:
-				markers.LagSample(self, (a0, a1), (b0, b1), d, corr)
-			self.lag_line.update()
+				_markers.append(markers.LagSample(self, (a0, a1), (b0, b1), d, corr))
+			self.undo_stack.push(AddAction(_markers))
 
 	def save_traces(self):
 		"""Save project with all required settings"""
@@ -156,8 +165,8 @@ class Canvas(spectrum.SpectrumCanvas):
 					# update the lag marker
 					lag.d = result / sr
 					lag.select()
-					print("raw accuracy (smp)", raw_lag)
-					print("extra accuracy (smp)", result)
+					print(f"raw accuracy (smp) {raw_lag}")
+					print(f"extra accuracy (smp) {result}")
 				except:
 					logging.exception(f"Refining failed")
 		self.lag_line.update()
@@ -166,17 +175,16 @@ class Canvas(spectrum.SpectrumCanvas):
 		for trace in self.lag_samples:
 			trace.select()
 
+	def deselect_all(self):
+		for trace in self.lag_samples:
+			trace.deselect()
+
 	def delete_traces(self, delete_all=False):
-		self.deltraces = []
+		deltraces = []
 		for trace in reversed(self.lag_samples):
 			if (trace.selected and not delete_all) or delete_all:
-				self.deltraces.append(trace)
-		for trace in self.deltraces:
-			trace.remove()
-		self.lag_line.update()
-		# this means a file was loaded, so clear the undo stack
-		if delete_all:
-			self.deltraces = []
+				deltraces.append(trace)
+		self.undo_stack.push(DeleteAction(deltraces))
 
 	def run_resample(self):
 		self.resample_files((self.filenames[1],))
@@ -232,8 +240,8 @@ class Canvas(spectrum.SpectrumCanvas):
 						d = b[0]-a[0]
 						self.spectra[1].translate(d)
 					elif "Shift" in event.modifiers:
-						markers.LagSample(self, a, b)
-						self.lag_line.update()
+						marker = markers.LagSample(self, a, b)
+						self.undo_stack.push(AddAction((marker,)))
 					# elif "Alt" in event.modifiers:
 						# print()
 						# print("Start")

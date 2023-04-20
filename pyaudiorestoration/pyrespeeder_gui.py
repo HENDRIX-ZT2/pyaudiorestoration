@@ -52,6 +52,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.lines = []
 		self.grouped_traces = []
 		self.regs = []
+		self.regs = []
 		self.undo_stack = UndoStack(self.parent, self)
 		self.parent.props.stack_widget.view.setStack(self.undo_stack)
 		self.master_speed = markers.MasterSpeedLine(self)
@@ -70,10 +71,9 @@ class Canvas(spectrum.SpectrumCanvas):
 		# read any saved traces or regressions
 		_markers = []
 		for offset, times, freqs in io_ops.read_trace(self.filenames[0]):
-			marker = markers.TraceLine(self, times, freqs, offset=offset)
-			_markers.append(marker)
+			_markers.append(markers.TraceLine(self, times, freqs, offset=offset))
 		for t0, t1, amplitude, omega, phase, offset in io_ops.read_regs(self.filenames[0]):
-			markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
+			_markers.append(markers.RegLine(self, t0, t1, amplitude, omega, phase, offset))
 		self.undo_stack.push(AddAction(_markers))
 
 	def save_traces(self):
@@ -167,9 +167,17 @@ class Canvas(spectrum.SpectrumCanvas):
 				"use_channels"		: channels}
 			self.resampling_thread.start()
 
+	def update_lines(self):
+		self.master_speed.update()
+		self.master_reg_speed.update()
+
 	def select_all(self):
 		for trace in self.lines + self.regs:
 			trace.select()
+
+	def deselect_all(self):
+		for trace in self.lines + self.regs:
+			trace.deselect()
 
 	def invert_selection(self):
 		for trace in self.lines + self.regs:

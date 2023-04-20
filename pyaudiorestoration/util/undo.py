@@ -23,14 +23,12 @@ class UndoStack(QUndoStack):
 			super(UndoStack, self).redo()
 
 	def update(self):
+		self.canvas.update_lines()
 		# self.index() is the next that will be pushed or None if currently the end
-		self.canvas.master_speed.update()
-		self.canvas.master_reg_speed.update()
 		ind = self.index() - 1
 		if -1 < ind:
 			# select the traces used by the last active command in the stack
-			for trace in self.canvas.lines + self.canvas.regs:
-				trace.deselect()
+			self.canvas.deselect_all()
 			command = self.command(ind)
 			for trace in command.traces:
 				trace.select()

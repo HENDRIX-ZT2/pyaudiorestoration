@@ -124,7 +124,6 @@ class RegLine(BaseMarker):
 			(clipped_times, self.amplitude * np.sin(self.omega * clipped_times + self.phase)), axis=-1)
 		# sine_on_hz = np.power(2, sine + np.log2(2000))
 		self.visuals.append(scene.Line(pos=self.speed_data, color=(0, 0, 1, .5), method='gl'))
-		# self.initialize()
 
 	def set_offset(self, a, b):
 		# user manipulation: custom amplitude for sample
@@ -192,8 +191,6 @@ class TraceLine(BaseMarker):
 		self.visuals.append(scene.Line(pos=spec_data, color=color_def, method='gl'))
 		# the data is in Hz, so to visualize correctly, it has to be mel'ed
 		self.visuals[1].transform = vispy_canvas.spectra[0].mel_transform
-
-		# self.initialize()
 
 	@property
 	def start(self):
@@ -276,8 +273,6 @@ class PanSample(BaseMarker):
 		rect.set_gl_state('additive')
 		self.visuals.append(rect)
 
-		self.initialize()
-
 	def set_color(self, c):
 		for v in self.visuals:
 			v.color = c
@@ -323,7 +318,7 @@ class LagSample(BaseMarker):
 		rect.color = self.color_def
 		self.visuals.append(rect)
 
-		self.initialize()
+		# self.initialize()
 
 	def set_color(self, c):
 		for v in self.visuals:
@@ -494,11 +489,15 @@ class LagLine(BaseLine):
 		sample_times = [sample.t for sample in self.vispy_canvas.lag_samples]
 		sample_lags = [sample.d for sample in self.vispy_canvas.lag_samples]
 
-		if len(self.vispy_canvas.lag_samples) == 1:
+		# ensure that k doesn't exceed the order possible to infer from amount of samples
+		if len(self.vispy_canvas.lag_samples) == 0:
+			return 0
+		elif len(self.vispy_canvas.lag_samples) == 1:
 			return np.interp(times, sample_times, sample_lags)
 		else:
 			# using bezier splines
-			s = interpolate.InterpolatedUnivariateSpline(sample_times, sample_lags, k=self.smoothing)
+			k = min(self.smoothing, len(self.vispy_canvas.lag_samples)-1)
+			s = interpolate.InterpolatedUnivariateSpline(sample_times, sample_lags, k=k)
 			return s(times)
 
 	def update(self):

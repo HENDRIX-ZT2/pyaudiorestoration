@@ -163,7 +163,7 @@ def run(filenames, signal_data=None, speed_curve=None, resampling_mode="Linear",
 	if signal_data is None: signal_data = [None for filename in filenames]
 	for filename, sig_data in zip(filenames, signal_data):
 		start_time = time()
-		logging.info(f"Resampling '{os.path.basename(filename)}'...", resampling_mode, sinc_quality, use_channels)
+		logging.info(f"Resampling '{os.path.basename(filename)}'... {resampling_mode}, {sinc_quality}, {use_channels}")
 		# read the file
 		if sig_data:
 			signal, sr = sig_data

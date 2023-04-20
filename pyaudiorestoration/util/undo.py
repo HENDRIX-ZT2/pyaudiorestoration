@@ -53,7 +53,6 @@ class AddAction(Action):
 			trace.remove()
 
 	def redo(self):
-		# logging.info(f"Adding {len(self.traces)} traces")
 		for trace in self.traces:
 			trace.initialize()
 
@@ -65,6 +64,20 @@ class DeleteAction(Action):
 
 	def redo(self):
 		for trace in self.traces:
+			trace.remove()
+
+
+class MergeAction(Action):
+	def undo(self):
+		for trace in self.traces:
+			trace.remove()
+		for trace in self.args[0]:
+			trace.initialize()
+
+	def redo(self):
+		for trace in self.traces:
+			trace.initialize()
+		for trace in self.args[0]:
 			trace.remove()
 
 

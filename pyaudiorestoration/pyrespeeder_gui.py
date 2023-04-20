@@ -5,7 +5,7 @@ from PyQt5 import QtWidgets
 # custom modules
 from util import spectrum, wow_detection, qt_threads, widgets, io_ops, markers
 
-from pyaudiorestoration.util.undo import UndoStack, AddAction, DeleteAction, MoveAction
+from pyaudiorestoration.util.undo import UndoStack, AddAction, DeleteAction, MoveAction, MergeAction
 from pyaudiorestoration.util.config import logging_setup
 
 logging_setup()
@@ -96,7 +96,6 @@ class Canvas(spectrum.SpectrumCanvas):
 			if trace.selected:
 				deltraces.append(trace)
 		self.merge_traces(deltraces)
-		self.master_speed.update()
 
 	def merge_traces(self, traces_to_merge):
 		if traces_to_merge and len(traces_to_merge) > 1:
@@ -106,7 +105,6 @@ class Canvas(spectrum.SpectrumCanvas):
 			means = []
 			offsets = []
 			for trace in traces_to_merge:
-				trace.remove()
 				t0 = min(t0, trace.speed_data[0, 0])
 				t1 = max(t1, trace.speed_data[-1, 0])
 				means.append(trace.spec_center[1])
@@ -119,6 +117,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			freqs = np.power(2, data[:, 1] + np.log2(np.mean(means)))
 			# todo - taking np.mean(offsets) here is wrong, as they need not be same length, should be weighted mean?
 			line = markers.TraceLine(self, data[:, 0], freqs, np.mean(offsets))
+			self.undo_stack.push(MergeAction((line,), traces_to_merge))
 
 	def group_traces(self):
 		"""Convert overlapping traces into grouped representations"""
@@ -126,11 +125,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		logging.info(f"Merging {len(groups)} groups")
 		for group in groups:
 			self.merge_traces(group)
-		self.master_speed.update()
-
-	# def ungroup_traces(self):
-	# 	"""group overlapping traces, allow opening the group or collapsing it to display only its evaluated line"""
-	# 	pass
 
 	def run_resample(self):
 		if self.filenames[0] and self.lines + self.regs:
@@ -212,8 +206,8 @@ class Canvas(spectrum.SpectrumCanvas):
 						logging.warning("Regressed to no amplitude, trying to sample regression curve")
 						amplitude, omega, phase, offset = wow_detection.trace_sine_reg(
 							self.master_reg_speed.get_linspace(), t0, t1, settings.rpm)
-					markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
-					self.master_reg_speed.update()
+					marker = markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
+					self.undo_stack.push(AddAction((marker,)))
 				else:
 					self.track_wow(settings, trail)
 				return
@@ -234,8 +228,6 @@ class Canvas(spectrum.SpectrumCanvas):
 			self.hop, self.sr, settings.tolerance, settings.adapt)
 		marker = markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
 		self.undo_stack.push(AddAction((marker,)))
-		print(self.master_speed)
-		# self.master_speed.update()
 
 	def get_closest_line(self, click):
 		if click is not None:

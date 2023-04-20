@@ -286,8 +286,6 @@ class LagSample(BaseMarker):
 
 	def __init__(self, vispy_canvas, a, b, d=None, corr=None):
 		BaseMarker.__init__(self, vispy_canvas, vispy_canvas.lag_samples, self.color_def, self.color_sel)
-		self.parents = (self.vispy_canvas.spec_view.scene,)
-
 		self.a = a
 		self.b = b
 		self.corr = corr
@@ -301,24 +299,25 @@ class LagSample(BaseMarker):
 		self.height = abs(a[1] - b[1])
 		self.spec_center = (self.t, self.f)
 		self.speed_center = (self.t, self.d)
-		# create & store visual
-		rect = scene.Rectangle(
-			center=(self.t, self.f), width=self.width, height=self.height, radius=0,
-			parent=vispy_canvas.spec_view.scene)
+		# create & store speed visual
+		r = 0.1
+		rect = scene.Rectangle(center=(self.t, self.d), width=r, height=r, radius=0)
+		rect.color = self.color_def
+		self.visuals.append(rect)
+
+		# create & store spec visual
+		rect = scene.Rectangle(center=(self.t, self.f), width=self.width, height=self.height, radius=0)
 		rect.color = self.color_def
 		rect.transform = vispy_canvas.spectra[-1].mel_transform
 		rect.set_gl_state('additive')
 		self.visuals.append(rect)
 
-		# create & store visual
-		r = 0.1
-		rect = scene.Rectangle(
-			center=(self.t, self.d), width=r, height=r, radius=0,
-			parent=vispy_canvas.speed_view.scene)
-		rect.color = self.color_def
-		self.visuals.append(rect)
-
-		# self.initialize()
+	def set_offset(self, d):
+		delta = d - self.d
+		self.d = d
+		speed_vis = self.visuals[0]
+		speed_vis.pos[:, 1] += delta
+		speed_vis.pos = np.array(speed_vis.pos)
 
 	def set_color(self, c):
 		for v in self.visuals:

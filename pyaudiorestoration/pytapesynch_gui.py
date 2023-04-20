@@ -163,8 +163,8 @@ class Canvas(spectrum.SpectrumCanvas):
 					i_peak = wow_detection.parabolic(res, max_index)[0]
 					result = raw_lag + i_peak - len(ref_sig) // 2
 					# update the lag marker
-					lag.d = result / sr
-					lag.select()
+					lag.set_offset(result / sr)
+					# lag.select()
 					print(f"raw accuracy (smp) {raw_lag}")
 					print(f"extra accuracy (smp) {result}")
 				except:

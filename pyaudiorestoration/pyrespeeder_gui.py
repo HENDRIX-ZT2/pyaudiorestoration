@@ -33,6 +33,18 @@ class MainWindow(widgets.MainWindow):
 		self.add_to_menu(button_data)
 
 
+class Action:
+
+	def __init__(self, traces, args):
+		pass
+
+	def undo(self):
+		pass
+
+	def redo(self):
+		pass
+
+
 class Canvas(spectrum.SpectrumCanvas):
 
 	def __init__(self, parent):
@@ -128,6 +140,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.master_speed.update()
 
 	def ungroup_traces(self):
+		"""group overlapping traces, allow opening the group or collapsing it to display only its evaluated line"""
 		pass
 
 	def restore_traces(self):
@@ -199,54 +212,48 @@ class Canvas(spectrum.SpectrumCanvas):
 				event.handled = True
 
 	def on_mouse_release(self, event):
-		# coords of the click on the vispy canvas
 		if self.filenames[0] and (event.trail() is not None) and event.button == 1 and "Control" in event.modifiers:
-			last_click = event.trail()[0]
-			click = event.pos
-			if last_click is not None:
-				a = self.click_spec_conversion(last_click)
-				b = self.click_spec_conversion(click)
-				# are they in spec_view?
-				if a is not None and b is not None:
-					t0, t1 = sorted((a[0], b[0]))
-					# f0, f1 = sorted((a[1], b[1]))
-					t0 = max(0, t0)
-					mode = self.props.tracing_widget.mode
-					adapt = self.props.tracing_widget.adapt
-					tolerance = self.props.tracing_widget.tolerance
-					rpm = self.props.tracing_widget.rpm
-					auto_align = self.props.tracing_widget.auto_align
-					# maybe query it here from the button instead of the other way
-					if mode == "Sine Regression":
+			# trail is integer pixel coordinates on vispy canvas
+			trail = [self.click_spec_conversion(click) for click in event.trail()]
+			# filter out any clicks outside of spectrum, for which click_spec_conversion returns None
+			trail = [x for x in trail if x is not None]
+			if trail:
+				t0 = trail[0][0]
+				t1 = trail[-1][0]
+				settings = self.props.tracing_widget
+				# maybe query it here from the button instead of the other way
+				if settings.mode == "Sine Regression":
+					amplitude, omega, phase, offset = wow_detection.trace_sine_reg(
+						self.master_speed.get_linspace(), t0, t1, settings.rpm)
+					if amplitude == 0:
+						logging.warning("Regressed to no amplitude, trying to sample regression curve")
 						amplitude, omega, phase, offset = wow_detection.trace_sine_reg(
-							self.master_speed.get_linspace(), t0, t1, rpm)
-						if amplitude == 0:
-							print("fallback")
-							amplitude, omega, phase, offset = wow_detection.trace_sine_reg(
-								self.master_reg_speed.get_linspace(), t0, t1, rpm)
-						markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
-						self.master_reg_speed.update()
-					else:
-						track = wow_detection.Track(
-							mode, self.fft_storage[self.keys[0]], t0, t1, self.fft_size,
-							self.hop, self.sr, tolerance, adapt,
-							trail=[self.click_spec_conversion(click) for click in event.trail()])
-						# for times, freqs in res:
-						# if len(freqs) and np.nan not in freqs:
-						markers.TraceLine(self, track.times, track.freqs, auto_align=auto_align)
-						self.master_speed.update()
-					return
-
-				# or in speed view?
-				# then we are only interested in the Y difference, so we can move the selected speed trace up or down
-				a = self.click_speed_conversion(last_click)
-				b = self.click_speed_conversion(click)
-				if a is not None and b is not None:
-					for trace in self.lines + self.regs:
-						if trace.selected:
-							trace.set_offset(a[1], b[1])
-					self.master_speed.update()
+							self.master_reg_speed.get_linspace(), t0, t1, settings.rpm)
+					markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
 					self.master_reg_speed.update()
+				else:
+					self.track_wow(settings, trail)
+				return
+
+			# or in speed view?
+			# then we are only interested in the Y difference, so we can move the selected speed trace up or down
+			trail = [self.click_speed_conversion(click) for click in event.trail()]
+			trail = [x for x in trail if x is not None]
+			if trail:
+				a = trail[0]
+				b = trail[-1]
+				for trace in self.lines + self.regs:
+					if trace.selected:
+						trace.set_offset(a[1], b[1])
+				self.master_speed.update()
+				self.master_reg_speed.update()
+
+	def track_wow(self, settings, trail):
+		track = wow_detection.Track(
+			settings.mode, self.fft_storage[self.keys[0]], trail, self.fft_size,
+			self.hop, self.sr, settings.tolerance, settings.adapt)
+		markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
+		self.master_speed.update()
 
 	def get_closest_line(self, click):
 		if click is not None:
@@ -260,11 +267,3 @@ class Canvas(spectrum.SpectrumCanvas):
 
 if __name__ == '__main__':
 	widgets.startup(MainWindow)
-
-"""
-Design ideas
-1) merge overlapping traces destructively
-2) group overlapping traces, allow opening the group or collapsing it to disply only its evaluated line
-
-
-"""

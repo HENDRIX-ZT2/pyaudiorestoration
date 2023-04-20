@@ -5,6 +5,11 @@ from PyQt5 import QtWidgets
 # custom modules
 from util import spectrum, wow_detection, qt_threads, widgets, io_ops, markers
 
+from pyaudiorestoration.util.undo import UndoStack, AddAction, DeleteAction, MoveAction
+from pyaudiorestoration.util.config import logging_setup
+
+logging_setup()
+
 
 class MainWindow(widgets.MainWindow):
 
@@ -21,28 +26,16 @@ class MainWindow(widgets.MainWindow):
 			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R"),
 			(file_menu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B"),
 			(file_menu, "Exit", self.close, ""),
-			(edit_menu, "Undo", self.canvas.restore_traces, "CTRL+Z"),
-			# (edit_menu, "Redo", self.props.foo, "CTRL+Y"),
+			(edit_menu, "Undo", self.canvas.undo_stack.undo, "CTRL+Z"),
+			(edit_menu, "Redo", self.canvas.undo_stack.redo, "CTRL+Y"),
 			(edit_menu, "Select All", self.canvas.select_all, "CTRL+A"),
 			(edit_menu, "Invert Selection", self.canvas.invert_selection, "CTRL+I"),
 			(edit_menu, "Merge Selected", self.canvas.merge_selected_traces, "CTRL+M"),
-			(edit_menu, "Group", self.canvas.group_traces, "CTRL+G"),
+			(edit_menu, "Merge Overlapping", self.canvas.group_traces, "CTRL+G"),
 			(edit_menu, "Delete Selected", self.canvas.delete_traces, "DEL"),
 			# (edit_menu, "Play/Pause", self.canvas.audio_widget.play_pause, "SPACE"),
 			)
 		self.add_to_menu(button_data)
-
-
-class Action:
-
-	def __init__(self, traces, args):
-		pass
-
-	def undo(self):
-		pass
-
-	def redo(self):
-		pass
 
 
 class Canvas(spectrum.SpectrumCanvas):
@@ -56,10 +49,10 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent = parent
 		self.show_regs = True
 		self.show_lines = True
-		self.deltraces = []
 		self.lines = []
 		self.grouped_traces = []
 		self.regs = []
+		self.undo_stack = UndoStack(self)
 		self.master_speed = markers.MasterSpeedLine(self)
 		self.master_reg_speed = markers.MasterRegLine(self, (0, 0, 1, .5))
 
@@ -67,6 +60,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.resampling_thread = qt_threads.ResamplingThread()
 		self.resampling_thread.notifyProgress.connect(self.parent.props.progress_widget.onProgress)
 		self.fourier_thread.notifyProgress.connect(self.parent.props.progress_widget.onProgress)
+		# self.parent.props.stack_widget.selection.selectionChanged.connect(self.undo_stack.set_state)
 		self.parent.props.display_widget.canvas = self
 		self.parent.props.tracing_widget.canvas = self
 		self.parent.props.alignment_widget.setVisible(False)
@@ -74,12 +68,13 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def load_visuals(self, ):
 		# read any saved traces or regressions
+		_markers = []
 		for offset, times, freqs in io_ops.read_trace(self.filenames[0]):
-			markers.TraceLine(self, times, freqs, offset=offset)
+			marker = markers.TraceLine(self, times, freqs, offset=offset)
+			_markers.append(marker)
 		for t0, t1, amplitude, omega, phase, offset in io_ops.read_regs(self.filenames[0]):
 			markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
-		self.master_speed.update()
-		self.master_reg_speed.update()
+		self.undo_stack.add(AddAction(_markers))
 
 	def save_traces(self):
 		# get the data from the traces and regressions and save it
@@ -89,24 +84,18 @@ class Canvas(spectrum.SpectrumCanvas):
 			[(reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.regs])
 
 	def delete_traces(self, delete_all=False):
-		self.deltraces = []
+		deltraces = []
 		for trace in reversed(self.regs + self.lines):
 			if (trace.selected and not delete_all) or delete_all:
-				self.deltraces.append(trace)
-		for trace in self.deltraces:
-			trace.remove()
-		self.master_speed.update()
-		self.master_reg_speed.update()
-		# this means a file was loaded, so clear the undo stack
-		if delete_all:
-			self.deltraces = []
+				deltraces.append(trace)
+		self.undo_stack.add(DeleteAction(deltraces))
 
 	def merge_selected_traces(self):
-		self.deltraces = []
+		deltraces = []
 		for trace in reversed(self.lines):
 			if trace.selected:
-				self.deltraces.append(trace)
-		self.merge_traces(self.deltraces)
+				deltraces.append(trace)
+		self.merge_traces(deltraces)
 		self.master_speed.update()
 
 	def merge_traces(self, traces_to_merge):
@@ -142,13 +131,6 @@ class Canvas(spectrum.SpectrumCanvas):
 	# def ungroup_traces(self):
 	# 	"""group overlapping traces, allow opening the group or collapsing it to display only its evaluated line"""
 	# 	pass
-
-	def restore_traces(self):
-		for trace in self.deltraces:
-			trace.initialize()
-		self.master_speed.update()
-		self.master_reg_speed.update()
-		self.deltraces = []
 
 	def run_resample(self):
 		if self.filenames[0] and self.lines + self.regs:
@@ -243,17 +225,15 @@ class Canvas(spectrum.SpectrumCanvas):
 				# only interested in the Y difference, so we can move the selected speed trace up or down
 				a = trail[0]
 				b = trail[-1]
-				for trace in self.lines + self.regs:
-					if trace.selected:
-						trace.set_offset(a[1], b[1])
-				self.master_speed.update()
-				self.master_reg_speed.update()
+				traces = [trace for trace in self.lines + self.regs if trace.selected]
+				self.undo_stack.add(MoveAction(traces, a[1], b[1]))
 
 	def track_wow(self, settings, trail):
 		track = wow_detection.Track(
 			settings.mode, self.fft_storage[self.keys[0]], trail, self.fft_size,
 			self.hop, self.sr, settings.tolerance, settings.adapt)
-		markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
+		marker = markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
+		self.undo_stack.add(AddAction((marker,)))
 		self.master_speed.update()
 
 	def get_closest_line(self, click):

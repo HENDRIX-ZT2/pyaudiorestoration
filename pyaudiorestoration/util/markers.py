@@ -193,7 +193,7 @@ class TraceLine(BaseMarker):
 		# the data is in Hz, so to visualize correctly, it has to be mel'ed
 		self.visuals[1].transform = vispy_canvas.spectra[0].mel_transform
 
-		self.initialize()
+		# self.initialize()
 
 	@property
 	def start(self):

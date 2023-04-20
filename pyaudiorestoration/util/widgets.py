@@ -1,8 +1,9 @@
+import logging
 import os
 import numpy as np
 import vispy
 import sys
-from vispy import color
+
 from PyQt5 import QtGui, QtCore, QtWidgets
 
 from util import units, config, qt_theme, colormaps
@@ -565,6 +566,36 @@ class HPSSWidget(QtWidgets.QWidget):
 	def margin(self): return self.margin_s.value()
 
 
+class StackWidget(QtWidgets.QGroupBox):
+
+	indexSelected = QtCore.pyqtSignal(int)
+
+	def __init__(self, ):
+		super().__init__("History")
+		self.view = QtWidgets.QListView()
+		self.model = QtGui.QStandardItemModel()
+		self.view.setModel(self.model)
+		self.selection = self.view.selectionModel()
+		self.view.setSelectionRectVisible(True)
+		# self.selection.selectionChanged.connect(self.log)
+		buttons = ((self.view, ),)
+		vbox(self, grid(buttons))
+
+	def add(self, item):
+		self.model.appendRow(QtGui.QStandardItem(item))
+
+	def select_index(self, i):
+		ind = self.model.index(i, 0)
+		self.view.setCurrentIndex(ind)
+		# sm = self.view.selectionModel()
+		# sm.select(ind, QtCore.QItemSelectionModel.Select)
+
+	def log(self, selection):
+		# logging.info(i)
+		logging.info(selection.indexes()[0].index())
+		# indexSelected.emit(
+
+
 class ResamplingWidget(QtWidgets.QGroupBox):
 	def __init__(self, ):
 		super().__init__("Resampling")
@@ -780,7 +811,8 @@ class ParamWidget(QtWidgets.QWidget):
 		# self.audio_widget = snd.AudioWidget()
 		self.inspector_widget = InspectorWidget()
 		self.alignment_widget = AlignmentWidget()
+		self.stack_widget = StackWidget()
 		buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget,
-				   self.resampling_widget, self.progress_widget,  # self.audio_widget,
+				   self.resampling_widget, self.stack_widget, self.progress_widget,  # self.audio_widget,
 				   self.inspector_widget]
 		vbox2(self, buttons)

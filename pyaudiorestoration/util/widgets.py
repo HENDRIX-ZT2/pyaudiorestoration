@@ -591,8 +591,20 @@ class ResamplingWidget(QtWidgets.QGroupBox):
 		self.scroll.setWidgetResizable(True)
 		self.channel_checkboxes = []
 
-		buttons = ((mode_l, self.mode_c,), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,))
+		self.incremental_b = QtWidgets.QCheckBox("Keep takes")
+		self.incremental_b.setChecked(False)
+		self.incremental_b.setToolTip("If checked, adds an incrementing suffix (_0, _1, ...) for each resampling run.")
+		self._suffix_index = 0
+
+		buttons = ((mode_l, self.mode_c,), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.incremental_b,))
 		vbox(self, grid(buttons))
+
+	@property
+	def suffix(self):
+		if self.incremental_b.isChecked():
+			self._suffix_index += 1
+			return f"_{self._suffix_index}"
+		return ""
 
 	def toggle_resampling_quality(self):
 		b = (self.mode_c.currentText() == "Sinc")

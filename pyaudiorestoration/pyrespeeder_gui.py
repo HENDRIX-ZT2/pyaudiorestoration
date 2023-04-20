@@ -139,9 +139,9 @@ class Canvas(spectrum.SpectrumCanvas):
 			self.merge_traces(group)
 		self.master_speed.update()
 
-	def ungroup_traces(self):
-		"""group overlapping traces, allow opening the group or collapsing it to display only its evaluated line"""
-		pass
+	# def ungroup_traces(self):
+	# 	"""group overlapping traces, allow opening the group or collapsing it to display only its evaluated line"""
+	# 	pass
 
 	def restore_traces(self):
 		for trace in self.deltraces:
@@ -160,16 +160,17 @@ class Canvas(spectrum.SpectrumCanvas):
 					"speed_curve": self.get_speed_curve(),
 					"resampling_mode": self.props.resampling_widget.mode,
 					"sinc_quality": self.props.resampling_widget.sinc_quality,
-					"use_channels": channels}
+					"use_channels": channels,
+					"suffix": self.props.resampling_widget.suffix}
 				self.resampling_thread.start()
 
 	def get_speed_curve(self):
 		if self.regs:
 			speed_curve = self.master_reg_speed.get_linspace()
-			print("Using regressed speed")
+			logging.info("Using regressed speed")
 		else:
 			speed_curve = self.master_speed.get_linspace()
-			print("Using measured speed")
+			logging.info("Using measured speed")
 		return speed_curve
 
 	def run_resample_batch(self):
@@ -213,7 +214,7 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def on_mouse_release(self, event):
 		if self.filenames[0] and (event.trail() is not None) and event.button == 1 and "Control" in event.modifiers:
-			# trail is integer pixel coordinates on vispy canvas
+			# event.trail() is integer pixel coordinates on vispy canvas
 			trail = [self.click_spec_conversion(click) for click in event.trail()]
 			# filter out any clicks outside of spectrum, for which click_spec_conversion returns None
 			trail = [x for x in trail if x is not None]
@@ -236,10 +237,10 @@ class Canvas(spectrum.SpectrumCanvas):
 				return
 
 			# or in speed view?
-			# then we are only interested in the Y difference, so we can move the selected speed trace up or down
 			trail = [self.click_speed_conversion(click) for click in event.trail()]
 			trail = [x for x in trail if x is not None]
 			if trail:
+				# only interested in the Y difference, so we can move the selected speed trace up or down
 				a = trail[0]
 				b = trail[-1]
 				for trace in self.lines + self.regs:

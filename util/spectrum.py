@@ -263,6 +263,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.speed_view.height_min = 150
 		self.spec_view = grid.add_view(row=2, col=1, border_color='white')
 		self.spec_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0, 10, 10), )
+		self.spec_view.height_min = 550
 		# link them, but use custom logic to only link the x view
 		self.spec_view.camera.link(self.speed_view.camera)
 		self.speed_yaxis.link_view(self.speed_view)

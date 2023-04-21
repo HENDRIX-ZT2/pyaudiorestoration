@@ -27,7 +27,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.setWindowTitle('Harmonic Percussive Separation')
 
 		self.hpss_widget = widgets.HPSSWidget()
-		self.display_widget = widgets.DisplayWidget(with_canvas=False)
+		self.display_widget = widgets.SpectrumSettingsWidget(with_canvas=False)
 		self.display_widget.fft_c.setCurrentIndex(3) # 512 smp
 		
 		

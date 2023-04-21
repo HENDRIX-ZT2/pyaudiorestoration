@@ -226,9 +226,9 @@ class FileWidget(QtWidgets.QWidget):
         self.accept_file(filepath)
 
 
-class DisplayWidget(QtWidgets.QGroupBox):
+class SpectrumSettingsWidget(QtWidgets.QGroupBox):
     def __init__(self, with_canvas=True):
-        super().__init__("Display")
+        super().__init__("Spectrum")
 
         fft_l = QtWidgets.QLabel("FFT Size")
         self.fft_c = QtWidgets.QComboBox(self)
@@ -245,28 +245,20 @@ class DisplayWidget(QtWidgets.QGroupBox):
         self.overlap_c.setToolTip("Increase to improve temporal resolution.")
         self.overlap_c.setCurrentIndex(2)
 
-        buttons = [(fft_l, self.fft_c), (overlap_l, self.overlap_c)]
+        cmap_l = QtWidgets.QLabel("Colors")
+        self.cmap_c = QtWidgets.QComboBox(self)
+        self.cmap_c.addItems(sorted(colormaps.cmaps.keys()))
+        self.cmap_c.setCurrentText("izo")
+        cmap_l.setVisible(with_canvas)
+        self.cmap_c.setVisible(with_canvas)
 
-        if with_canvas:
-            show_l = QtWidgets.QLabel("Show")
-            self.show_c = QtWidgets.QComboBox(self)
-            self.show_c.addItems(("Both", "Traces", "Regressions"))
-
-            cmap_l = QtWidgets.QLabel("Colors")
-            self.cmap_c = QtWidgets.QComboBox(self)
-            self.cmap_c.addItems(sorted(colormaps.cmaps.keys()))
-            self.cmap_c.setCurrentText("izo")
-
-            buttons.extend(((show_l, self.show_c), (cmap_l, self.cmap_c)))
-
-        buttons.append((self.clear_storage,))
+        buttons = [(fft_l, self.fft_c), (overlap_l, self.overlap_c), (cmap_l, self.cmap_c), (self.clear_storage,)]
         vbox(self, grid(buttons))
 
         if with_canvas:
             # only connect in the end
             self.fft_c.currentIndexChanged.connect(self.update_fft_settings)
             self.overlap_c.currentIndexChanged.connect(self.update_fft_settings)
-            self.show_c.currentIndexChanged.connect(self.update_show_settings)
             self.cmap_c.currentIndexChanged.connect(self.update_cmap)
             self.clear_storage.clicked.connect(self.force_clear_storage)
 
@@ -288,36 +280,6 @@ class DisplayWidget(QtWidgets.QGroupBox):
 
     def update_fft_settings(self, ):
         self.canvas.compute_spectra(self.canvas.filenames, fft_size=self.fft_size, fft_overlap=self.fft_overlap)
-
-    def update_show_settings(self):
-        show = self.show_c.currentText()
-        if show == "Traces":
-            self.canvas.show_regs = False
-            self.canvas.show_lines = True
-            self.canvas.master_speed.show()
-            for trace in self.canvas.lines:
-                trace.show()
-            self.canvas.master_reg_speed.hide()
-            for reg in self.canvas.regs:
-                reg.hide()
-        elif show == "Regressions":
-            self.canvas.show_regs = True
-            self.canvas.show_lines = False
-            self.canvas.master_speed.hide()
-            for trace in self.canvas.lines:
-                trace.hide()
-            self.canvas.master_reg_speed.show()
-            for reg in self.canvas.regs:
-                reg.show()
-        elif show == "Both":
-            self.canvas.show_regs = True
-            self.canvas.show_lines = True
-            self.canvas.master_speed.show()
-            for trace in self.canvas.lines:
-                trace.show()
-            self.canvas.master_reg_speed.show()
-            for reg in self.canvas.regs:
-                reg.show()
 
     def update_cmap(self):
         self.canvas.set_colormap(self.cmap_c.currentText())
@@ -397,8 +359,13 @@ class TracingWidget(QtWidgets.QGroupBox):
         self.autoalign_b.setChecked(True)
         self.autoalign_b.setToolTip("Should new traces be aligned with existing ones?")
 
+        show_l = QtWidgets.QLabel("Show")
+        self.show_c = QtWidgets.QComboBox(self)
+        self.show_c.addItems(("Both", "Traces", "Regressions"))
+        self.show_c.currentIndexChanged.connect(self.update_show_settings)
+
         buttons = (
-            (trace_l, self.trace_c), (adapt_l, self.adapt_c), (self.rpm_l, self.rpm_c),
+            (show_l, self.show_c), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (self.rpm_l, self.rpm_c),
             (self.phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (band0_l, self.band0_s),
             (band1_l, self.band1_s), (target_l, self.target_s), (self.target_b,), (self.autoalign_b,))
         vbox(self, grid(buttons))
@@ -431,6 +398,36 @@ class TracingWidget(QtWidgets.QGroupBox):
         self.rpm_c.setVisible(b)
         self.phase_l.setVisible(b)
         self.phase_s.setVisible(b)
+
+    def update_show_settings(self):
+        show = self.show_c.currentText()
+        if show == "Traces":
+            self.canvas.show_regs = False
+            self.canvas.show_lines = True
+            self.canvas.master_speed.show()
+            for trace in self.canvas.lines:
+                trace.show()
+            self.canvas.master_reg_speed.hide()
+            for reg in self.canvas.regs:
+                reg.hide()
+        elif show == "Regressions":
+            self.canvas.show_regs = True
+            self.canvas.show_lines = False
+            self.canvas.master_speed.hide()
+            for trace in self.canvas.lines:
+                trace.hide()
+            self.canvas.master_reg_speed.show()
+            for reg in self.canvas.regs:
+                reg.show()
+        elif show == "Both":
+            self.canvas.show_regs = True
+            self.canvas.show_lines = True
+            self.canvas.master_speed.show()
+            for trace in self.canvas.lines:
+                trace.show()
+            self.canvas.master_reg_speed.show()
+            for reg in self.canvas.regs:
+                reg.show()
 
     def update_bands(self):
         self.canvas.master_speed.bands = (self.band0_s.value(), self.band1_s.value())
@@ -791,7 +788,7 @@ class ParamWidget(QtWidgets.QWidget):
         self.parent = parent
 
         self.files_widget = FilesWidget(self, count, self.parent.cfg)
-        self.display_widget = DisplayWidget()
+        self.display_widget = SpectrumSettingsWidget()
         self.tracing_widget = TracingWidget()
         self.resampling_widget = ResamplingWidget()
         self.progress_bar = QtWidgets.QProgressBar(self)

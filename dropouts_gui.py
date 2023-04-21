@@ -31,7 +31,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.setWindowTitle('Dropouts')
 
 		self.dropout_widget = widgets.DropoutWidget()
-		self.display_widget = widgets.DisplayWidget(with_canvas=False)
+		self.display_widget = widgets.SpectrumSettingsWidget(with_canvas=False)
 		self.display_widget.fft_c.setCurrentIndex(3)  # 512 smp
 
 		self.b_add = QtWidgets.QPushButton('Load Audio')

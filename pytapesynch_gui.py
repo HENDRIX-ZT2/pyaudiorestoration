@@ -10,7 +10,7 @@ from util.undo import AddAction, DeleteAction, DeltaAction
 from util import spectrum, wow_detection, qt_threads, widgets, filters, io_ops, \
 	markers
 
-from util.config import save_config_json, load_config_json, logging_setup
+from util.config import save_json, load_json, logging_setup
 
 logging_setup()
 EXT = ".tapesync"
@@ -77,7 +77,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		cfg_path = QtWidgets.QFileDialog.getOpenFileName(self.parent, 'Open Project', self.parent.cfg["dir_in"],
 														 f"Tape Sync project files (*{EXT})")[0]
 		if os.path.isfile(cfg_path):
-			sync = load_config_json(cfg_path)
+			sync = load_json(cfg_path)
 			self.parent.props.display_widget.fft_size = sync["fft_size"]
 			self.parent.props.display_widget.fft_overlap = sync["fft_overlap"]
 			self.parent.props.alignment_widget.smoothing = sync["smoothing"]
@@ -100,7 +100,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		sync["fft_overlap"] = self.parent.props.display_widget.fft_overlap
 		sync["data"] = list(sorted(set((lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d, lag.corr) for lag in self.lag_samples)))
 		cfg_path = os.path.splitext(self.filenames[0])[0]+EXT
-		save_config_json(cfg_path, sync)
+		save_json(cfg_path, sync)
 
 	def improve_lag(self):
 		deltas = []

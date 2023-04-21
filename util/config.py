@@ -7,33 +7,25 @@ from root_path import root_dir
 
 
 def save_config(cfg_dict):
-	logging.info(f"Saving config")
-	with open(os.path.join(root_dir, "config.json"), "w") as json_writer:
-		json.dump(cfg_dict, json_writer, indent="\t", sort_keys=True)
+	save_json(os.path.join(root_dir, "config.json"), cfg_dict)
 
 
 def load_config():
+	return load_json(os.path.join(root_dir, "config.json"))
+
+
+def save_json(json_path, dic):
+	logging.info(f"Saving {os.path.basename(json_path)}")
+	with open(json_path, "w") as json_writer:
+		json.dump(dic, json_writer, indent="\t", sort_keys=True)
+
+
+def load_json(json_path):
 	try:
-		with open(os.path.join(root_dir, "config.json"), "r") as json_reader:
+		with open(json_path, "r") as json_reader:
 			return json.load(json_reader)
 	except FileNotFoundError:
-		logging.warning(f"Config file missing - will be created when program closes")
-		return {}
-
-
-def save_config_json(cfg_path, cfg_dict):
-	logging.info(f"Saving config")
-	# cfg_path = os.path.join(root_dir, "config.json")
-	with open(cfg_path, "w") as json_writer:
-		json.dump(cfg_dict, json_writer, indent="\t", sort_keys=True)
-
-
-def load_config_json(cfg_path):
-	try:
-		with open(cfg_path, "r") as json_reader:
-			return json.load(json_reader)
-	except FileNotFoundError:
-		logging.exception(f"Config file missing")
+		logging.exception(f"{os.path.basename(json_path)} file missing")
 		return {}
 
 

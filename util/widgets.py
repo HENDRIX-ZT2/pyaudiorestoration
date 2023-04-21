@@ -89,7 +89,45 @@ def vbox2(parent, buttons):
     box.addStretch(1.0)
 
 
-class FileWidget(QtWidgets.QLineEdit):
+class ChannelWidget(QtWidgets.QScrollArea):
+    def __init__(self, ):
+        super().__init__()
+        self.setToolTip("Select channels for processing.")
+        self.setFixedHeight(50)
+
+        self.channel_holder = QtWidgets.QWidget()
+        self.setWidget(self.channel_holder)
+
+        self.channel_layout = QtWidgets.QVBoxLayout()
+        self.channel_layout.setSpacing(0)
+        # self.channel_layout.setSizeConstraint(QtWidgets.QLayout.SetMinimumSize)
+        # self.channel_layout.addStretch(1.0)
+        self.channel_layout.setContentsMargins(2, 2, 2, 2)
+
+        self.channel_holder.setLayout(self.channel_layout)
+        self.channel_checkboxes = []
+        self.setWidgetResizable(True)
+
+    def refill(self, num_channels):
+        for channel in self.channel_checkboxes:
+            self.channel_layout.removeWidget(channel)
+            channel.deleteLater()
+        self.channel_checkboxes = []
+        # fill the channel UI
+        channel_names = ("Front Left", "Front Right", "Center", "LFE", "Back Left", "Back Right")
+        for i in range(0, num_channels):
+            name = channel_names[i] if i < 6 else str(i)
+            self.channel_checkboxes.append(QtWidgets.QCheckBox(name))
+            # set the startup option to just resample channel 0
+            self.channel_checkboxes[-1].setChecked(True if i == 0 else False)
+            self.channel_layout.addWidget(self.channel_checkboxes[-1])
+
+    @property
+    def channels(self, ):
+        return [i for i, channel in enumerate(self.channel_checkboxes) if channel.isChecked()]
+
+
+class FileWidget(QtWidgets.QWidget):
     """An entry widget that starts a file selector when clicked and also accepts drag & drop.
     Displays the current file's basename.
     """
@@ -100,12 +138,39 @@ class FileWidget(QtWidgets.QLineEdit):
         self.cfg = cfg
         if not self.cfg:
             self.cfg["dir_in"] = "C://"
-        self.setDragEnabled(True)
-        self.setReadOnly(True)
+
         self.filepath = ""
         self.description = description
         self.setToolTip(self.description)
         self.ask_user = ask_user
+
+        self.entry = QtWidgets.QLineEdit()
+        self.icon = QtWidgets.QPushButton()
+        self.sr_label = QtWidgets.QLabel()
+        self.sr_label.setAlignment(QtCore.Qt.AlignHCenter)
+        self.channel_widget = ChannelWidget()
+
+        self.icon.setIcon(get_icon("dir"))
+        self.icon.setFlat(True)
+
+        self.setAcceptDrops(True)
+        self.entry.setReadOnly(True)
+
+        self.icon.clicked.connect(self.ask_open)
+
+        self.filename = ""
+
+        self.qgrid = QtWidgets.QGridLayout()
+        self.qgrid.setContentsMargins(0, 0, 0, 0)
+        self.qgrid.addWidget(self.icon, 0, 0)
+        self.qgrid.addWidget(self.entry, 0, 1)
+        self.qgrid.addWidget(self.sr_label, 1, 0)
+        self.qgrid.addWidget(self.channel_widget, 1, 1)
+
+        self.setLayout(self.qgrid)
+
+    def set_sr(self, sr):
+        self.sr_label.setText(f"{sr // 1000}k")
 
     def abort_open_new_file(self, new_filepath):
         # only return True if we should abort
@@ -119,13 +184,16 @@ class FileWidget(QtWidgets.QLineEdit):
                 self, '', f"Do you really want to load {os.path.basename(new_filepath)}? "
                 f"You will lose unsaved work on {os.path.basename(self.filepath)}!", qm.Yes | qm.No)
 
+    def ignoreEvent(self, event):
+        event.ignore()
+
     def accept_file(self, filepath):
         if os.path.isfile(filepath):
             if os.path.splitext(filepath)[1].lower() in (".flac", ".wav"):
                 if not self.abort_open_new_file(filepath):
                     self.filepath = filepath
                     self.cfg["dir_in"], filename = os.path.split(filepath)
-                    self.setText(filename)
+                    self.entry.setText(filename)
                     self.parent.poll()
             else:
                 showdialog("Unsupported File Format")
@@ -156,9 +224,6 @@ class FileWidget(QtWidgets.QLineEdit):
         filepath = QtWidgets.QFileDialog.getOpenFileName(self, 'Open ' + self.description, self.cfg["dir_in"],
                                                          "Audio files (*.flac *.wav)")[0]
         self.accept_file(filepath)
-
-    def mousePressEvent(self, event):
-        self.ask_open()
 
 
 class DisplayWidget(QtWidgets.QGroupBox):
@@ -584,22 +649,12 @@ class ResamplingWidget(QtWidgets.QGroupBox):
             "Number of input samples that contribute to each output sample.\nMore samples = more quality, but slower. Only for sinc mode.")
         self.toggle_resampling_quality()
 
-        self.mygroupbox = QtWidgets.QGroupBox('Channels')
-        self.mygroupbox.setToolTip("Only selected channels will be resampled.")
-        self.channel_layout = QtWidgets.QVBoxLayout()
-        self.channel_layout.setSpacing(0)
-        self.mygroupbox.setLayout(self.channel_layout)
-        self.scroll = QtWidgets.QScrollArea()
-        self.scroll.setWidget(self.mygroupbox)
-        self.scroll.setWidgetResizable(True)
-        self.channel_checkboxes = []
-
         self.incremental_b = QtWidgets.QCheckBox("Keep takes")
         self.incremental_b.setChecked(False)
         self.incremental_b.setToolTip("If checked, adds an incrementing suffix (_0, _1, ...) for each resampling run.")
         self._suffix_index = 0
 
-        buttons = ((mode_l, self.mode_c,), (self.sinc_quality_l, self.sinc_quality_s), (self.scroll,), (self.incremental_b,))
+        buttons = ((mode_l, self.mode_c,), (self.sinc_quality_l, self.sinc_quality_s), (self.incremental_b,))
         vbox(self, grid(buttons))
 
     @property
@@ -613,25 +668,6 @@ class ResamplingWidget(QtWidgets.QGroupBox):
         b = (self.mode_c.currentText() == "Sinc")
         self.sinc_quality_l.setVisible(b)
         self.sinc_quality_s.setVisible(b)
-
-    def refill(self, num_channels):
-        for channel in self.channel_checkboxes:
-            self.channel_layout.removeWidget(channel)
-            channel.deleteLater()
-        self.channel_checkboxes = []
-
-        # fill the channel UI
-        channel_names = ("Front Left", "Front Right", "Center", "LFE", "Back Left", "Back Right")
-        for i in range(0, num_channels):
-            name = channel_names[i] if i < 6 else str(i)
-            self.channel_checkboxes.append(QtWidgets.QCheckBox(name))
-            # set the startup option to just resample channel 0
-            self.channel_checkboxes[-1].setChecked(True if i == 0 else False)
-            self.channel_layout.addWidget(self.channel_checkboxes[-1])
-
-    @property
-    def channels(self, ):
-        return [i for i, channel in enumerate(self.channel_checkboxes) if channel.isChecked()]
 
     @property
     def sinc_quality(self, ):

@@ -124,11 +124,12 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def run_resample(self):
 		if self.filenames[0] and self.lines + self.regs:
-			channels = self.props.resampling_widget.channels
+			spec = self.spectra[0]
+			channels = self.props.files_widget.files[0].channel_widget.channels
 			if channels:
 				self.resampling_thread.settings = {
-					"filenames": (self.filenames[0],),
-					"signal_data": ((self.signals[0], self.sr),),
+					"filenames": (spec.filename,),
+					"signal_data": ((spec.signal, spec.sr),),
 					"speed_curve": self.get_speed_curve(),
 					"resampling_mode": self.props.resampling_widget.mode,
 					"sinc_quality": self.props.resampling_widget.sinc_quality,
@@ -153,7 +154,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			self.resample_files(filenames)
 
 	def resample_files(self, files):
-		channels = self.props.resampling_widget.channels
+		channels = self.props.files_widget.files[0].channel_widget.channels
 		if self.filenames[0] and self.lines + self.regs and channels:
 			self.resampling_thread.settings = {
 				"filenames"			: files,

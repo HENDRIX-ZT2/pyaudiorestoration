@@ -69,12 +69,10 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def run_resample(self):
 		if self.filenames[0] and self.pan_samples:
-			channels = self.parent.props.resampling_widget.channels
-			if channels and self.pan_samples:
-				lag_curve = self.pan_line.data
-				signal, sr, channels = io_ops.read_file(self.filenames[0])
-				af = np.interp(np.arange(len(signal[:, 0])), lag_curve[:, 0] * sr, lag_curve[:, 1])
-				io_ops.write_file(self.filenames[0], signal[:, 1] * af, sr, 1)
+			lag_curve = self.pan_line.data
+			signal, sr, channels = io_ops.read_file(self.filenames[0])
+			af = np.interp(np.arange(len(signal[:, 0])), lag_curve[:, 0] * sr, lag_curve[:, 1])
+			io_ops.write_file(self.filenames[0], signal[:, 1] * af, sr, 1)
 
 	def on_mouse_press(self, event):
 		# #selection

@@ -100,7 +100,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.eqs = []
 		self.av = []
 		self.freqs_av = []
-		self.cfg = config.read_config("config.ini")
+		self.cfg = config.load_config()
 
 		# a figure instance to plot on
 		self.fig, self.ax = plt.subplots(nrows=1, ncols=1)

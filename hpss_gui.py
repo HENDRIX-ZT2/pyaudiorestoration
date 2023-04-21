@@ -17,7 +17,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		super(MainWindow, self).__init__(parent)
 		self.setAcceptDrops(True)
 		
-		self.cfg = config.read_config("config.ini")
+		self.cfg = config.load_config()
 		self.file_names = []
 		self.names_to_full_paths = {}
 		

@@ -44,7 +44,7 @@ def startup(cls):
     win = cls()
     win.show()
     appQt.exec_()
-    config.write_config("config.ini", win.cfg)
+    config.save_config(win.cfg)
 
 
 def showdialog(msg_txt):
@@ -707,7 +707,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle(name)
         self.setWindowIcon(get_icon(name))
 
-        self.cfg = config.read_config("config.ini")
+        self.cfg = config.load_config()
 
         self.props = props_widget_cls(parent=self, count=count)
         self.canvas = canvas_widget_cls(parent=self)

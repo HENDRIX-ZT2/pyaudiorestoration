@@ -54,7 +54,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.marker_dBs = []
 		self.ratios = []
 		self.hum_freqs = []
-		self.cfg = config.read_config("config.ini")
+		self.cfg = config.load_config()
 		
 		self.cb = QtWidgets.QApplication.clipboard()
 			

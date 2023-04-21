@@ -39,3 +39,18 @@ def to_mel(val):
 
 def to_Hz(val):
 	return (np.exp(val / 1127) - 1) * 700
+
+
+A4 = 440
+C0 = A4 * np.power(2, -4.75)
+note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+def pitch(freq):
+	if freq > 0:
+		h = round(12 * np.log2(freq / C0))
+		octave = int(h // 12)
+		n = int(h % 12)
+		if -1 < octave < 10:
+			return note_names[n] + str(octave)
+	return "-"

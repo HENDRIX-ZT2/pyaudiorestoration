@@ -6,11 +6,8 @@ import sys
 from PyQt5 import QtGui, QtCore, QtWidgets
 
 from util import units, config, qt_theme, colormaps
-
 from util.undo import UndoStack
-
-myFont = QtGui.QFont()
-myFont.setBold(True)
+from util.units import pitch
 
 
 ICON_CACHE = {"no_icon": QtGui.QIcon()}
@@ -30,9 +27,9 @@ def get_icon(name):
 
 def print_version_info():
     print("Running...")
-    print("Python:", sys.version)
-    print("Numpy:", np.__version__)
-    print("Vispy:", vispy.__version__)
+    print(f"Python: {sys.version}")
+    print(f"Numpy: {np.__version__}")
+    print(f"Vispy: {vispy.__version__}")
 
 
 def startup(cls):
@@ -50,25 +47,15 @@ def startup(cls):
     config.write_config("config.ini", win.cfg)
 
 
-def abort_open_new_file(parent, newfile, oldfile):
-    # only return True if we should abort
-    if newfile == oldfile:
-        return True
-    if oldfile:
-        qm = QtWidgets.QMessageBox
-        return qm.No == qm.question(parent.parent, '', "Do you really want to load " + os.path.basename(
-            newfile) + "? You will lose unsaved work on " + os.path.basename(oldfile) + "!", qm.Yes | qm.No)
-
-
-def showdialog(msg):
+def showdialog(msg_txt):
     msg = QtWidgets.QMessageBox()
     msg.setIcon(QtWidgets.QMessageBox.Information)
-    msg.setText(msg)
+    msg.setText(msg_txt)
     # msg.setInformativeText("This is additional information")
     msg.setWindowTitle("Error")
     # msg.setDetailedText("The details are as follows:")
     msg.setStandardButtons(QtWidgets.QMessageBox.Ok)
-    retval = msg.exec_()
+    msg.exec_()
 
 
 def grid(buttons):
@@ -128,9 +115,9 @@ class FileWidget(QtWidgets.QLineEdit):
             return True
         if self.filepath:
             qm = QtWidgets.QMessageBox
-            return qm.No == qm.question(self, '', "Do you really want to load " + os.path.basename(
-                new_filepath) + "? You will lose unsaved work on " + os.path.basename(self.filepath) + "!",
-                                        qm.Yes | qm.No)
+            return qm.No == qm.question(
+                self, '', f"Do you really want to load {os.path.basename(new_filepath)}? "
+                f"You will lose unsaved work on {os.path.basename(self.filepath)}!", qm.Yes | qm.No)
 
     def accept_file(self, filepath):
         if os.path.isfile(filepath):
@@ -274,11 +261,9 @@ class DisplayWidget(QtWidgets.QGroupBox):
         self.canvas.clear_fft_storage()
 
 
-class TracingWidget(QtWidgets.QWidget):
+class TracingWidget(QtWidgets.QGroupBox):
     def __init__(self, ):
-        QtWidgets.QWidget.__init__(self, )
-        tracing_l = QtWidgets.QLabel("\nTracing")
-        tracing_l.setFont(myFont)
+        super().__init__("Tracing")
         trace_l = QtWidgets.QLabel("Mode")
         self.trace_c = QtWidgets.QComboBox(self)
         self.trace_c.addItems(
@@ -290,7 +275,8 @@ class TracingWidget(QtWidgets.QWidget):
         self.rpm_c.setEditable(True)
         self.rpm_c.addItems(("Unknown", "33.333", "45", "78"))
         self.rpm_c.setToolTip(
-            "This helps avoid bad values in the sine regression. \nIf you don't know the source, measure the duration of one wow cycle. \nRPM = 60/cycle length")
+            "This helps avoid bad values in the sine regression. \n"
+            "If you don't know the source, measure the duration of one wow cycle. \nRPM = 60/cycle length")
 
         self.phase_l = QtWidgets.QLabel("Phase Offset")
         self.phase_s = QtWidgets.QSpinBox()
@@ -347,7 +333,7 @@ class TracingWidget(QtWidgets.QWidget):
         self.autoalign_b.setToolTip("Should new traces be aligned with existing ones?")
 
         buttons = (
-            (tracing_l,), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (self.rpm_l, self.rpm_c),
+            (trace_l, self.trace_c), (adapt_l, self.adapt_c), (self.rpm_l, self.rpm_c),
             (self.phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (band0_l, self.band0_s),
             (band1_l, self.band1_s), (target_l, self.target_s), (self.target_b,), (self.autoalign_b,))
         vbox(self, grid(buttons))
@@ -430,13 +416,9 @@ class AlignmentWidget(QtWidgets.QGroupBox):
     def ignore_phase(self): return self.ignore_phase_b.isChecked()
 
 
-class DropoutWidget(QtWidgets.QWidget):
+class DropoutWidget(QtWidgets.QGroupBox):
     def __init__(self, ):
-        QtWidgets.QWidget.__init__(self, )
-
-        dropouts_l = QtWidgets.QLabel("\nDropouts")
-        dropouts_l.setFont(myFont)
-
+        super().__init__("Alignment")
         mode_l = QtWidgets.QLabel("Mode")
         self.mode_c = QtWidgets.QComboBox(self)
         self.mode_c.addItems(("Heuristic", "MaxMono"))
@@ -489,7 +471,7 @@ class DropoutWidget(QtWidgets.QWidget):
         self.bottom_freedom_s.setToolTip("Clips the band's factor to x*gain of the band above")
 
         buttons = (
-            (dropouts_l,), (mode_l, self.mode_c,), (self.num_bands_l, self.num_bands_s), (self.f_upper_l, self.f_upper_s),
+            (mode_l, self.mode_c,), (self.num_bands_l, self.num_bands_s), (self.f_upper_l, self.f_upper_s),
             (self.f_lower_l, self.f_lower_s), (self.max_slope_l, self.max_slope_s), (self.max_width_l, self.max_width_s),
             (self.bottom_freedom_l, self.bottom_freedom_s))
         vbox(self, grid(buttons))
@@ -529,13 +511,9 @@ class DropoutWidget(QtWidgets.QWidget):
     def bottom_freedom(self): return self.bottom_freedom_s.value()
 
 
-class HPSSWidget(QtWidgets.QWidget):
+class HPSSWidget(QtWidgets.QGroupBox):
     def __init__(self, ):
-        QtWidgets.QWidget.__init__(self, )
-
-        dropouts_l = QtWidgets.QLabel("\nHPSS")
-        dropouts_l.setFont(myFont)
-
+        super().__init__("HPSS")
         self.h_kernel_l = QtWidgets.QLabel("Harmonic Kernel")
         self.h_kernel_s = QtWidgets.QSpinBox()
         self.h_kernel_s.setRange(1, 99)
@@ -565,7 +543,7 @@ class HPSSWidget(QtWidgets.QWidget):
         self.margin_s.setToolTip("margin size(s) for the masks")
 
         buttons = (
-            (dropouts_l,), (self.h_kernel_l, self.h_kernel_s), (self.p_kernel_l, self.p_kernel_s),
+            (self.h_kernel_l, self.h_kernel_s), (self.p_kernel_l, self.p_kernel_s),
             (self.power_l, self.power_s), (self.margin_l, self.margin_s))
         vbox(self, grid(buttons))
 
@@ -679,38 +657,26 @@ class ProgressWidget(QtWidgets.QWidget):
         self.progressBar.setValue(i)
 
 
-A4 = 440
-C0 = A4 * np.power(2, -4.75)
-note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
-
-def pitch(freq):
-    try:
-        h = round(12 * np.log2(freq / C0))
-        octave = int(h // 12)
-        n = int(h % 12)
-        if -1 < octave < 10:
-            return note_names[n] + str(octave)
-    except:
-        pass
-    return "-"
-
-
 class InspectorWidget(QtWidgets.QLabel):
     def __init__(self, ):
         QtWidgets.QLabel.__init__(self, )
-        self.def_text = "\n          - Note\n        -.- Hz\n-:--:--:--- h:m:s:ms"
-        myFont2 = QtGui.QFont("Monospace")
-        myFont2.setStyleHint(QtGui.QFont.TypeWriter)
-        self.setFont(myFont2)
-        self.setText(self.def_text)
+        font = QtGui.QFont("Monospace")
+        font.setStyleHint(QtGui.QFont.TypeWriter)
+        self.setFont(font)
+        self.update_text(None, None)
 
     def update_text(self, click, sr):
-        self.setText(self.def_text)
+        t, f = self.get_t_f(click, sr)
+        self.setText(f"{pitch(f):>11} Note\n"
+                     f"   {f:8.1f} Hz\n"
+                     f"{units.sec_to_timestamp(t)}")
+
+    def get_t_f(self, click, sr):
         if click is not None:
             t, f = click[0:2]
             if t >= 0 and sr / 2 > f >= 0:
-                self.setText("\n%11s Note\n   % 8.1f Hz\n" % (pitch(f), f) + units.sec_to_timestamp(t))
+                return t, f
+        return 0, 0
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -721,10 +687,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.name = name
         self.resize(1200, 600)
         self.setWindowTitle(name)
-        try:
-            self.setWindowIcon(get_icon(name))
-        except:
-            pass
+        self.setWindowIcon(get_icon(name))
 
         self.cfg = config.read_config("config.ini")
 

@@ -15,7 +15,7 @@ A set of tools to restore audio quality from a variety of old analog sources, su
    - tested on 3.79
    - 3.11 does not support all dependencies as of 2023-04-21; 3.10 seems to support them
 
-2) Download `pyaudiorestoration`. To do so, click the `Clone or Download` button at the right, then `Download ZIP`. Unzip to a folder of your choice.
+2) Download `pyaudiorestoration`. To do so, click the `<> Code` button at the right, then `Download ZIP`. Unzip to a folder of your choice.
 
 3) Install the required Python modules using `pip`. To do so, open a command prompt with admin rights inside the `pyaudiorestoration` folder you have unzipped and run: `pip install -r requirements.txt` If you get a message that tells you to update pip, do so.
 

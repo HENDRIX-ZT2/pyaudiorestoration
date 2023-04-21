@@ -13,7 +13,7 @@ A set of tools to restore audio quality from a variety of old analog sources, su
 1) You need to install a suitable version of [Python](https://www.python.org/downloads/) first. Make sure you check `Add Python to PATH` during installation.
    - at least 3.7+
    - tested on 3.79
-   - 3.11 does not support all dependencies as of 2022-04-21
+   - 3.11 does not support all dependencies as of 2023-04-21; 3.10 seems to support them
 
 2) Download `pyaudiorestoration`. To do so, click the `Clone or Download` button at the right, then `Download ZIP`. Unzip to a folder of your choice.
 

@@ -123,8 +123,8 @@ class Canvas(spectrum.SpectrumCanvas):
 			self.merge_traces(group)
 
 	def run_resample(self):
-		if self.filenames[0] and self.lines + self.regs:
-			spec = self.spectra[0]
+		spec = self.spectra[0]
+		if spec.filename and self.lines + self.regs:
 			channels = self.props.files_widget.files[0].channel_widget.channels
 			if channels:
 				self.resampling_thread.settings = {
@@ -155,7 +155,7 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def resample_files(self, files):
 		channels = self.props.files_widget.files[0].channel_widget.channels
-		if self.filenames[0] and self.lines + self.regs and channels:
+		if self.lines + self.regs and channels:
 			self.resampling_thread.settings = {
 				"filenames"			: files,
 				"speed_curve"		: self.get_speed_curve(),
@@ -228,9 +228,10 @@ class Canvas(spectrum.SpectrumCanvas):
 				self.props.undo_stack.push(MoveAction(traces, a[1], b[1]))
 
 	def track_wow(self, settings, trail):
+		spec = self.spectra[0]
 		track = wow_detection.Track(
-			settings.mode, self.fft_storage[self.keys[0]], trail, self.fft_size,
-			self.hop, self.sr, settings.tolerance, settings.adapt)
+			settings.mode, self.fft_storage[spec.key], trail, self.fft_size,
+			self.hop, spec.sr, settings.tolerance, settings.adapt)
 		marker = markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
 		self.props.undo_stack.push(AddAction((marker,)))
 

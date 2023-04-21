@@ -56,11 +56,15 @@ class Spectrum:
 		# which channel should be used to render this spectrum from?
 		self.signal = None
 		self.filename = 0
-		self.sr = 0
+		# set a reasonable default
+		self.sr = 44100
 		self.duration = 0.0
 		self.selected_channel = 0
+		# store one key per spectrum
+		# these are the keys that are currently in use
+		self.key = None
 
-	def update_data(self, imdata, hop, sr):
+	def update_data(self, imdata, hop):
 		num_bins, self.num_ffts = imdata.shape
 		# determine how many pieces we will create
 		num_pieces_new = ((self.num_ffts - 1) // self.MAX_TEXTURE_SIZE + 1) * (
@@ -80,11 +84,11 @@ class Spectrum:
 			num_piece_bins, num_piece_ffts = imdata_piece.shape
 
 			# to get correct heights for subsequent pieces, the start y has to be added in mel space
-			height_Hz_in = num_piece_bins / num_bins * sr / 2
-			ystart_Hz = y / num_bins * sr / 2
+			height_Hz_in = num_piece_bins / num_bins * self.sr / 2
+			ystart_Hz = y / num_bins * self.sr / 2
 			height_Hz_corrected = units.to_Hz(units.to_mel(height_Hz_in + ystart_Hz) - units.to_mel(ystart_Hz))
-			x_start = x * hop / sr + self.delta
-			x_len = num_piece_ffts * hop / sr
+			x_start = x * hop / self.sr + self.delta
+			x_len = num_piece_ffts * hop / self.sr
 
 			# do the dB conversion here because the tracers don't like it
 			self.pieces[i].tex.set_data(units.to_dB(imdata_piece))
@@ -216,7 +220,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.num_cores = os.cpu_count()
 		self.fft_size = 1024
 		self.hop = 256
-		self.sr = 44100
+		# self.sr =
 		self.duration = 0
 		self.dirty = False
 
@@ -277,9 +281,6 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.spec_yaxis.link_view(self.spec_view)
 
 		self.spectra = [Spectrum(self.spec_view, overlay=color) for color in spectra_colors]
-		# store one key per spectrum
-		# these are the keys that are currently in use
-		self.keys = []
 		self.fft_storage = {}
 
 		# nb. this is a vispy.util.event.EventEmitter object
@@ -288,6 +289,15 @@ class SpectrumCanvas(scene.SceneCanvas):
 			self.spec_view.transforms.changed.connect(spe.update_frustum)
 
 		self.freeze()
+
+	@property
+	def sr(self):
+		"""Use the maximum to avoid downsampling when sr differs per source"""
+		return max(spec.sr for spec in self.spectra)
+
+	@property
+	def f_max(self):
+		return self.sr / 2
 
 	# todo - get rid of these?
 	@property
@@ -321,11 +331,13 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.parent.props.undo_stack.push(AddAction(list(markers)))
 
 	def clear_fft_storage(self):
-		print("Clearing FFT storage")
+		logging.info("Clearing FFT storage")
 		# clear all but the current spectrum (we need it for tracing)
-		for k in [k for k in self.fft_storage if k not in self.keys]:
-			print(f"deleting {k}")
-			del self.fft_storage[k]
+		used_keys = [spectrum.key for spectrum in self.spectra]
+		for key in self.fft_storage:
+			if key not in used_keys:
+				logging.info(f"deleting {key}")
+				del self.fft_storage[key]
 
 	def compute_spectra(self, filenames, fft_size, fft_overlap):
 
@@ -361,20 +373,18 @@ class SpectrumCanvas(scene.SceneCanvas):
 				must_reset_view = True
 
 		self.duration = max([spectrum.duration for spectrum in self.spectra if spectrum.signal is not None])
-		self.keys = []
 		self.fft_size = fft_size
 		self.hop = fft_size // fft_overlap
 		if must_reset_view:
 			self.reset_view()
 		for spectrum in self.spectra:
 			if spectrum.filename:
-				k = (spectrum.filename, self.fft_size, spectrum.selected_channel, self.hop)
-				self.keys.append(k)
+				spectrum.key = (spectrum.filename, self.fft_size, spectrum.selected_channel, self.hop)
 				if spectrum.selected_channel >= spectrum.num_channels:
 					logging.warning(f"Not enough audio channels ({spectrum.num_channels}) to load, reverting to first channel")
 					spectrum.selected_channel = 0
 				# first try to get FFT from current storage and continue directly
-				if k in self.fft_storage:
+				if spectrum.key in self.fft_storage:
 					self.dirty = True
 				# check for alternate hops
 				else:
@@ -382,29 +392,30 @@ class SpectrumCanvas(scene.SceneCanvas):
 					more_sparse = None
 					# go over all keys and see if there is a bigger one
 					for key in self.fft_storage:
-						if key[0:3] == k[0:3]:
-							if key[3] > k[3]:
+						if key[0:3] == spectrum.key[0:3]:
+							if key[3] > spectrum.key[3]:
 								more_sparse = key
-							elif key[3] < k[3]:
-								# only save key if none had been set or the new key is closer to the desired k
+							elif key[3] < spectrum.key[3]:
+								# only save key if none had been set or the new key is closer to the desired key
 								if not more_dense or more_dense[3] < key[3]:
 									more_dense = key
 					# prefer reduction via strides
 					if more_dense:
-						print("reducing resolution via stride", more_dense[3], k[3])
-						step = k[3] // more_dense[3]
-						self.fft_storage[k] = np.array(self.fft_storage[more_dense][:, ::step])
+						print("reducing resolution via stride", more_dense[3], spectrum.key[3])
+						step = spectrum.key[3] // more_dense[3]
+						self.fft_storage[spectrum.key] = np.array(self.fft_storage[more_dense][:, ::step])
 						self.continue_spectra()
 					# TODO: implement gap filling, will need changes to stft function
 					# # then fill missing gaps
 					# elif more_sparse:
 					# print("increasing resolution by filling gaps",self.fft_size)
-					# self.fft_storage[k] = self.fft_storage[more_sparse]
+					# self.fft_storage[spectrum.key] = self.fft_storage[more_sparse]
 					else:
-						print("storing new fft", k)
+						logging.info(f"storing new fft {spectrum.key}")
 						# append to the fourier job list
-						self.fourier_thread.jobs.append(
-							(spectrum.signal[:, spectrum.selected_channel], self.fft_size, self.hop, "blackmanharris", self.num_cores, k))
+						self.fourier_thread.jobs.append((
+							spectrum.signal[:, spectrum.selected_channel], self.fft_size, self.hop, "blackmanharris",
+							self.num_cores, spectrum.key))
 					# all tasks are started below
 		# perform all fourier jobs
 		if self.fourier_thread.jobs:
@@ -421,18 +432,17 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.continue_spectra()
 
 	def continue_spectra(self, ):
-		for k, spec in zip(self.keys, self.spectra):
-			spec.update_data(self.fft_storage[k], self.hop, self.sr)
+		for spec in self.spectra:
+			spec.update_data(self.fft_storage[spec.key], self.hop)
 		self.set_clims(self.vmin, self.vmax)
 		self.set_colormap(self.cmap)
-
-	# don't bother with audio until it is fixed
-	# self.props.audio_widget.set_data(signal[:,channel], self.sr)
+		# don't bother with audio until it is fixed
+		# self.props.audio_widget.set_data(signal[:,channel], spec.sr)
 
 	def reset_view(self, ):
 		# (re)set the spec_view
 		self.speed_view.camera.rect = (0, -1, self.duration, 2)
-		self.spec_view.camera.rect = (0, 0, self.duration, units.to_mel(self.sr // 2))
+		self.spec_view.camera.rect = (0, 0, self.duration, units.to_mel(self.f_max))
 
 	# fast stuff that does not require rebuilding everything
 	def set_colormap(self, cmap):
@@ -496,7 +506,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 	def on_mouse_move(self, event):
 		# update the inspector label
 		click = self.click_spec_conversion(event.pos)
-		self.props.inspector_widget.update_text(click, self.sr)
+		self.props.inspector_widget.update_text(click, self.spectra[0].sr)
 
 	def get_closest(self, items, click, ):
 		if click is not None:

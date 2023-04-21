@@ -107,6 +107,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		selected = [lag for lag in self.lag_samples if lag.selected]
 		for lag in selected:
 			try:
+				# todo - this isn't dealing with different sample rates
 				# prepare some values
 				sr = self.sr
 				raw_lag = int(lag.d * sr)

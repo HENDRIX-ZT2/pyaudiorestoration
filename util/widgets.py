@@ -686,16 +686,16 @@ class InspectorWidget(QtWidgets.QLabel):
         self.setFont(font)
         self.update_text(None, None)
 
-    def update_text(self, click, sr):
-        t, f = self.get_t_f(click, sr)
+    def update_text(self, click, f_max):
+        t, f = self.get_t_f(click, f_max)
         self.setText(f"{pitch(f):>11} Note\n"
                      f"   {f:8.1f} Hz\n"
                      f"{units.sec_to_timestamp(t)}")
 
-    def get_t_f(self, click, sr):
+    def get_t_f(self, click, f_max):
         if click is not None:
             t, f = click[0:2]
-            if t >= 0 and sr / 2 > f >= 0:
+            if t >= 0 and 0 <= f <= f_max:
                 return t, f
         return 0, 0
 

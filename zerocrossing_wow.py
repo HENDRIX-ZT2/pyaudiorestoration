@@ -1,9 +1,8 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from scipy.ndimage import uniform_filter1d
 from scipy.signal import savgol_filter
 
-from pyaudiorestoration.util import io_ops
+from util import io_ops
 
 
 def zero_crossings(a):

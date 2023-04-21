@@ -1,7 +1,7 @@
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QBuffer, QIODevice, Qt
-from PyQt5.QtWidgets import QApplication, QFormLayout, QLineEdit, QHBoxLayout, QPushButton, QSlider, QVBoxLayout, QWidget
-from PyQt5.QtMultimedia import QAudio, QAudioDeviceInfo, QAudioFormat, QAudioOutput
+from PyQt5.QtWidgets import QApplication, QHBoxLayout, QPushButton, QSlider, QWidget
+from PyQt5.QtMultimedia import QAudio, QAudioFormat, QAudioOutput
 
 
 class AudioWidget(QWidget):

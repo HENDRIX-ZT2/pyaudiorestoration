@@ -5,12 +5,12 @@ import numpy as np
 from PyQt5 import QtWidgets
 
 # custom modules
-from pyaudiorestoration.util.correlation import xcorr
-from pyaudiorestoration.util.undo import AddAction, UndoStack, DeleteAction, DeltaAction
+from util.correlation import xcorr
+from util.undo import AddAction, DeleteAction, DeltaAction
 from util import spectrum, wow_detection, qt_threads, widgets, filters, io_ops, \
 	markers
 
-from pyaudiorestoration.util.config import save_config_json, load_config_json, logging_setup
+from util.config import save_config_json, load_config_json, logging_setup
 
 logging_setup()
 EXT = ".tapesync"

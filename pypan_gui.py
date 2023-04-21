@@ -1,7 +1,7 @@
 import numpy as np
 
 # custom modules
-from pyaudiorestoration.util.undo import AddAction, DeleteAction
+from util.undo import AddAction, DeleteAction
 from util import spectrum, widgets, io_ops, markers
 
 

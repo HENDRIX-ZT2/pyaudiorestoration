@@ -23,7 +23,8 @@ def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 1
 	for i, block in enumerate(soundob.blocks( blocksize=blocksize*hop, overlap=overlap*hop)):
 		# if i not in (0, 1):
 			# continue
-		print("Tracing from",units.sec_to_timestamp(block_start),"to",units.sec_to_timestamp(block_start+len(block)/sr))
+		print("Tracing from", units.sec_to_timestamp(block_start), "to",
+			  units.sec_to_timestamp(block_start + len(block) / sr))
 		imdata = fourier.get_mag(block, fft_size, hop, "hann", num_cores)
 		
 		#we can't do the start automatically
@@ -45,7 +46,7 @@ def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 1
 		write_speed(filename, speed, piece=i)
 		block_start+= ((blocksize*hop - overlap*hop) / sr)
 	dur = time() - start_time
-	print("duration",units.sec_to_timestamp(dur))
+	print("duration", units.sec_to_timestamp(dur))
 
 def show_all(speedname, hi=1020, lo=948):
 	dir = os.path.dirname(speedname)
@@ -106,7 +107,7 @@ def batch_res(filename, blocksize, overlap, speed_curve_names, resampling_mode):
 			if len(in_block) != in_len:
 				in_len = len(in_block)
 				samples_in2 = np.arange( in_len )
-			offsets_speeds = resampling.prepare_linear_or_sinc(speed_curve[:,0], speed_curve[:,1])
+			offsets_speeds = resampling.prepare_linear_or_sinc(speed_curve[:, 0], speed_curve[:, 1])
 			#these must be called as generators...
 			if resampling_mode in ("Sinc",):
 				for i in resampling.sinc_kernel(outfile, offsets_speeds, in_block, samples_in2, NT = 50):
@@ -116,7 +117,7 @@ def batch_res(filename, blocksize, overlap, speed_curve_names, resampling_mode):
 					pass
 
 	dur = time() - start_time
-	print("duration",units.sec_to_timestamp(dur))
+	print("duration", units.sec_to_timestamp(dur))
 
 #settings...
 # #at 8kHz

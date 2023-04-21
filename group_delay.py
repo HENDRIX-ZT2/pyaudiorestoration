@@ -3,19 +3,18 @@
 # plot x: freq, y: phase delay, correlation
 import logging
 
-from pyaudiorestoration.util.wow_detection import parabolic
-from pyaudiorestoration.util.correlation import xcorr
+from util.wow_detection import parabolic
+from util.correlation import xcorr
 
 logging.basicConfig(level=logging.INFO)
 # logging.basicConfig(level=logging.DEBUG)
 import numpy as np
 import soundfile as sf
-from pyaudiorestoration.dropouts_gui import pairwise
+from dropouts_gui import pairwise
 
-from scipy import signal
 import matplotlib.pyplot as plt
 
-from pyaudiorestoration.util import filters
+from util import filters
 
 
 def get_group_delay(ref_sig, src_sig):

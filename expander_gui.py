@@ -1,16 +1,11 @@
 import numpy as np
-import soundfile as sf
-import os
-import sys
-from scipy.signal import kaiser, filtfilt, butter, resample, savgol_filter
 from scipy.ndimage.filters import uniform_filter1d
 
-from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5 import QtWidgets
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
-from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
-from util import fourier, io_ops, units, wow_detection, widgets, config
+from util import fourier, io_ops, units, widgets, config
 
 def make_odd(n):
 	if n % 2:
@@ -28,7 +23,7 @@ def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L"):
 			print("not enough channels for L/R comparison  - fallback to mono")
 			break
 		#get the magnitude spectrum
-		imdata = units.to_dB(fourier.get_mag(signal[:,channel], fft_size, hop, "hann"))
+		imdata = units.to_dB(fourier.get_mag(signal[:, channel], fft_size, hop, "hann"))
 		spectra.append(imdata)
 	# take mean across axis
 	if channel_mode == "Mean":
@@ -250,4 +245,4 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 if __name__ == '__main__':
-	widgets.startup( MainWindow )
+	widgets.startup(MainWindow)

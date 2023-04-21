@@ -1,4 +1,3 @@
-import logging
 import os
 import numpy as np
 import vispy
@@ -8,7 +7,7 @@ from PyQt5 import QtGui, QtCore, QtWidgets
 
 from util import units, config, qt_theme, colormaps
 
-from pyaudiorestoration.util.undo import UndoStack
+from util.undo import UndoStack
 
 myFont = QtGui.QFont()
 myFont.setBold(True)

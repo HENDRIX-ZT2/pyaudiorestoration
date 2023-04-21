@@ -5,8 +5,8 @@ from PyQt5 import QtWidgets
 # custom modules
 from util import spectrum, wow_detection, qt_threads, widgets, io_ops, markers
 
-from pyaudiorestoration.util.undo import UndoStack, AddAction, DeleteAction, MoveAction, MergeAction
-from pyaudiorestoration.util.config import logging_setup
+from util.undo import AddAction, DeleteAction, MoveAction, MergeAction
+from util.config import logging_setup
 
 logging_setup()
 

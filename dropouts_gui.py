@@ -1,10 +1,9 @@
 import numpy as np
-import soundfile as sf
 import os
 import scipy.signal
 # import librosa
 
-from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5 import QtWidgets, QtCore
 
 from util import fourier, widgets, config, filters, io_ops, units
 

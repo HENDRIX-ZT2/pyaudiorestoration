@@ -1,11 +1,9 @@
 import numpy as np
-import soundfile as sf
 import os
-import scipy.signal
 
-from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5 import QtWidgets, QtCore
 
-from util import fourier, widgets, config, filters, io_ops, units, decompose
+from util import fourier, widgets, config, io_ops, decompose
 	
 def pairwise(iterable):
 	it = iter(iterable)
@@ -152,4 +150,4 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 if __name__ == '__main__':
-	widgets.startup( MainWindow )
+	widgets.startup(MainWindow)

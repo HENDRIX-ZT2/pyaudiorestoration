@@ -7,7 +7,7 @@ from vispy.geometry import Rect
 from util import vispy_ext, io_ops, qt_threads, units, colormaps
 
 # log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)
-from pyaudiorestoration.util.undo import AddAction
+from util.undo import AddAction
 
 norm_luminance = """
 float norm_luminance(vec2 pos) {

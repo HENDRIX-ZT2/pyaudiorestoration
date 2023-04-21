@@ -5,27 +5,23 @@ A set of tools to restore audio quality from a variety of old analog sources, su
 - Wow & Flutter Removal
 - Speed matching to hum frequency
 - EQ matching with differential EQ
-- Spectral Temporal Alignment
+- Sub-sample accurate Spectral Temporal Alignment
 - Automatic Dropout Restoration
 - Spectral Expander / Decompressor
 
 ### Installation
-You need to have installed:
-- python 3.6+
-- [FreeType](https://www.freetype.org/download.html)
-On Windows, make sure that freetype.dll is located in a folder in the system path.
-- numpy
-- numba
-- [resampy](https://resampy.readthedocs.io/)
-- [pysoundfile](https://pysoundfile.readthedocs.io/)
-- scipy
-- pyQt5
-- [vispy](vispy.org)
-- [pyFFTW](https://github.com/pyFFTW/pyFFTW) (_optional_ speedup) Note for python 3.6 users on windows - to install pyFFTW, download the correct .whl file from [ ![Download](https://api.bintray.com/packages/hgomersall/generic/PyFFTW-development-builds/images/download.svg) ](https://bintray.com/hgomersall/generic/PyFFTW-development-builds/_latestVersion#files)  (scroll down!) and install it with `pip install PATH_TO_FILE.whl`.
+1) You need to install a suitable version of [Python](https://www.python.org/downloads/) first. Make sure you check `Add Python to PATH` during installation.
+   - at least 3.7+
+   - tested on 3.79
+   - 3.11 does not support all dependencies as of 2022-04-21
 
-Click the `Clone or Download` button at the right, then `Download ZIP`. Unzip to a folder of your choice.
-Open a command prompt with admin rights inside that folder and run: `python setup.py install`
-This will install all required dependencies so you can start right away.
+2) Download `pyaudiorestoration`. To do so, click the `Clone or Download` button at the right, then `Download ZIP`. Unzip to a folder of your choice.
+
+3) Install the required Python modules using `pip`. To do so, open a command prompt with admin rights inside the `pyaudiorestoration` folder you have unzipped and run: `pip install -r requirements.txt` If you get a message that tells you to update pip, do so.
+
+4) In some cases, you have to troubleshoot the installation of some dependencies. Here is a list of known issues:
+   - `freetype-py` may have trouble to downloading `freetype.dll`. In that case, download it from [FreeType](https://www.freetype.org/download.html) and place it in a folder included in your system's path.
+
 
 ### How to Use
 See the [wiki](https://github.com/HENDRIX-ZT2/pyaudiorestoration/wiki) for detailed instructions for the individual tools.

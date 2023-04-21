@@ -1,5 +1,5 @@
 pyqt5
-pysoundfile
+soundfile
 matplotlib
 scipy
 numpy

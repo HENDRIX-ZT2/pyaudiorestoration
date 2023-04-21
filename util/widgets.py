@@ -703,6 +703,7 @@ class InspectorWidget(QtWidgets.QLabel):
         myFont2 = QtGui.QFont("Monospace")
         myFont2.setStyleHint(QtGui.QFont.TypeWriter)
         self.setFont(myFont2)
+        self.setText(self.def_text)
 
     def update_text(self, click, sr):
         self.setText(self.def_text)
@@ -718,7 +719,7 @@ class MainWindow(QtWidgets.QMainWindow):
         QtWidgets.QMainWindow.__init__(self)
 
         self.name = name
-        self.resize(720, 400)
+        self.resize(1200, 600)
         self.setWindowTitle(name)
         try:
             self.setWindowIcon(get_icon(name))

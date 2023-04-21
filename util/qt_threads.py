@@ -1,5 +1,5 @@
 from PyQt5 import QtCore
-from util import resampling, io_ops, fourier
+from util import resampling, fourier
 
 
 # nb. in QThreads, run() is called when start() is called on class
@@ -24,7 +24,7 @@ class FourierThread(BaseThread):
 	result = {}
 
 	def run(self):
-		for signal_1d, fft_size, hop, window, num_cores, key in self.jobs:
-			self.result[key] = fourier.get_mag(signal_1d, fft_size, hop, window, num_cores,
+		for signal_1d, fft_size, hop, window_name, num_cores, key in self.jobs:
+			self.result[key] = fourier.get_mag(signal_1d, fft_size, hop, window_name, num_cores,
 											   prog_sig=self.notifyProgress)
 		self.jobs = []

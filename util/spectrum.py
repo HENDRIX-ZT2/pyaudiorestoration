@@ -380,7 +380,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 						print("storing new fft", k)
 						# append to the fourier job list
 						self.fourier_thread.jobs.append(
-							(signal[:, channel], self.fft_size, self.hop, "hann", self.num_cores, k))
+							(signal[:, channel], self.fft_size, self.hop, "blackmanharris", self.num_cores, k))
 					# all tasks are started below
 		# perform all fourier jobs
 		if self.fourier_thread.jobs:

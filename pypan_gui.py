@@ -35,7 +35,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.pan_line = markers.PanLine(self)
 
 		# threading & links
-		self.fourier_thread.notifyProgress.connect(self.parent.props.progress_widget.onProgress)
+		self.fourier_thread.notifyProgress.connect(self.parent.props.progress_bar.setValue)
 		self.parent.props.display_widget.canvas = self
 		self.parent.props.tracing_widget.setVisible(False)
 		self.freeze()

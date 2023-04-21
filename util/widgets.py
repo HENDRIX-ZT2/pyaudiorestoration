@@ -642,21 +642,6 @@ class ResamplingWidget(QtWidgets.QGroupBox):
         return self.mode_c.currentText()
 
 
-class ProgressWidget(QtWidgets.QWidget):
-    def __init__(self, ):
-        QtWidgets.QWidget.__init__(self, )
-
-        self.progressBar = QtWidgets.QProgressBar(self)
-        self.progressBar.setRange(0, 100)
-        self.progressBar.setAlignment(QtCore.Qt.AlignCenter)
-
-        buttons = ((self.progressBar,),)
-        vbox(self, grid(buttons))
-
-    def onProgress(self, i):
-        self.progressBar.setValue(i)
-
-
 class InspectorWidget(QtWidgets.QLabel):
     def __init__(self, ):
         QtWidgets.QLabel.__init__(self, )
@@ -773,13 +758,15 @@ class ParamWidget(QtWidgets.QWidget):
         self.display_widget = DisplayWidget()
         self.tracing_widget = TracingWidget()
         self.resampling_widget = ResamplingWidget()
-        self.progress_widget = ProgressWidget()
+        self.progress_bar = QtWidgets.QProgressBar(self)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setAlignment(QtCore.Qt.AlignCenter)
         # self.audio_widget = snd.AudioWidget()
         self.inspector_widget = InspectorWidget()
         self.alignment_widget = AlignmentWidget()
         self.undo_stack = UndoStack(self)
         self.stack_widget = StackWidget(self.undo_stack)
         buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget,
-                   self.resampling_widget, self.stack_widget, self.progress_widget,  # self.audio_widget,
+                   self.resampling_widget, self.stack_widget, self.progress_bar,  # self.audio_widget,
                    self.inspector_widget]
         vbox2(self, buttons)

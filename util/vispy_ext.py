@@ -324,13 +324,20 @@ class ExtTicker(Ticker):
 
 		# major = np.linspace(domain[0], domain[1], num=11)
 		# major = MaxNLocator(10).tick_values(*domain)
-		major = _get_ticks_talbot(domain[0], domain[1], n_inches, 2)
+		major = _get_ticks_talbot(domain[0], domain[1], n_inches, 1)
 
+		# if self.axis.scale_type == 'logarithmic':
+		# 	# print(major)
+		# 	# position ticks linearly on Hz scale
+		# 	major = _get_ticks_talbot(units.to_Hz(domain[0]), units.to_Hz(domain[1]), n_inches, 2)
+		# 	# then transform them back to mel scale
+		# 	major = units.to_mel(major)
+		# 	# print(major)
 		if self.axis.scale_type == 'linear':
 			# labels = ['%g' % x for x in major]
 			labels = [units.t_2_m_s_ms(x) for x in major]
 		elif self.axis.scale_type == 'logarithmic':
-			labels = [str(int(units.to_Hz(x))) for x in major]
+			labels = [str(round(units.to_Hz(x))) for x in major]
 		majstep = major[1] - major[0]
 		minor = []
 		minstep = majstep / (minor_num + 1)

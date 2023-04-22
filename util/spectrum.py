@@ -70,29 +70,34 @@ class Spectrum:
 		num_pieces_new = ((self.num_ffts - 1) // self.MAX_TEXTURE_SIZE + 1) * (
 				(num_bins - 1) // self.MAX_TEXTURE_SIZE + 1)
 		num_pieces_old = len(self.pieces)
+		# reusing pieces no longer works for some reason
 		# we have too many pieces and need to discard some
-		for i in reversed(range(num_pieces_new, num_pieces_old)):
+		# for i in reversed(range(num_pieces_new, num_pieces_old)):
+		for i in reversed(range(num_pieces_old)):
 			self.pieces[i].parent = None
 			self.pieces.pop(i)
 		# add new pieces
-		for i in range(num_pieces_old, num_pieces_new):
+		# for i in range(num_pieces_old, num_pieces_new):
+		for i in range(num_pieces_new):
 			self.pieces.append(SpectrumPiece(self.empty, self.parent.scene, self.overlay))
 		# spectra may only be of a certain size, so split them
 		for i, (x, y) in enumerate([(x, y) for x in range(0, self.num_ffts, self.MAX_TEXTURE_SIZE) for y in
 									range(0, num_bins, self.MAX_TEXTURE_SIZE)]):
+			logging.debug(f"Piece {i} at x={x}, y={y} sr={self.sr}")
 			imdata_piece = imdata[y:y + self.MAX_TEXTURE_SIZE, x:x + self.MAX_TEXTURE_SIZE]
 			num_piece_bins, num_piece_ffts = imdata_piece.shape
 
 			# to get correct heights for subsequent pieces, the start y has to be added in mel space
-			height_Hz_in = num_piece_bins / num_bins * self.sr / 2
-			ystart_Hz = y / num_bins * self.sr / 2
+			height_Hz_in = num_piece_bins / num_bins * self.f_max
+			ystart_Hz = y / num_bins * self.f_max
 			height_Hz_corrected = units.to_Hz(units.to_mel(height_Hz_in + ystart_Hz) - units.to_mel(ystart_Hz))
 			x_start = x * hop / self.sr + self.delta
 			x_len = num_piece_ffts * hop / self.sr
 
 			# do the dB conversion here because the tracers don't like it
 			self.pieces[i].tex.set_data(units.to_dB(imdata_piece))
-			self.pieces[i].set_size((x_len, height_Hz_corrected))
+			self.pieces[i].size = (x_len, height_Hz_corrected)
+			# logging.info(f"Size {(x_len, height_Hz_corrected)}")
 			# add this piece's offset with STT
 			self.pieces[i].transform = visuals.transforms.STTransform(
 				translate=(x_start, units.to_mel(ystart_Hz))) * self.mel_transform
@@ -126,6 +131,10 @@ class Spectrum:
 			image.bb.right += d
 			t[0] += d
 			image.transform.transforms[0].translate = t
+
+	@property
+	def f_max(self):
+		return self.sr / 2
 
 
 class SpectrumPiece(scene.Image):
@@ -163,11 +172,6 @@ class SpectrumPiece(scene.Image):
 			self.shared_program.frag['color_transform'] = visuals.shaders.Function(
 				self.__cmap.glsl_map)
 
-	def set_size(self, size):
-		# not sure if update is needed
-		self._shape = size
-		self.update()
-
 	def set_cmap(self, colormap):
 		self.__cmap = colormaps.cmaps.get(colormap, "izo")
 		if not self.overlay:
@@ -183,6 +187,10 @@ class SpectrumPiece(scene.Image):
 	@property
 	def size(self):
 		return self._shape
+
+	@size.setter
+	def size(self, v):
+		self._shape = v
 
 	def _prepare_draw(self, view):
 		if self._need_vertex_update:
@@ -217,7 +225,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		# some default dummy values
 		self.props = None
 		self.vmin = -120
-		self.vmax = -20
+		self.vmax = 0
 		self.cmap = "izo"
 		self.num_cores = os.cpu_count()
 		self.fft_size = 1024
@@ -274,9 +282,11 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.speed_view = grid.add_view(row=1, col=1, border_color=label_color)
 		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, -5, 10, 10), )
 		self.speed_view.height_min = 150
+		# self.speed_view.stretch = (1, 1)
 		self.spec_view = grid.add_view(row=2, col=1, border_color=label_color)
 		self.spec_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0, 10, 10), )
 		self.spec_view.height_min = 550
+		self.spec_view.stretch = (2, 2)
 		# link them, but use custom logic to only link the x view
 		self.spec_view.camera.link(self.speed_view.camera)
 		self.speed_yaxis.link_view(self.speed_view)

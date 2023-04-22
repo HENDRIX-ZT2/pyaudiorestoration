@@ -5,9 +5,6 @@ from vispy import scene, gloo, visuals
 from vispy.color import BaseColormap
 from vispy.geometry import Rect
 
-# custom modules
-from vispy.visuals.shaders import Function, FunctionChain
-
 from util import vispy_ext, io_ops, qt_threads, units, colormaps
 
 # log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)

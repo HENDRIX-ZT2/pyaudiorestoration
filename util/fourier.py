@@ -95,8 +95,8 @@ def stft(x, n_fft=1024, step=512, window_name='blackmanharris', num_cores=1, win
 		for i in range(n_estimates):
 			result[:, i] = np.fft.rfft(segment())
 			emit_progress()
-	# normalize
-	result /= n_fft
+	# normalize for constant volume across different FFT sizes
+	result /= np.sqrt(n_fft)
 	return result
 
 
@@ -289,7 +289,7 @@ def istft(stft_matrix, hop_length=None, win_length=None, window='blackmanharris'
 	n_fft = 2 * (stft_matrix.shape[0] - 1)
 
 	# librosa doesn't do this - should we? or do it in get_mag() only?
-	stft_matrix *= n_fft
+	stft_matrix *= np.sqrt(n_fft)
 	# By default, use the entire frame
 	if win_length is None:
 		win_length = n_fft

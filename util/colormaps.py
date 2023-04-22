@@ -1313,6 +1313,7 @@ for (name, data) in (('magma', _magma_data),
 
     cmaps[name] = color.Colormap(color.ColorArray(data))
 
+
 magma = cmaps['magma']
 izo = cmaps['izo']
 inferno = cmaps['inferno']

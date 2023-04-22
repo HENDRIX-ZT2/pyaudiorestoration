@@ -2,47 +2,40 @@ import logging
 import os
 import numpy as np
 from vispy import scene, gloo, visuals
+from vispy.color import BaseColormap
 from vispy.geometry import Rect
 
 # custom modules
+from vispy.visuals.shaders import Function, FunctionChain
+
 from util import vispy_ext, io_ops, qt_threads, units, colormaps
 
 # log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)
 from util.undo import AddAction
 
-norm_luminance = """
-float norm_luminance(vec2 pos) {
-	if( pos.x < 0 || pos.x > 1 || pos.y < 0 || pos.y > 1 ) {
-		return -1.0f;
+
+class FlatRed(BaseColormap):
+	glsl_map = """
+	vec4 simple_cmap(float x) {
+		return vec4(x, 0, 0, 1);
 	}
-	vec2 uv = vec2(pos.x, pos.y);
-	return (texture2D($texture, uv).r - $vmin)/($vmax - $vmin);
-}
-"""
+	"""
 
-simple_cmap = """
-vec4 simple_cmap(float x) {
-	return vec4(0, 0, x, 1);
-}
-"""
 
-r_cmap = """
-vec4 simple_cmap(float x) {
-	return vec4(x, 0, 0, 1);
-}
-"""
+class FlatGreen(BaseColormap):
+	glsl_map = """
+	vec4 simple_cmap(float x) {
+		return vec4(0, x, 0, 1);
+	}
+	"""
 
-g_cmap = """
-vec4 simple_cmap(float x) {
-	return vec4(0, x, 0, 1);
-}
-"""
+add_cmaps = {}
+add_cmaps["add_r"] = FlatRed()
+add_cmaps["add_g"] = FlatGreen()
 
 
 class Spectrum:
-	"""
-	The visualization of the whole spectrogram.
-	"""
+	"""The visualization of the whole spectrogram."""
 
 	def __init__(self, parent, overlay=False):
 		self.overlay = overlay
@@ -50,7 +43,6 @@ class Spectrum:
 		self.parent = parent
 		self.MAX_TEXTURE_SIZE = gloo.gl.glGetParameter(gloo.gl.GL_MAX_TEXTURE_SIZE)
 		self.mel_transform = vispy_ext.MelTransform()
-		self.empty = np.zeros((1, 1), dtype="float32")
 		self.delta = 0
 		self.num_ffts = 0
 		# which channel should be used to render this spectrum from?
@@ -72,14 +64,12 @@ class Spectrum:
 		num_pieces_old = len(self.pieces)
 		# reusing pieces no longer works for some reason
 		# we have too many pieces and need to discard some
-		# for i in reversed(range(num_pieces_new, num_pieces_old)):
-		for i in reversed(range(num_pieces_old)):
+		for i in reversed(range(num_pieces_new, num_pieces_old)):
 			self.pieces[i].parent = None
 			self.pieces.pop(i)
 		# add new pieces
-		# for i in range(num_pieces_old, num_pieces_new):
-		for i in range(num_pieces_new):
-			self.pieces.append(SpectrumPiece(self.empty, self.parent.scene, self.overlay))
+		for i in range(num_pieces_old, num_pieces_new):
+			self.pieces.append(SpectrumPiece(self.parent.scene))
 		# spectra may only be of a certain size, so split them
 		for i, (x, y) in enumerate([(x, y) for x in range(0, self.num_ffts, self.MAX_TEXTURE_SIZE) for y in
 									range(0, num_bins, self.MAX_TEXTURE_SIZE)]):
@@ -96,26 +86,26 @@ class Spectrum:
 
 			# do the dB conversion here because the tracers don't like it
 			piece = self.pieces[i]
-			piece.tex.set_data(units.to_dB(imdata_piece))
+			piece.set_data(units.to_dB(imdata_piece))
 			piece.size = (x_len, height_Hz_corrected)
-			# logging.info(f"Size {(x_len, height_Hz_corrected)}")
 			# add this piece's offset with STT
 			piece.transform = visuals.transforms.STTransform(
 				translate=(x_start, units.to_mel(ystart_Hz))) * self.mel_transform
 			piece.bb.left = x_start
 			piece.bb.right = x_start + x_len
 			piece.update()
-			# piece.hide()
 			piece.show()
-			logging.info(f"Size {piece.size}")
 
 	def set_clims(self, vmin, vmax):
 		for image in self.pieces:
-			image.set_clims(vmin, vmax)
+			image.clim = (vmin, vmax)
 
 	def set_cmap(self, colormap):
 		for image in self.pieces:
-			image.set_cmap(colormap)
+			if self.overlay:
+				image.cmap = self.overlay
+			else:
+				image.cmap = colormap
 
 	def update_frustum(self, event):
 		for image in self.pieces:
@@ -141,51 +131,30 @@ class Spectrum:
 
 
 class SpectrumPiece(scene.Image):
-	"""
-	The visualization of one part of the whole spectrogram.
-	"""
+	"""The visualization of one part of the whole spectrogram."""
 
-	def __init__(self, texdata, parent, overlay=False):
+	def __init__(self, parent):
 		self._parent2 = parent
-		self.overlay = overlay
-		# just set a dummy value
+		# # just set a dummy value
 		self._shape = (10.0, 22500)
-		self.tex = gloo.Texture2D(texdata, format='luminance', internalformat='r32f', interpolation="linear")
-		self.get_data = visuals.shaders.Function(norm_luminance)
-		self.get_data['vmin'] = -100
-		self.get_data['vmax'] = -30
-		self.get_data['texture'] = self.tex
-
 		self.bb = Rect((0, 0, 1, 1))
+		scene.Image.__init__(self, parent=parent, interpolation="linear")
+		self.cmap = "izo"
 
-		self.__cmap = colormaps.cmaps["izo"]
-		scene.Image.__init__(self, method='subdivide', grid=(1000, 1), parent=parent)
+	@property
+	def cmap(self):
+		"""Get the colormap object applied to luminance (single band) data."""
+		return self._cmap
 
-		# set in the main program
-		self.shared_program.frag['get_data'] = self.get_data
-
-		# needs no external color map
-		if self.overlay == "r":
+	@cmap.setter
+	def cmap(self, cmap_name):
+		if cmap_name.startswith("add_"):
 			self.set_gl_state('additive')
-			self.shared_program.frag['color_transform'] = visuals.shaders.Function(r_cmap)
-		elif self.overlay == "g":
-			self.set_gl_state('additive')
-			self.shared_program.frag['color_transform'] = visuals.shaders.Function(g_cmap)
+			self._cmap = add_cmaps.get(cmap_name)
 		else:
-			self.shared_program.frag['color_transform'] = visuals.shaders.Function(
-				self.__cmap.glsl_map)
-
-	def set_cmap(self, colormap):
-		self.__cmap = colormaps.cmaps.get(colormap, "izo")
-		if not self.overlay:
-			# update is needed
-			self.shared_program.frag['color_transform'] = visuals.shaders.Function(
-				self.__cmap.glsl_map)
-			self.update()
-
-	def set_clims(self, vmin, vmax):
-		self.get_data['vmin'] = vmin
-		self.get_data['vmax'] = vmax
+			self._cmap = colormaps.cmaps.get(cmap_name)
+		self._need_colortransform_update = True
+		self.update()
 
 	@property
 	def size(self):
@@ -194,19 +163,8 @@ class SpectrumPiece(scene.Image):
 	@size.setter
 	def size(self, v):
 		self._shape = v
-
-	def _prepare_draw(self, view):
-		if self._need_vertex_update:
-			self._build_vertex_data()
-
-		if view._need_method_update:
-			self._update_method(view)
-
-		# new: for colormaps we need to set this
-		if self._need_colortransform_update:
-			prg = view.view_program
-			prg['texture2D_LUT'] = self.__cmap.texture_lut() \
-				if (hasattr(self.__cmap, 'texture_lut')) else None
+		self._need_vertex_update = True
+		self._need_method_update = True
 
 	def hide(self):
 		self.parent = None
@@ -218,7 +176,7 @@ class SpectrumPiece(scene.Image):
 class SpectrumCanvas(scene.SceneCanvas):
 	"""This class wraps the vispy canvas and controls all the visualization, as well as the interaction with it."""
 
-	def __init__(self, spectra_colors=("r", "g"), y_axis='Src. Lag', bgcolor="#353535"):
+	def __init__(self, spectra_colors=("add_r", "add_g"), y_axis='Src. Lag', bgcolor="#353535"):
 
 		# todo: make sure duration is for each spectrum
 		# long term: move a lot of these settings into the individual spectra - Spectrum class

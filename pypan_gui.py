@@ -97,8 +97,7 @@ class Canvas(spectrum.SpectrumCanvas):
 				# are they in spec_view?
 				if a is not None and b is not None:
 					if "Shift" in event.modifiers:
-						L = self.fft_storage[self.keys[0]]
-						R = self.fft_storage[self.keys[1]]
+						L, R = [self.fft_storage[spectrum.key] for spectrum in self.spectra]
 
 						t0, t1 = sorted((a[0], b[0]))
 						freqs = sorted((a[1], b[1]))

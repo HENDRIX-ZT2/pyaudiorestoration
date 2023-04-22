@@ -212,16 +212,16 @@ class SpectrumCanvas(scene.SceneCanvas):
 		# todo: make sure duration is for each spectrum
 		# long term: move a lot of these settings into the individual spectra - Spectrum class
 
+		label_color = "grey"
+
 		# some default dummy values
 		self.props = None
-		self.vmin = -100
-		self.vmax = -30
+		self.vmin = -120
+		self.vmax = -20
 		self.cmap = "izo"
 		self.num_cores = os.cpu_count()
 		self.fft_size = 1024
 		self.hop = 256
-		# self.sr =
-		self.duration = 0
 		self.dirty = False
 
 		self.fourier_thread = qt_threads.FourierThread()
@@ -235,29 +235,32 @@ class SpectrumCanvas(scene.SceneCanvas):
 		grid.spacing = 0
 
 		# speed chart
-		self.speed_yaxis = scene.AxisWidget(orientation='left', axis_label=y_axis, axis_font_size=8,
-											axis_label_margin=35, tick_label_margin=5)
+		self.speed_yaxis = scene.AxisWidget(
+			orientation='left', axis_label=y_axis, axis_font_size=8,
+			axis_label_margin=35, tick_label_margin=5, axis_color=label_color)
 		self.speed_yaxis.width_max = 55
 
 		# spectrum
-		self.spec_yaxis = vispy_ext.ExtAxisWidget(orientation='left', axis_label='Hz', axis_font_size=8,
-												  axis_label_margin=35, tick_label_margin=5, scale_type="logarithmic")
+		self.spec_yaxis = vispy_ext.ExtAxisWidget(
+			orientation='left', axis_label='Hz', axis_font_size=8,
+			axis_label_margin=35, tick_label_margin=5, scale_type="logarithmic", axis_color=label_color)
 		self.spec_yaxis.width_max = 55
 
-		self.spec_xaxis = vispy_ext.ExtAxisWidget(orientation='bottom', axis_label='m:s:ms', axis_font_size=8,
-												  axis_label_margin=35, tick_label_margin=5)
+		self.spec_xaxis = vispy_ext.ExtAxisWidget(
+			orientation='bottom', axis_label='m:s:ms', axis_font_size=8,
+			axis_label_margin=30, tick_label_margin=20, axis_color=label_color)
 		self.spec_xaxis.height_max = 55
 
 		top_padding = grid.add_widget(row=0)
 		top_padding.height_max = 10
 
 		right_padding = grid.add_widget(row=1, col=2, row_span=1)
-		right_padding.width_max = 70
+		right_padding.width_max = 55
 
 		# create the color bar display
-		self.colorbar_display = vispy_ext.ColorBarWidgetExt(label="Gain [dB]", clim=(self.vmin, self.vmax),
+		self.colorbar_display = vispy_ext.ColorBarWidgetExt(label="dB", clim=(self.vmin, self.vmax),
 															cmap="viridis", orientation="right", border_width=1,
-															label_color="white")
+															label_color="white", axis_ratio=0.01, padding=(0, 0))
 		self.colorbar_display.label.font_size = 8
 		self.colorbar_display.ticks[0].font_size = 8
 		self.colorbar_display.ticks[1].font_size = 8
@@ -266,12 +269,12 @@ class SpectrumCanvas(scene.SceneCanvas):
 		grid.add_widget(self.speed_yaxis, row=1, col=0)
 		grid.add_widget(self.spec_yaxis, row=2, col=0)
 		grid.add_widget(self.spec_xaxis, row=3, col=1)
-		colorbar_column = grid.add_widget(self.colorbar_display, row=2, col=2)
+		grid.add_widget(self.colorbar_display, row=2, col=2)
 
-		self.speed_view = grid.add_view(row=1, col=1, border_color='white')
+		self.speed_view = grid.add_view(row=1, col=1, border_color=label_color)
 		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, -5, 10, 10), )
 		self.speed_view.height_min = 150
-		self.spec_view = grid.add_view(row=2, col=1, border_color='white')
+		self.spec_view = grid.add_view(row=2, col=1, border_color=label_color)
 		self.spec_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0, 10, 10), )
 		self.spec_view.height_min = 550
 		# link them, but use custom logic to only link the x view
@@ -294,6 +297,11 @@ class SpectrumCanvas(scene.SceneCanvas):
 	def sr(self):
 		"""Use the maximum to avoid downsampling when sr differs per source"""
 		return max(spec.sr for spec in self.spectra)
+
+	@property
+	def duration(self):
+		"""Use the maximum to get total when duration differs per source"""
+		return max([spectrum.duration for spectrum in self.spectra if spectrum.signal is not None])
 
 	@property
 	def f_max(self):
@@ -372,7 +380,6 @@ class SpectrumCanvas(scene.SceneCanvas):
 					file_widget.set_sr(spectrum.sr)
 				must_reset_view = True
 
-		self.duration = max([spectrum.duration for spectrum in self.spectra if spectrum.signal is not None])
 		self.fft_size = fft_size
 		self.hop = fft_size // fft_overlap
 		if must_reset_view:

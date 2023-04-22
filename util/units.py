@@ -10,9 +10,15 @@ def sec_to_timestamp(t):
 
 
 def t_2_m_s_ms(t):
+	if t < 0:
+		prefix = "-"
+		t = abs(t)
+	else:
+		prefix = ""
 	m, s = divmod(t, 60)
 	s, ms = divmod(s * 1000, 1000)
-	return "%02d:%02d:%03d" % (m, s, ms)
+	# return "%02d:%02d:%03d" % (m, s, ms)
+	return f"{prefix}%02d:%02d\n%03d" % (m, s, ms)
 
 
 def to_dB(a):

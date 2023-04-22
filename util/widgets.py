@@ -1,3 +1,4 @@
+import logging
 import os
 import numpy as np
 import vispy
@@ -451,7 +452,9 @@ class AlignmentWidget(QtWidgets.QGroupBox):
         super().__init__("Alignment")
         self.ignore_phase_b = QtWidgets.QCheckBox("Ignore phase")
         self.ignore_phase_b.setChecked(False)
-        self.ignore_phase_b.setToolTip("Turn on if phase of sources does not match and you want the strongest relationship. Consistent negative values indicate you should invert one source.")
+        self.ignore_phase_b.setToolTip(
+            "Turn on if phase of sources does not match and you want the strongest relationship.\n"
+            "Consistent negative values indicate you should invert one source.")
 
         corr_l = QtWidgets.QLabel("Correlation")
         self.corr_l = QtWidgets.QLabel("None")
@@ -753,7 +756,7 @@ class FilesWidget(QtWidgets.QGroupBox):
         descriptions = ("Reference", "Source")
         self.files = [FileWidget(self, cfg, description, ask_user) for description in descriptions[-count:]]
         vbox2(self, self.files)
-        self.poll()
+        # self.poll()
 
     def ask_open(self):
         # propagates the open action onto child widgets which then call a file selector
@@ -771,7 +774,7 @@ class FilesWidget(QtWidgets.QGroupBox):
             self.load()
 
     def on_load_file(self, filepaths):
-        print("No loading function defined!")
+        logging.warning("No loading function defined!")
 
     def load(self):
         self.on_load_file(self.filepaths)

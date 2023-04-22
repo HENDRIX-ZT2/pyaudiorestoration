@@ -38,7 +38,7 @@ class Spectrum:
 		self.parent = parent
 		self.MAX_TEXTURE_SIZE = gloo.gl.glGetParameter(gloo.gl.GL_MAX_TEXTURE_SIZE)
 		self.mel_transform = vispy_ext.MelTransform()
-		self.delta = 0
+		self.offset = 0
 		self.num_ffts = 0
 		# which channel should be used to render this spectrum from?
 		self.signal = None
@@ -76,7 +76,7 @@ class Spectrum:
 			height_Hz_in = num_piece_bins / num_bins * self.f_max
 			ystart_Hz = y / num_bins * self.f_max
 			height_Hz_corrected = units.to_Hz(units.to_mel(height_Hz_in + ystart_Hz) - units.to_mel(ystart_Hz))
-			x_start = x * hop / self.sr + self.delta
+			x_start = x * hop / self.sr + self.offset
 			x_len = num_piece_ffts * hop / self.sr
 
 			# do the dB conversion here because the tracers don't like it
@@ -110,9 +110,13 @@ class Spectrum:
 			else:
 				image.show()
 
+	def set_offset(self, offset):
+		d = offset - self.offset
+		self.translate(d)
+
 	def translate(self, d):
 		# move all pieces in X direction by d
-		self.delta += d
+		self.offset += d
 		for image in self.pieces:
 			t = image.transform.transforms[0].translate
 			image.bb.left += d
@@ -123,6 +127,21 @@ class Spectrum:
 	@property
 	def f_max(self):
 		return self.sr / 2
+
+	def get_signal(self, t0, t1):
+		"""Get a signal from t0 to t1, padded as needed"""
+		ref_t0 = int(t0*self.sr)
+		ref_t1 = int(t1*self.sr)
+		ref_pad_l = 0
+		ref_pad_r = 0
+		# pad if needed
+		if ref_t0 < 0:
+			ref_pad_l = abs(ref_t0)
+			ref_t0 = 0
+		if ref_t1 > len(self.signal):
+			ref_pad_r = ref_t1 - len(self.signal)
+		sig = self.signal[ref_t0:ref_t1, self.selected_channel]
+		return np.pad(sig, (ref_pad_l, ref_pad_r), "constant", constant_values=0)
 
 
 class SpectrumPiece(scene.Image):
@@ -172,10 +191,6 @@ class SpectrumCanvas(scene.SceneCanvas):
 	"""This class wraps the vispy canvas and controls all the visualization, as well as the interaction with it."""
 
 	def __init__(self, spectra_colors=("add_r", "add_g"), y_axis='Src. Lag', bgcolor="#353535"):
-
-		# todo: make sure duration is for each spectrum
-		# long term: move a lot of these settings into the individual spectra - Spectrum class
-
 		label_color = "grey"
 
 		# some default dummy values

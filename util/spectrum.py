@@ -7,7 +7,6 @@ from vispy.geometry import Rect
 
 from util import vispy_ext, io_ops, qt_threads, units, colormaps
 
-# log10(x) = log(x) / log(10) = (1 / log(10)) * log(x)
 from util.undo import AddAction
 
 
@@ -26,9 +25,8 @@ class FlatGreen(BaseColormap):
 	}
 	"""
 
-add_cmaps = {}
-add_cmaps["add_r"] = FlatRed()
-add_cmaps["add_g"] = FlatGreen()
+
+add_cmaps = {"add_r": FlatRed(), "add_g": FlatGreen()}
 
 
 class Spectrum:
@@ -292,7 +290,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		# called by the files widget
 		try:
 			self.compute_spectra(
-				filenames, self.parent.props.display_widget.fft_size,  self.parent.props.display_widget.fft_overlap)
+				filenames, self.parent.props.display_widget.fft_size, self.parent.props.display_widget.fft_overlap)
 		# file could not be opened
 		except:
 			logging.exception(f"Computing spectra failed")
@@ -356,7 +354,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 			if spectrum.filename:
 				spectrum.key = (spectrum.filename, self.fft_size, spectrum.selected_channel, self.hop)
 				if spectrum.selected_channel >= spectrum.num_channels:
-					logging.warning(f"Not enough audio channels ({spectrum.num_channels}) to load, reverting to first channel")
+					logging.warning(
+						f"Not enough audio channels ({spectrum.num_channels}) to load, reverting to first channel")
 					spectrum.selected_channel = 0
 				# first try to get FFT from current storage and continue directly
 				if spectrum.key in self.fft_storage:
@@ -391,7 +390,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 						self.fourier_thread.jobs.append((
 							spectrum.signal[:, spectrum.selected_channel], self.fft_size, self.hop, "blackmanharris",
 							self.num_cores, spectrum.key))
-					# all tasks are started below
+				# all tasks are started below
 		# perform all fourier jobs
 		if self.fourier_thread.jobs:
 			self.fourier_thread.start()
@@ -411,8 +410,9 @@ class SpectrumCanvas(scene.SceneCanvas):
 			spec.update_data(self.fft_storage[spec.key], self.hop)
 		self.set_clims(self.vmin, self.vmax)
 		self.set_colormap(self.cmap)
-		# don't bother with audio until it is fixed
-		# self.props.audio_widget.set_data(signal[:,channel], spec.sr)
+
+	# don't bother with audio until it is fixed
+	# self.props.audio_widget.set_data(signal[:,channel], spec.sr)
 
 	def reset_view(self, ):
 		# (re)set the spec_view
@@ -525,4 +525,3 @@ class SpectrumCanvas(scene.SceneCanvas):
 		melspace = self.spectra[0].mel_transform.map(pt)
 		scene_space = self.spec_view.scene.transform.map(melspace)
 		return self.spec_view.transform.map(scene_space)
-

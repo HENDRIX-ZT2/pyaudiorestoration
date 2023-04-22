@@ -629,6 +629,7 @@ class StackWidget(QtWidgets.QGroupBox):
     def __init__(self, stack):
         super().__init__("History")
         self.view = QtWidgets.QUndoView(stack)
+        self.view.setCleanIcon(get_icon("save"))
         buttons = ((self.view, ),)
         vbox(self, grid(buttons))
 

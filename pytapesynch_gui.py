@@ -101,6 +101,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		sync["data"] = list(sorted(set((lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d, lag.corr) for lag in self.lag_samples)))
 		cfg_path = os.path.splitext(self.filenames[0])[0]+EXT
 		save_json(cfg_path, sync)
+		self.parent.props.undo_stack.setClean()
 
 	def improve_lag(self):
 		deltas = []

@@ -78,6 +78,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		io_ops.write_regs(
 			self.filenames[0],
 			[(reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.regs])
+		self.parent.props.undo_stack.setClean()
 
 	def delete_traces(self, delete_all=False):
 		deltraces = []

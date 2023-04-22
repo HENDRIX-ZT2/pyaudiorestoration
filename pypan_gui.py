@@ -59,6 +59,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		# get the data from the traces and regressions and save it
 		io_ops.write_lag(
 			self.filenames[0], [(lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.pan) for lag in self.pan_samples])
+		self.parent.props.undo_stack.setClean()
 
 	def delete_traces(self, delete_all=False):
 		deltraces = []

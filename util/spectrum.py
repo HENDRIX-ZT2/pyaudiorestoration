@@ -95,16 +95,19 @@ class Spectrum:
 			x_len = num_piece_ffts * hop / self.sr
 
 			# do the dB conversion here because the tracers don't like it
-			self.pieces[i].tex.set_data(units.to_dB(imdata_piece))
-			self.pieces[i].size = (x_len, height_Hz_corrected)
+			piece = self.pieces[i]
+			piece.tex.set_data(units.to_dB(imdata_piece))
+			piece.size = (x_len, height_Hz_corrected)
 			# logging.info(f"Size {(x_len, height_Hz_corrected)}")
 			# add this piece's offset with STT
-			self.pieces[i].transform = visuals.transforms.STTransform(
+			piece.transform = visuals.transforms.STTransform(
 				translate=(x_start, units.to_mel(ystart_Hz))) * self.mel_transform
-			self.pieces[i].bb.left = x_start
-			self.pieces[i].bb.right = x_start + x_len
-			self.pieces[i].update()
-			self.pieces[i].show()
+			piece.bb.left = x_start
+			piece.bb.right = x_start + x_len
+			piece.update()
+			# piece.hide()
+			piece.show()
+			logging.info(f"Size {piece.size}")
 
 	def set_clims(self, vmin, vmax):
 		for image in self.pieces:

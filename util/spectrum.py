@@ -495,39 +495,43 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 	def on_mouse_move(self, event):
 		# update the inspector label
-		click = self.click_spec_conversion(event.pos)
+		click = self.px_to_spectrum(event.pos)
 		self.props.inspector_widget.update_text(click, self.spectra[0].sr)
 
-	def get_closest(self, items, click, ):
-		if click is not None:
-			c = self.click_spec_conversion(click)
+	def _get_closest(self, items, a, b):
+		assert len(items) == len(a)
+		# actually, we don't need the euclidean distance here, just a relative distance metric
+		# so we can avoid the sqrt and just take the squared distance
+		ind = np.sum((a - b) ** 2, axis=1).argmin()
+		return items[ind]
+
+	def get_closest(self, items, click):
+		"""returns the sample (if any exists) whose center is closest to pt"""
+		visible_items = [item for item in items if item.visuals[0].parent]
+		if len(visible_items) and click is not None:
 			# convert the samples to screen space!
+			c = self.px_to_spectrum(click)
 			if c is not None:
-				A = np.array([self.pt_spec_conversion(sample.spec_center)[0:2] for sample in items])
-			# check in speed view
-			else:
-				c = self.click_speed_conversion(click)
-				if c is not None:
-					A = np.array([self.pt_spec_conversion(sample.speed_center)[0:2] for sample in items])
-			# returns the sample (if any exists) whose center is closest to pt
-			if c is not None and len(A):
-				# actually, we don't need the euclidean distance here, just a relative distance metric, so we can avoid the sqrt and just take the squared distance
-				ind = np.sum((A - click[0:2]) ** 2, axis=1).argmin()
-				return items[ind]
+				px_centers = np.array([self.spectrum_to_px(sample.spec_center)[0:2] for sample in visible_items])
+				return self._get_closest(visible_items, px_centers, click[0:2])
+			c = self.px_to_speed(click)
+			if c is not None:
+				px_centers = np.array([self.speed_to_px(sample.speed_center)[0:2] for sample in visible_items])
+				return self._get_closest(visible_items, px_centers, click[0:2])
 
 	def click_on_widget(self, click, wid):
 		grid_space = wid.transform.imap(click)
 		dim = wid.size
 		return (0 < grid_space[0] < dim[0]) and (0 < grid_space[1] < dim[1])
 
-	def click_speed_conversion(self, click):
+	def px_to_speed(self, click):
 		# in the grid on the canvas
 		grid_space = self.speed_view.transform.imap(click)
 		# is the mouse over the spectrum spec_view area?
 		if self.click_on_widget(click, self.speed_view):
 			return self.speed_view.scene.transform.imap(grid_space)
 
-	def click_spec_conversion(self, click):
+	def px_to_spectrum(self, click):
 		# in the grid on the canvas
 		grid_space = self.spec_view.transform.imap(click)
 		# is the mouse over the spectrum spec_view area?
@@ -535,8 +539,13 @@ class SpectrumCanvas(scene.SceneCanvas):
 			scene_space = self.spec_view.scene.transform.imap(grid_space)
 			return self.spectra[0].mel_transform.imap(scene_space)
 
-	def pt_spec_conversion(self, pt):
-		# converts a point from Hz space to screen space
+	def speed_to_px(self, pt):
+		"""converts a point from octave space to screen space"""
+		scene_space = self.speed_view.scene.transform.map(pt)
+		return self.speed_view.transform.map(scene_space)
+
+	def spectrum_to_px(self, pt):
+		"""converts a point from Hz space to screen space"""
 		melspace = self.spectra[0].mel_transform.map(pt)
 		scene_space = self.spec_view.scene.transform.map(melspace)
 		return self.spec_view.transform.map(scene_space)

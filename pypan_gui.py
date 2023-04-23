@@ -77,10 +77,6 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def on_mouse_press(self, event):
 		# #selection
-		# b = self.click_spec_conversion(event.pos)
-		# #are they in spec_view?
-		# if b is not None:
-		# self.props.audio_widget.cursor(b[0])
 		if event.button == 2:
 			closest_lag_sample = self.get_closest(self.pan_samples, event.pos)
 			if closest_lag_sample:
@@ -93,8 +89,8 @@ class Canvas(spectrum.SpectrumCanvas):
 			last_click = event.trail()[0]
 			click = event.pos
 			if last_click is not None:
-				a = self.click_spec_conversion(last_click)
-				b = self.click_spec_conversion(click)
+				a = self.px_to_spectrum(last_click)
+				b = self.px_to_spectrum(click)
 				# are they in spec_view?
 				if a is not None and b is not None:
 					if "Shift" in event.modifiers:
@@ -121,8 +117,6 @@ class Canvas(spectrum.SpectrumCanvas):
 
 						# dBs = np.nanmean(units.to_dB(L[bL:bU,first_fft_i:last_fft_i])-units.to_dB(R[bL:bU,first_fft_i:last_fft_i]), axis=0)
 						# fac = units.to_fac(dBs)
-						# out_times = np.arange(first_fft_i, last_fft_i)*hop/sr
-
 						# faster and simpler equivalent avoiding fac - dB - fac conversion
 						fac = np.nanmean(L[bL:bU, first_fft_i:last_fft_i] / R[bL:bU, first_fft_i:last_fft_i])
 						self.props.undo_stack.push(AddAction((markers.PanSample(self, a, b, fac),)))

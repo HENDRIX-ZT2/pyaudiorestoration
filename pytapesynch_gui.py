@@ -188,7 +188,7 @@ class Canvas(spectrum.SpectrumCanvas):
 				self.update_corr_view(closest_lag_sample)
 				event.handled = True
 			# update the last spectrum with pan
-			click = self.click_spec_conversion(event.pos)
+			click = self.px_to_spectrum(event.pos)
 			if click is not None:
 				# sample the lag curve at the click's time and move the source spectrum
 				self.spectra[-1].set_offset(self.lag_line.sample_at(click[0]))
@@ -203,8 +203,8 @@ class Canvas(spectrum.SpectrumCanvas):
 			last_click = event.trail()[0]
 			click = event.pos
 			if last_click is not None:
-				a = self.click_spec_conversion(last_click)
-				b = self.click_spec_conversion(click)
+				a = self.px_to_spectrum(last_click)
+				b = self.px_to_spectrum(click)
 				# are they in spec_view?
 				if a is not None and b is not None:
 					if "Control" in event.modifiers:

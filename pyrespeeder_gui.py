@@ -180,13 +180,13 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def on_mouse_press(self, event):
 		# #audio cursor
-		# b = self.click_spec_conversion(event.pos)
+		# b = self.px_to_spectrum(event.pos)
 		# #are they in spec_view?
 		# if b is not None:
 		# self.props.audio_widget.cursor(b[0])
 		# selection, single or multi
 		if event.button == 2:
-			closest_line = self.get_closest_line(event.pos)
+			closest_line = self.get_closest(self.lines + self.regs, event.pos)
 			if closest_line:
 				closest_line.select_handle("Shift" in event.modifiers)
 				event.handled = True
@@ -194,8 +194,8 @@ class Canvas(spectrum.SpectrumCanvas):
 	def on_mouse_release(self, event):
 		if self.filenames[0] and (event.trail() is not None) and event.button == 1 and "Control" in event.modifiers:
 			# event.trail() is integer pixel coordinates on vispy canvas
-			trail = [self.click_spec_conversion(click) for click in event.trail()]
-			# filter out any clicks outside of spectrum, for which click_spec_conversion returns None
+			trail = [self.px_to_spectrum(click) for click in event.trail()]
+			# filter out any clicks outside of spectrum, for which px_to_spectrum returns None
 			trail = [x for x in trail if x is not None]
 			if trail:
 				t0 = trail[0][0]
@@ -216,7 +216,7 @@ class Canvas(spectrum.SpectrumCanvas):
 				return
 
 			# or in speed view?
-			trail = [self.click_speed_conversion(click) for click in event.trail()]
+			trail = [self.px_to_speed(click) for click in event.trail()]
 			trail = [x for x in trail if x is not None]
 			if trail:
 				# only interested in the Y difference, so we can move the selected speed trace up or down
@@ -232,15 +232,6 @@ class Canvas(spectrum.SpectrumCanvas):
 			self.hop, spec.sr, settings.tolerance, settings.adapt)
 		marker = markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
 		self.props.undo_stack.push(AddAction((marker,)))
-
-	def get_closest_line(self, click):
-		if click is not None:
-			if self.show_regs and self.show_lines:
-				return self.get_closest(self.lines + self.regs, click)
-			elif self.show_regs and not self.show_lines:
-				return self.get_closest(self.regs, click)
-			elif not self.show_regs and self.show_lines:
-				return self.get_closest(self.lines, click)
 
 
 if __name__ == '__main__':

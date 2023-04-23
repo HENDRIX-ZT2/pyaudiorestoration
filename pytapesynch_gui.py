@@ -78,14 +78,10 @@ class Canvas(spectrum.SpectrumCanvas):
 														 f"Tape Sync project files (*{EXT})")[0]
 		if os.path.isfile(cfg_path):
 			sync = load_json(cfg_path)
-			self.parent.props.display_widget.fft_size = sync["fft_size"]
-			self.parent.props.display_widget.fft_overlap = sync["fft_overlap"]
-			self.parent.props.alignment_widget.smoothing = sync["smoothing"]
-			for file_widget, fp in zip(self.parent.props.files_widget.files, (sync["ref"], sync["src"])):
-				if not os.path.isfile(fp):
-					logging.warning(f"Could not find {fp}")
-					return
-				file_widget.accept_file(fp)
+			props = self.parent.props
+			props.files_widget.from_cfg(sync)
+			props.display_widget.from_cfg(sync)
+			props.alignment_widget.from_cfg(sync)
 			_markers = []
 			for a0, a1, b0, b1, d, corr in sync["data"]:
 				_markers.append(markers.LagSample(self, (a0, a1), (b0, b1), d, corr))
@@ -94,14 +90,14 @@ class Canvas(spectrum.SpectrumCanvas):
 	def save_traces(self):
 		"""Save project with all required settings"""
 		sync = {}
-		sync["ref"], sync["src"] = self.filenames
-		sync["smoothing"] = self.parent.props.alignment_widget.smoothing
-		sync["fft_size"] = self.parent.props.display_widget.fft_size
-		sync["fft_overlap"] = self.parent.props.display_widget.fft_overlap
+		props = self.parent.props
+		props.files_widget.to_cfg(sync)
+		props.display_widget.to_cfg(sync)
+		props.alignment_widget.to_cfg(sync)
 		sync["data"] = list(sorted(set((lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d, lag.corr) for lag in self.lag_samples)))
 		cfg_path = os.path.splitext(self.filenames[0])[0]+EXT
 		save_json(cfg_path, sync)
-		self.parent.props.undo_stack.setClean()
+		props.undo_stack.setClean()
 
 	def improve_lag(self):
 		deltas = []

@@ -14,6 +14,17 @@ from util.units import pitch
 ICON_CACHE = {"no_icon": QtGui.QIcon()}
 
 
+class ConfigStorer:
+
+    def to_cfg(self, cfg):
+        for varname in self.vars_for_saving:
+            cfg[varname] = getattr(self, varname)
+
+    def from_cfg(self, cfg):
+        for varname in self.vars_for_saving:
+            setattr(self, varname, cfg[varname])
+
+
 def get_icon(name):
     if name in ICON_CACHE:
         return ICON_CACHE[name]
@@ -227,7 +238,9 @@ class FileWidget(QtWidgets.QWidget):
         self.accept_file(filepath)
 
 
-class SpectrumSettingsWidget(QtWidgets.QGroupBox):
+class SpectrumSettingsWidget(QtWidgets.QGroupBox, ConfigStorer):
+    vars_for_saving = ("fft_size", "fft_overlap")
+
     def __init__(self, with_canvas=True):
         super().__init__("Spectrum")
 
@@ -447,7 +460,9 @@ class TracingWidget(QtWidgets.QGroupBox):
         self.canvas.master_speed.update()
 
 
-class AlignmentWidget(QtWidgets.QGroupBox):
+class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
+    vars_for_saving = ("smoothing",)
+
     def __init__(self, ):
         super().__init__("Alignment")
         self.ignore_phase_b = QtWidgets.QCheckBox("Ignore phase")
@@ -757,7 +772,6 @@ class FilesWidget(QtWidgets.QGroupBox):
         descriptions = ("Reference", "Source")
         self.files = [FileWidget(self, cfg, description, ask_user) for description in descriptions[-count:]]
         vbox2(self, self.files)
-        # self.poll()
 
     def ask_open(self):
         # propagates the open action onto child widgets which then call a file selector
@@ -779,6 +793,21 @@ class FilesWidget(QtWidgets.QGroupBox):
 
     def load(self):
         self.on_load_file(self.filepaths)
+
+    def to_cfg(self, cfg):
+        for file_widget in self.files:
+            cfg[file_widget.description.lower()] = file_widget.filepath
+
+    def from_cfg(self, cfg):
+        # aliases for old style keys
+        lut = {"reference": "ref", "source": "src"}
+        for file_widget in self.files:
+            fk = file_widget.description.lower()
+            fp = cfg.get(fk, cfg.get(lut[fk]))
+            if not os.path.isfile(fp):
+                logging.warning(f"Could not find {fp}")
+                return
+            file_widget.accept_file(fp)
 
 
 class ParamWidget(QtWidgets.QWidget):

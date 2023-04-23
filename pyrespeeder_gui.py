@@ -83,7 +83,7 @@ class Canvas(spectrum.SpectrumCanvas):
 	def delete_traces(self, delete_all=False):
 		deltraces = []
 		for trace in reversed(self.regs + self.lines):
-			if (trace.selected and not delete_all) or delete_all:
+			if delete_all or trace.selected:
 				deltraces.append(trace)
 		self.props.undo_stack.push(DeleteAction(deltraces))
 

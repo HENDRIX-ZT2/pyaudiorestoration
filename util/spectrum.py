@@ -7,7 +7,7 @@ from vispy.geometry import Rect
 
 from util import vispy_ext, io_ops, qt_threads, units, colormaps
 
-from util.undo import AddAction
+from util.undo import AddAction, DeleteAction
 
 
 class FlatRed(BaseColormap):
@@ -266,6 +266,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 		self.spectra = [Spectrum(self.spec_view, overlay=color) for color in spectra_colors]
 		self.fft_storage = {}
+		self.markers = []
 
 		# nb. this is a vispy.util.event.EventEmitter object
 		# can this be linked somewhere to the camera? base_camera connects a few events, too
@@ -549,3 +550,26 @@ class SpectrumCanvas(scene.SceneCanvas):
 		melspace = self.spectra[0].mel_transform.map(pt)
 		scene_space = self.spec_view.scene.transform.map(melspace)
 		return self.spec_view.transform.map(scene_space)
+
+	def delete_traces(self, delete_all=False):
+		deltraces = []
+		for trace in reversed(self.markers):
+			if delete_all or trace.selected:
+				deltraces.append(trace)
+		self.props.undo_stack.push(DeleteAction(deltraces))
+
+	def select_all(self):
+		for trace in self.markers:
+			trace.select()
+
+	def deselect_all(self):
+		for trace in self.markers:
+			trace.deselect()
+
+	def invert_selection(self):
+		for trace in self.markers:
+			trace.toggle()
+
+	@property
+	def selected_markers(self):
+		return [marker for marker in self.markers if marker.selected]

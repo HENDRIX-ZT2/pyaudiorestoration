@@ -31,7 +31,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		spectrum.SpectrumCanvas.__init__(self, bgcolor="black")
 		self.unfreeze()
 		self.parent = parent
-		self.pan_samples = []
 		self.pan_line = markers.PanLine(self)
 
 		# threading & links
@@ -43,14 +42,6 @@ class Canvas(spectrum.SpectrumCanvas):
 	def update_lines(self):
 		self.pan_line.update()
 
-	def select_all(self):
-		for trace in self.pan_samples:
-			trace.select()
-
-	def deselect_all(self):
-		for trace in self.pan_samples:
-			trace.deselect()
-
 	def load_visuals(self, ):
 		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):
 			yield markers.PanSample(self, (a0, a1), (b0, b1), d)
@@ -58,18 +49,11 @@ class Canvas(spectrum.SpectrumCanvas):
 	def save_traces(self):
 		# get the data from the traces and regressions and save it
 		io_ops.write_lag(
-			self.filenames[0], [(lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.pan) for lag in self.pan_samples])
+			self.filenames[0], [(lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.pan) for lag in self.markers])
 		self.parent.props.undo_stack.setClean()
 
-	def delete_traces(self, delete_all=False):
-		deltraces = []
-		for trace in reversed(self.pan_samples):
-			if delete_all or trace.selected:
-				deltraces.append(trace)
-		self.props.undo_stack.push(DeleteAction(deltraces))
-
 	def run_resample(self):
-		if self.filenames[0] and self.pan_samples:
+		if self.filenames[0] and self.markers:
 			lag_curve = self.pan_line.data
 			signal, sr, channels = io_ops.read_file(self.filenames[0])
 			af = np.interp(np.arange(len(signal[:, 0])), lag_curve[:, 0] * sr, lag_curve[:, 1])
@@ -78,9 +62,9 @@ class Canvas(spectrum.SpectrumCanvas):
 	def on_mouse_press(self, event):
 		# #selection
 		if event.button == 2:
-			closest_lag_sample = self.get_closest(self.pan_samples, event.pos)
-			if closest_lag_sample:
-				closest_lag_sample.select_handle()
+			closest_marker = self.get_closest(self.markers, event.pos)
+			if closest_marker:
+				closest_marker.select_handle("Shift" in event.modifiers)
 				event.handled = True
 
 	def on_mouse_release(self, event):

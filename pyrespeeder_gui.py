@@ -49,10 +49,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent = parent
 		self.show_regs = True
 		self.show_lines = True
-		self.lines = []
 		self.grouped_traces = []
-		self.regs = []
-		self.regs = []
 		self.master_speed = markers.MasterSpeedLine(self)
 		self.master_reg_speed = markers.MasterRegLine(self, (0, 0, 1, .5))
 
@@ -64,6 +61,14 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.tracing_widget.canvas = self
 		self.parent.props.alignment_widget.setVisible(False)
 		self.freeze()
+
+	@property
+	def lines(self):
+		return [m for m in self.markers if isinstance(m, markers.TraceLine)]
+
+	@property
+	def regs(self):
+		return [m for m in self.markers if isinstance(m, markers.RegLine)]
 
 	def load_visuals(self, ):
 		# read any saved traces or regressions
@@ -80,19 +85,8 @@ class Canvas(spectrum.SpectrumCanvas):
 			[(reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.regs])
 		self.parent.props.undo_stack.setClean()
 
-	def delete_traces(self, delete_all=False):
-		deltraces = []
-		for trace in reversed(self.regs + self.lines):
-			if delete_all or trace.selected:
-				deltraces.append(trace)
-		self.props.undo_stack.push(DeleteAction(deltraces))
-
 	def merge_selected_traces(self):
-		deltraces = []
-		for trace in reversed(self.lines):
-			if trace.selected:
-				deltraces.append(trace)
-		self.merge_traces(deltraces)
+		self.merge_traces(list(reversed(self.selected_markers)))
 
 	def merge_traces(self, traces_to_merge):
 		if traces_to_merge and len(traces_to_merge) > 1:
@@ -166,18 +160,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.master_speed.update()
 		self.master_reg_speed.update()
 
-	def select_all(self):
-		for trace in self.lines + self.regs:
-			trace.select()
-
-	def deselect_all(self):
-		for trace in self.lines + self.regs:
-			trace.deselect()
-
-	def invert_selection(self):
-		for trace in self.lines + self.regs:
-			trace.toggle()
-
 	def on_mouse_press(self, event):
 		# #audio cursor
 		# b = self.px_to_spectrum(event.pos)
@@ -186,9 +168,9 @@ class Canvas(spectrum.SpectrumCanvas):
 		# self.props.audio_widget.cursor(b[0])
 		# selection, single or multi
 		if event.button == 2:
-			closest_line = self.get_closest(self.lines + self.regs, event.pos)
-			if closest_line:
-				closest_line.select_handle("Shift" in event.modifiers)
+			closest_marker = self.get_closest(self.markers, event.pos)
+			if closest_marker:
+				closest_marker.select_handle("Shift" in event.modifiers)
 				event.handled = True
 
 	def on_mouse_release(self, event):
@@ -222,8 +204,7 @@ class Canvas(spectrum.SpectrumCanvas):
 				# only interested in the Y difference, so we can move the selected speed trace up or down
 				a = trail[0]
 				b = trail[-1]
-				traces = [trace for trace in self.lines + self.regs if trace.selected]
-				self.props.undo_stack.push(MoveAction(traces, a[1], b[1]))
+				self.props.undo_stack.push(MoveAction(self.selected_markers, a[1], b[1]))
 
 	def track_wow(self, settings, trail):
 		spec = self.spectra[0]

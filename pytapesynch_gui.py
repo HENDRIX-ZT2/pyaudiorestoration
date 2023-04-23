@@ -47,7 +47,6 @@ class Canvas(spectrum.SpectrumCanvas):
 
 		self.unfreeze()
 		self.parent = parent
-		self.lag_samples = []
 		self.lag_line = markers.LagLine(self)
 
 		# threading & links
@@ -94,14 +93,14 @@ class Canvas(spectrum.SpectrumCanvas):
 		props.files_widget.to_cfg(sync)
 		props.display_widget.to_cfg(sync)
 		props.alignment_widget.to_cfg(sync)
-		sync["data"] = list(sorted(set((lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d, lag.corr) for lag in self.lag_samples)))
+		sync["data"] = list(sorted(set((lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d, lag.corr) for lag in self.markers)))
 		cfg_path = os.path.splitext(self.filenames[0])[0]+EXT
 		save_json(cfg_path, sync)
 		props.undo_stack.setClean()
 
 	def improve_lag(self):
 		deltas = []
-		selected = [lag for lag in self.lag_samples if lag.selected]
+		selected = self.selected_markers
 		for lag in selected:
 			try:
 				# todo - this isn't dealing with different sample rates
@@ -143,21 +142,6 @@ class Canvas(spectrum.SpectrumCanvas):
 			self.spectra[-1].set_offset(trace.d)
 			self.update_corr_view(trace)
 
-	def select_all(self):
-		for trace in self.lag_samples:
-			trace.select()
-
-	def deselect_all(self):
-		for trace in self.lag_samples:
-			trace.deselect()
-
-	def delete_traces(self, delete_all=False):
-		deltraces = []
-		for trace in reversed(self.lag_samples):
-			if delete_all or trace.selected:
-				deltraces.append(trace)
-		self.props.undo_stack.push(DeleteAction(deltraces))
-
 	def run_resample(self):
 		self.resample_files((self.filenames[1],))
 
@@ -170,7 +154,7 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def resample_files(self, files):
 		channels = self.props.files_widget.files[1].channel_widget.channels
-		if self.filenames[1] and self.lag_samples and channels:
+		if self.filenames[1] and self.markers and channels:
 			lag_curve = self.lag_line.data
 			self.resampling_thread.settings = {
 				"filenames"			: files,
@@ -182,10 +166,10 @@ class Canvas(spectrum.SpectrumCanvas):
 	def on_mouse_press(self, event):
 		# selection
 		if event.button == 2:
-			closest_lag_sample = self.get_closest(self.lag_samples, event.pos)
-			if closest_lag_sample:
-				closest_lag_sample.select_handle()
-				self.update_corr_view(closest_lag_sample)
+			closest_marker = self.get_closest(self.markers, event.pos)
+			if closest_marker:
+				closest_marker.select_handle("Shift" in event.modifiers)
+				self.update_corr_view(closest_marker)
 				event.handled = True
 			# update the last spectrum with pan
 			click = self.px_to_spectrum(event.pos)
@@ -193,8 +177,8 @@ class Canvas(spectrum.SpectrumCanvas):
 				# sample the lag curve at the click's time and move the source spectrum
 				self.spectra[-1].set_offset(self.lag_line.sample_at(click[0]))
 
-	def update_corr_view(self, closest_lag_sample):
-		v = "None" if closest_lag_sample.corr is None else f"{closest_lag_sample.corr:.3f}"
+	def update_corr_view(self, closest_marker):
+		v = "None" if closest_marker.corr is None else f"{closest_marker.corr:.3f}"
 		self.parent.props.alignment_widget.corr_l.setText(v)
 
 	def on_mouse_release(self, event):

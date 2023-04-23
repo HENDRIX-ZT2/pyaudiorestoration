@@ -11,7 +11,7 @@ from util import wow_detection, filters
 class BaseMarker:
 	"""Stores and visualizes a trace fragment, including its speed offset."""
 
-	def __init__(self, vispy_canvas, container, color_def, color_sel):
+	def __init__(self, vispy_canvas, color_def, color_sel):
 		self.selected = False
 		self.vispy_canvas = vispy_canvas
 		self.visuals = []
@@ -20,7 +20,7 @@ class BaseMarker:
 		self.spec_center = (0, 0)
 		self.speed_center = (0, 0)
 		self.offset = None
-		self.container = container
+		self.container = vispy_canvas.markers
 		self.parents = (self.vispy_canvas.speed_view.scene, self.vispy_canvas.spec_view.scene)
 
 	def initialize(self):
@@ -77,7 +77,7 @@ class RegLine(BaseMarker):
 
 		color_def = (1, 1, 1, .5)
 		color_sel = (0, 1, 0, 1)
-		BaseMarker.__init__(self, vispy_canvas, vispy_canvas.regs, color_def, color_sel)
+		BaseMarker.__init__(self, vispy_canvas, color_def, color_sel)
 		# the extents on which this regression operated
 		self.t0 = t0
 		self.t1 = t1
@@ -149,7 +149,7 @@ class TraceLine(BaseMarker):
 
 		color_def = (1, 1, 1, .5)
 		color_sel = (0, 1, 0, 1)
-		BaseMarker.__init__(self, vispy_canvas, vispy_canvas.lines, color_def, color_sel)
+		BaseMarker.__init__(self, vispy_canvas, color_def, color_sel)
 		self.times = np.asarray(times)
 		self.freqs = np.asarray(freqs)
 
@@ -248,7 +248,7 @@ class PanSample(BaseMarker):
 	def __init__(self, vispy_canvas, a, b, pan):
 		color_def = (1, 1, 1, .5)
 		color_sel = (0, 1, 0, 1)
-		BaseMarker.__init__(self, vispy_canvas, vispy_canvas.pan_samples, color_def, color_sel)
+		BaseMarker.__init__(self, vispy_canvas, color_def, color_sel)
 		self.parents = (self.vispy_canvas.spec_view.scene,)
 
 		self.a = a
@@ -283,7 +283,7 @@ class LagSample(BaseMarker):
 	color_sel = (0, 0, 1, 1)
 
 	def __init__(self, vispy_canvas, a, b, d=None, corr=None):
-		BaseMarker.__init__(self, vispy_canvas, vispy_canvas.lag_samples, self.color_def, self.color_sel)
+		BaseMarker.__init__(self, vispy_canvas, self.color_def, self.color_sel)
 		self.a = a
 		self.b = b
 		self.corr = corr
@@ -459,14 +459,14 @@ class PanLine(BaseLine):
 	"""Stores and displays the average, ie. master speed curve."""
 
 	def update(self):
-		if self.vispy_canvas.pan_samples:
+		if self.vispy_canvas.markers:
 			# sort before we start
-			self.vispy_canvas.pan_samples.sort(key=lambda tup: tup.t)
+			self.vispy_canvas.markers.sort(key=lambda tup: tup.t)
 
 			# get the times at which the average should be sampled
 			times = self.get_times()
-			sample_times = [sample.t for sample in self.vispy_canvas.pan_samples]
-			sample_pans = [sample.pan for sample in self.vispy_canvas.pan_samples]
+			sample_times = [sample.t for sample in self.vispy_canvas.markers]
+			sample_pans = [sample.pan for sample in self.vispy_canvas.markers]
 			pan = np.interp(times, sample_times, sample_pans)
 			self.data = np.stack((times, pan), axis=-1)
 		else:
@@ -481,24 +481,24 @@ class LagLine(BaseLine):
 		self.smoothing = 3
 
 	def sample_at(self, times):
-		self.vispy_canvas.lag_samples.sort(key=lambda tup: tup.t)
-		sample_times = [sample.t for sample in self.vispy_canvas.lag_samples]
-		sample_lags = [sample.d for sample in self.vispy_canvas.lag_samples]
+		self.vispy_canvas.markers.sort(key=lambda tup: tup.t)
+		sample_times = [sample.t for sample in self.vispy_canvas.markers]
+		sample_lags = [sample.d for sample in self.vispy_canvas.markers]
 
 		# ensure that k doesn't exceed the order possible to infer from amount of samples
-		if len(self.vispy_canvas.lag_samples) == 0:
+		if len(self.vispy_canvas.markers) == 0:
 			return 0
-		elif len(self.vispy_canvas.lag_samples) == 1:
+		elif len(self.vispy_canvas.markers) == 1:
 			return np.interp(times, sample_times, sample_lags)
 		else:
 			# using bezier splines
-			k = min(self.smoothing, len(self.vispy_canvas.lag_samples)-1)
+			k = min(self.smoothing, len(self.vispy_canvas.markers)-1)
 			s = interpolate.InterpolatedUnivariateSpline(sample_times, sample_lags, k=k)
 			return s(times)
 
 	def update(self):
 		logging.info(f"Updating sync line")
-		if self.vispy_canvas.lag_samples:
+		if self.vispy_canvas.markers:
 			times = self.get_times()
 			try:
 				lag = self.sample_at(times)

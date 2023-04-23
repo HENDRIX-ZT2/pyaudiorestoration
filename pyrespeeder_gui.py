@@ -132,10 +132,8 @@ class Canvas(spectrum.SpectrumCanvas):
 					"filenames": (spec.filename,),
 					"signal_data": ((spec.signal, spec.sr),),
 					"speed_curve": self.get_speed_curve(),
-					"resampling_mode": self.props.resampling_widget.mode,
-					"sinc_quality": self.props.resampling_widget.sinc_quality,
-					"use_channels": channels,
-					"suffix": self.props.resampling_widget.suffix}
+					"use_channels": channels}
+				self.props.resampling_widget.to_cfg(self.resampling_thread.settings)
 				self.resampling_thread.start()
 
 	def get_speed_curve(self):
@@ -160,9 +158,8 @@ class Canvas(spectrum.SpectrumCanvas):
 			self.resampling_thread.settings = {
 				"filenames"			: files,
 				"speed_curve"		: self.get_speed_curve(),
-				"resampling_mode"	: self.props.resampling_widget.mode,
-				"sinc_quality"		: self.props.resampling_widget.sinc_quality,
 				"use_channels"		: channels}
+			self.props.resampling_widget.to_cfg(self.resampling_thread.settings)
 			self.resampling_thread.start()
 
 	def update_lines(self):

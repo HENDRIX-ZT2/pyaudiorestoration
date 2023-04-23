@@ -649,20 +649,25 @@ class StackWidget(QtWidgets.QGroupBox):
         vbox(self, grid(buttons))
 
 
-class ResamplingWidget(QtWidgets.QGroupBox):
+class ResamplingWidget(QtWidgets.QGroupBox, ConfigStorer):
+    vars_for_saving = ("suffix",)
+
     def __init__(self, ):
         super().__init__("Resampling")
         mode_l = QtWidgets.QLabel("Mode")
         self.mode_c = QtWidgets.QComboBox(self)
         self.mode_c.addItems(("Linear", "Sinc"))
         self.mode_c.currentIndexChanged.connect(self.toggle_resampling_quality)
+        self.mode_c.setToolTip(
+            "Linear is fast, but low quality. Always use Sinc for production!")
         self.sinc_quality_l = QtWidgets.QLabel("Quality")
         self.sinc_quality_s = QtWidgets.QSpinBox()
         self.sinc_quality_s.setRange(1, 100)
         self.sinc_quality_s.setSingleStep(1)
         self.sinc_quality_s.setValue(50)
         self.sinc_quality_s.setToolTip(
-            "Number of input samples that contribute to each output sample.\nMore samples = more quality, but slower. Only for sinc mode.")
+            "Number of input samples that contribute to each output sample.\n"
+            "More samples = more quality, but slower. Only for Sinc mode.")
         self.toggle_resampling_quality()
 
         self.incremental_b = QtWidgets.QCheckBox("Keep takes")
@@ -673,6 +678,11 @@ class ResamplingWidget(QtWidgets.QGroupBox):
         buttons = ((mode_l, self.mode_c,), (self.sinc_quality_l, self.sinc_quality_s), (self.incremental_b,))
         vbox(self, grid(buttons))
 
+    def toggle_resampling_quality(self):
+        b = (self.mode_c.currentText() == "Sinc")
+        self.sinc_quality_l.setVisible(b)
+        self.sinc_quality_s.setVisible(b)
+
     @property
     def suffix(self):
         if self.incremental_b.isChecked():
@@ -680,17 +690,12 @@ class ResamplingWidget(QtWidgets.QGroupBox):
             return f"_{self._suffix_index}"
         return ""
 
-    def toggle_resampling_quality(self):
-        b = (self.mode_c.currentText() == "Sinc")
-        self.sinc_quality_l.setVisible(b)
-        self.sinc_quality_s.setVisible(b)
-
     @property
     def sinc_quality(self, ):
         return self.sinc_quality_s.value()
 
     @property
-    def mode(self, ):
+    def resampling_mode(self, ):
         return self.mode_c.currentText()
 
 

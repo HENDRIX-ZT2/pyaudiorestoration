@@ -89,7 +89,7 @@ def grid(buttons):
 def vbox(parent, grid_layout):
     box = QtWidgets.QVBoxLayout(parent)
     box.addLayout(grid_layout)
-    box.addStretch(1.0)
+    box.addStretch(1)
     box.setSpacing(3)
     # box.setContentsMargins(0, 0, 0, 0)
 
@@ -98,7 +98,7 @@ def vbox2(parent, buttons):
     box = QtWidgets.QVBoxLayout(parent)
     for w in buttons:
         box.addWidget(w)
-    box.addStretch(1.0)
+    box.addStretch(1)
 
 
 class ChannelWidget(QtWidgets.QScrollArea):
@@ -113,7 +113,7 @@ class ChannelWidget(QtWidgets.QScrollArea):
         self.channel_layout = QtWidgets.QVBoxLayout()
         self.channel_layout.setSpacing(0)
         # self.channel_layout.setSizeConstraint(QtWidgets.QLayout.SetMinimumSize)
-        # self.channel_layout.addStretch(1.0)
+        # self.channel_layout.addStretch(1)
         self.channel_layout.setContentsMargins(2, 2, 2, 2)
 
         self.channel_holder.setLayout(self.channel_layout)

@@ -8,7 +8,7 @@ from scipy import interpolate
 from util import wow_detection, filters
 
 
-line_settings = {"method": 'gl', "antialias": True, "width": 2.0}
+line_settings = {"method": 'gl', "antialias": False, "width": 2.0}
 
 
 class BaseMarker:
@@ -361,10 +361,14 @@ class BaseLine:
 		self.line_speed.parent = None
 
 	def get_times(self):
-		# num = self.vispy_canvas.spectra[0].num_ffts
-		num = int(self.vispy_canvas.duration * self.vispy_canvas.sr / self.vispy_canvas.hop)
+		num = int(self.vispy_canvas.duration * self.marker_sr)
 		# get the times at which the average should be sampled
 		return np.linspace(0, self.vispy_canvas.duration, num=num)
+
+	@property
+	def marker_sr(self):
+		"""Amount of marker samples per second"""
+		return self.vispy_canvas.sr / self.vispy_canvas.hop
 
 	def get_linspace(self):
 		"""Convert the log2 spaced speed curve back into linspace for further processing"""
@@ -388,13 +392,10 @@ class MasterSpeedLine(BaseLine):
 			# take the mean and ignore nans
 			mean_with_nans = np.nanmean(out, axis=1)
 			# lerp over nan areas
-			nans, x = wow_detection.nan_helper(mean_with_nans)
-			mean_with_nans[nans] = np.interp(x(nans), x(~nans), mean_with_nans[~nans])
-
+			wow_detection.interp_nans(mean_with_nans)
 			# bandpass filter the output
-			fs = self.vispy_canvas.sr / self.vispy_canvas.hop
 			lowcut, highcut = sorted(self.bands)
-			samples = filters.butter_bandpass_filter(mean_with_nans, lowcut, highcut, fs, order=3)
+			samples = filters.butter_bandpass_filter(mean_with_nans, lowcut, highcut, self.marker_sr, order=3)
 
 			self.data = np.stack((times, samples), axis=-1)
 		else:

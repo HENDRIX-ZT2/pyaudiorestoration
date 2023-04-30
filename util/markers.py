@@ -8,6 +8,9 @@ from scipy import interpolate
 from util import wow_detection, filters
 
 
+line_settings = {"method": 'gl', "antialias": True, "width": 2.0}
+
+
 class BaseMarker:
 	"""Stores and visualizes a trace fragment, including its speed offset."""
 
@@ -75,7 +78,7 @@ class RegLine(BaseMarker):
 
 	def __init__(self, vispy_canvas, t0, t1, amplitude, omega, phase, offset):
 
-		color_def = (1, 1, 1, .5)
+		color_def = (0, 0, 1, .5)
 		color_sel = (0, 1, 0, 1)
 		BaseMarker.__init__(self, vispy_canvas, color_def, color_sel)
 		# the extents on which this regression operated
@@ -121,7 +124,7 @@ class RegLine(BaseMarker):
 		self.speed_data = np.stack(
 			(clipped_times, self.amplitude * np.sin(self.omega * clipped_times + self.phase)), axis=-1)
 		# sine_on_hz = np.power(2, sine + np.log2(2000))
-		self.visuals.append(scene.Line(pos=self.speed_data, color=(0, 0, 1, .5), method='gl'))
+		self.visuals.append(scene.Line(pos=self.speed_data, color=color_def, **line_settings))
 
 	def set_offset(self, a, b):
 		# user manipulation: custom amplitude for sample
@@ -147,7 +150,7 @@ class TraceLine(BaseMarker):
 
 	def __init__(self, vispy_canvas, times, freqs, offset=None, auto_align=False):
 
-		color_def = (1, 1, 1, .5)
+		color_def = (1, 0, 0, .5)
 		color_sel = (0, 1, 0, 1)
 		BaseMarker.__init__(self, vispy_canvas, color_def, color_sel)
 		self.times = np.asarray(times)
@@ -181,12 +184,12 @@ class TraceLine(BaseMarker):
 
 		# create the speed curve visualization
 		self.speed_data = np.stack((self.times, self.speed), axis=-1)
-		self.visuals.append(scene.Line(pos=self.speed_data, color=color_def, method='gl'))
+		self.visuals.append(scene.Line(pos=self.speed_data, color=color_def, **line_settings))
 
 		# create the spectral visualization
 		# could also do a stack here; note the z coordinate!
 		spec_data = np.stack((self.times, self.freqs, np.ones(len(self.times), dtype=np.float32) * -2), axis=-1)
-		self.visuals.append(scene.Line(pos=spec_data, color=color_def, method='gl'))
+		self.visuals.append(scene.Line(pos=spec_data, color=color_def, **line_settings))
 		# the data is in Hz, so to visualize correctly, it has to be mel'ed
 		self.visuals[1].transform = vispy_canvas.spectra[0].mel_transform
 
@@ -335,7 +338,7 @@ class BaseLine:
 		self.data[:, 0] = (0, 999)
 		self.empty = np.array(self.data)
 		self.bands = (0, 9999999)
-		self.line_speed = scene.Line(pos=self.data, color=color, method='gl')
+		self.line_speed = scene.Line(pos=self.data, color=color, **line_settings)
 		self.line_speed.parent = self.vispy_canvas.speed_view.scene
 
 	def show(self):

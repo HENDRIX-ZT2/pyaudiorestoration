@@ -74,7 +74,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		# read any saved traces or regressions
 		for offset, times, freqs in io_ops.read_trace(self.filenames[0]):
 			yield markers.TraceLine(self, times, freqs, offset=offset)
-		# self.master_speed.update()
 		for t0, t1, amplitude, omega, phase, offset in io_ops.read_regs(self.filenames[0]):
 			yield markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
 

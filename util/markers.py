@@ -90,16 +90,9 @@ class RegLine(BaseMarker):
 		self.spec_center = np.array((self.t_center, 2000))
 
 		# the following is more or less duped in the tracer - resolve?
-		speed_curve = vispy_canvas.master_speed.get_linspace()
-
-		times = speed_curve[:, 0]
-		# speeds = speed_curve[:, 1]
-
-		# which part to process?
-		period = times[1] - times[0]
-		ind_start = int(self.t0 / period)
-		ind_stop = int(self.t1 / period)
-		clipped_times = times[ind_start:ind_stop]
+		# clipped_times = self.get_time_range(vispy_canvas)
+		samples_per_second = 200
+		clipped_times = np.linspace(t0, t1, num=int((t1-t0)*samples_per_second))
 
 		# set the properties
 		self.amplitude = amplitude
@@ -121,16 +114,36 @@ class RegLine(BaseMarker):
 		# self.phase = self.phase % (2*np.pi)
 
 		# create the speed curve visualization
-		self.speed_data = np.stack(
-			(clipped_times, self.amplitude * np.sin(self.omega * clipped_times + self.phase)), axis=-1)
-		# sine_on_hz = np.power(2, sine + np.log2(2000))
+		speed = self.amplitude * np.sin(self.omega * clipped_times + self.phase)
+		self.speed_data = np.stack((clipped_times, speed), axis=-1)
 		self.visuals.append(scene.Line(pos=self.speed_data, color=color_def, **line_settings))
+
+		self.spec_data = np.stack((clipped_times, self.speed_to_hz(speed), np.ones(len(clipped_times), dtype=np.float32) * -2), axis=-1)
+		self.visuals.append(scene.Line(pos=self.spec_data, color=color_def, **line_settings))
+		# the data is in Hz, so to visualize correctly, it has to be mel'ed
+		self.visuals[1].transform = vispy_canvas.spectra[0].mel_transform
+
+	def get_time_range(self, vispy_canvas):
+		speed_curve = vispy_canvas.master_speed.get_linspace()
+		times = speed_curve[:, 0]
+		# speeds = speed_curve[:, 1]
+		# which part to process?
+		period = times[1] - times[0]
+		ind_start = int(self.t0 / period)
+		ind_stop = int(self.t1 / period)
+		clipped_times = times[ind_start:ind_stop]
+		return clipped_times
+
+	def speed_to_hz(self, speed):
+		return np.power(2, speed + np.log2(2000))
 
 	def set_offset(self, a, b):
 		# user manipulation: custom amplitude for sample
 		self.amplitude *= (b / a)
 		self.speed_data[:, 1] *= (b / a)
 		self.visuals[0].set_data(pos=self.speed_data)
+		self.spec_data[:, 1] = self.speed_to_hz(self.speed_data[:, 1])
+		self.visuals[1].set_data(pos=self.spec_data)
 
 	def select(self):
 		"""Deselect this line, ie. restore its colors to their original state"""

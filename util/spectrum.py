@@ -351,7 +351,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 	def clear_fft_storage(self):
 		logging.info("Clearing FFT storage")
 		for spectrum in self.spectra:
-			for key in spectrum.fft_storage:
+			for key in tuple(spectrum.fft_storage.keys()):
 				if key != spectrum.key:
 					logging.info(f"deleting {key}")
 					del spectrum.fft_storage[key]

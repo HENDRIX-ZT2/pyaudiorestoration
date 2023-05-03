@@ -882,9 +882,6 @@ class ParamWidget(QtWidgets.QWidget):
         # new style project file
         if file_path.endswith(self.parent.EXT):
             sync = load_json(file_path)
-            # spectrum should load after the fft settings have been set
-            # however, this causes the old spectrum to update when opening a project with different fft settings
-            # for w in reversed(self.buttons):
             for w in self.buttons:
                 if isinstance(w, ConfigStorer):
                     w.from_cfg(sync)
@@ -897,7 +894,6 @@ class ParamWidget(QtWidgets.QWidget):
             _markers = list(self.parent.canvas.load_visuals())
             if not _markers:
                 return
-        # print(_markers)
         # Cleanup of old data
         self.parent.canvas.delete_traces(delete_all=True)
         self.undo_stack.push(AddAction(_markers))

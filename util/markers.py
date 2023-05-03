@@ -9,6 +9,7 @@ from util import wow_detection, filters
 
 
 line_settings = {"method": 'gl', "antialias": False, "width": 2.0}
+wide_line_settings = {"method": 'gl', "antialias": False, "width": 5.0}
 
 
 class BaseMarker:
@@ -171,7 +172,7 @@ class TraceLine(BaseMarker):
 	def __init__(self, vispy_canvas, times, freqs, offset=None, auto_align=False):
 
 		color_def = (1, 0, 0, .5)
-		color_sel = (0, 1, 0, 1)
+		color_sel = (0, 1, 0, .5)
 		BaseMarker.__init__(self, vispy_canvas, color_def, color_sel)
 		self.times = np.asarray(times)
 		self.freqs = np.asarray(freqs)
@@ -205,6 +206,7 @@ class TraceLine(BaseMarker):
 		# create the speed curve visualization
 		self.speed_data = np.stack((self.times, self.speed), axis=-1)
 		self.visuals.append(scene.Line(pos=self.speed_data, color=color_def, **line_settings))
+		self.visuals[0].set_gl_state('additive')
 
 		# create the spectral visualization
 		# could also do a stack here; note the z coordinate!
@@ -375,8 +377,9 @@ class BaseLine:
 		self.data[:, 0] = (0, 999)
 		self.empty = np.array(self.data)
 		self.bands = (0, 9999999)
-		self.line_speed = scene.Line(pos=self.data, color=color, **line_settings)
+		self.line_speed = scene.Line(pos=self.data, color=color, **wide_line_settings)
 		self.line_speed.parent = self.vispy_canvas.speed_view.scene
+		self.line_speed.set_gl_state('additive')
 
 	def show(self):
 		self.line_speed.parent = self.vispy_canvas.speed_view.scene

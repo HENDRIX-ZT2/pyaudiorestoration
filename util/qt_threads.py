@@ -1,3 +1,5 @@
+import logging
+
 from PyQt5 import QtCore
 from util import resampling, fourier
 
@@ -25,6 +27,7 @@ class FourierThread(BaseThread):
 
 	def run(self):
 		for signal_1d, fft_size, hop, window_name, num_cores, key, filename in self.jobs:
-			self.result[filename, key] = fourier.get_mag(signal_1d, fft_size, hop, window_name, num_cores,
-											   prog_sig=self.notifyProgress)
-		self.jobs = []
+			self.result[filename, key] = fourier.get_mag(
+				signal_1d, fft_size, hop, window_name, num_cores, prog_sig=self.notifyProgress)
+		# logging.info("Cleared Fourier jobs")
+		self.jobs.clear()

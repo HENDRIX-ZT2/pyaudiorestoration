@@ -15,7 +15,7 @@ class MainWindow(widgets.MainWindow):
 		file_menu = main_menu.addMenu('File')
 		edit_menu = main_menu.addMenu('Edit')
 		button_data = (
-			(file_menu, "Open", self.props.files_widget.ask_open, "CTRL+O", "dir"),
+			(file_menu, "Open", self.props.load, "CTRL+O", "dir"),
 			(file_menu, "Save", self.props.save, "CTRL+S", "save"),
 			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R", "curve"),
 			(file_menu, "Exit", self.close, "", "exit"),

@@ -415,14 +415,15 @@ class SpectrumCanvas(scene.SceneCanvas):
 	def retrieve_fft(self, ):
 		logging.info("Retrieving FFT from processing thread")
 		for spec in self.spectra:
-			for filename, key in self.fourier_thread.result.keys():
-				if spec.filename == filename:
-					spec.fft_storage[key] = self.fourier_thread.result[filename, key]
-					self.update_spectrum(spec)
+			spec.fft_storage[spec.key] = self.fourier_thread.result[spec.filename, spec.key]
+			self.update_spectrum(spec)
 		self.fourier_thread.result.clear()
 
 	def update_spectrum(self, spec):
-		spec.update_data(spec.fft_storage[spec.key], self.hop)
+		try:
+			spec.update_data(spec.fft_storage[spec.key], self.hop)
+		except:
+			logging.exception(f"Updating spectrum failed")
 		spec.set_clims(self.vmin, self.vmax)
 		spec.set_cmap(self.cmap)
 

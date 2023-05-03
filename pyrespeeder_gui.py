@@ -100,8 +100,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			i1 = int(t1 * sr / hop)
 			data = self.master_speed.data[i0:i1]
 			freqs = np.power(2, data[:, 1] + np.log2(np.mean(means)))
-			# todo - taking np.mean(offsets) here is wrong, as they need not be same length, should be weighted mean?
-			line = markers.TraceLine(self, data[:, 0], freqs, np.mean(offsets))
+			line = markers.TraceLine(self, data[:, 0], freqs, offset=None, auto_align=True)
 			self.props.undo_stack.push(MergeAction((line,), traces_to_merge))
 
 	def group_traces(self):

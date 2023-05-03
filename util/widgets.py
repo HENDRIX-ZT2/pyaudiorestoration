@@ -755,8 +755,7 @@ class MainWindow(QtWidgets.QMainWindow):
         splitter.addWidget(self.props)
         self.setCentralWidget(splitter)
 
-    def update_file(self, filepath):
-        self.cfg["dir_in"], file_name = os.path.split(filepath)
+    def update_title(self, file_name):
         self.setWindowTitle(f"{self.name} {file_name}")
 
     def add_to_menu(self, button_data):
@@ -879,6 +878,7 @@ class ParamWidget(QtWidgets.QWidget):
         file_path = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Project', self.parent.cfg["dir_in"], self.sel_str)[0]
         if not os.path.isfile(file_path):
             return
+        self.parent.cfg["dir_in"], filename = os.path.split(file_path)
         # new style project file
         if file_path.endswith(self.parent.EXT):
             sync = load_json(file_path)
@@ -892,11 +892,9 @@ class ParamWidget(QtWidgets.QWidget):
             # old style project file or audio file
             self.files_widget.files[0].accept_file(file_path)
             _markers = list(self.parent.canvas.load_visuals())
-            if not _markers:
-                return
         # Cleanup of old data
         self.parent.canvas.delete_traces(delete_all=True)
         self.undo_stack.push(AddAction(_markers))
-        self.parent.update_file(self.files_widget.files[0].filename)
+        self.parent.update_title(filename)
         self.display_widget.update_fft_settings()
 

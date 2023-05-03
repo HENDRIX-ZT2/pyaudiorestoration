@@ -188,7 +188,7 @@ class SpectrumPiece(scene.Image):
 		# # just set a dummy value
 		self._shape = (10.0, 22500)
 		self.bb = Rect((0, 0, 1, 1))
-		scene.Image.__init__(self, parent=parent, interpolation="linear")
+		scene.Image.__init__(self, parent=parent, interpolation="linear", method='subdivide', grid=(1000, 1))
 		self.cmap = "izo"
 
 	@property

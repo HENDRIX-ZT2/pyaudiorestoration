@@ -103,9 +103,4 @@ class Canvas(spectrum.SpectrumCanvas):
 
 
 if __name__ == '__main__':
-	# monkey patch the file load function
-	def load_file_spectrum(self):
-		self.parent.parent.canvas.load_audio((self.filepaths[0], self.filepaths[0]), (0, 1))
-
-	widgets.FilesWidget.load = load_file_spectrum
 	widgets.startup(MainWindow)

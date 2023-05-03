@@ -32,10 +32,10 @@ add_cmaps = {"add_r": FlatRed(), "add_g": FlatGreen()}
 class Spectrum:
 	"""The visualization of the whole spectrogram."""
 
-	def __init__(self, parent, overlay=False):
+	def __init__(self, view, overlay=False):
 		self.overlay = overlay
 		self.pieces = []
-		self.parent = parent
+		self.view = view
 		self.MAX_TEXTURE_SIZE = gloo.gl.glGetParameter(gloo.gl.GL_MAX_TEXTURE_SIZE)
 		self.mel_transform = vispy_ext.MelTransform()
 		self.offset = 0
@@ -68,24 +68,8 @@ class Spectrum:
 	def change_file(self, audio_path):
 		# remove all ffts of the old file from storage
 		self.fft_storage.clear()
-		# now load new audio
-		self.signal, self.sr, self.num_channels = io_ops.read_file(audio_path)
-		if len(self.signal) == 0:
-			# multichannel flacs give errors due to a bug in libsoundfile, more info below
-			# pysoundfile should soon be updated with a fixed dll
-			# https://github.com/kenowr/read_flac
-			raise AttributeError(f"Reading {audio_path} failed, possible libsoundfile bug")
-		if self.selected_channel >= self.num_channels:
-			logging.warning(f"Not enough audio channels ({self.num_channels}) to load, reverting to first channel")
-			self.selected_channel = 0
 		self.audio_path = audio_path
 		self.duration = len(self.signal) / self.sr
-
-	# @property
-	# def key(self):
-	# 	# store one key per spectrum
-	# 	# these are the keys that are currently in use
-	# 	return self.parent.fft_size, self.selected_channel, self.parent.hop
 
 	def update_data(self, imdata, hop):
 		num_bins, self.num_ffts = imdata.shape
@@ -100,7 +84,7 @@ class Spectrum:
 			self.pieces.pop(i)
 		# add new pieces
 		for i in range(num_pieces_old, num_pieces_new):
-			self.pieces.append(SpectrumPiece(self.parent.scene))
+			self.pieces.append(SpectrumPiece(self.view.scene))
 		# spectra may only be of a certain size, so split them
 		for i, (x, y) in enumerate([(x, y) for x in range(0, self.num_ffts, self.MAX_TEXTURE_SIZE) for y in
 									range(0, num_bins, self.MAX_TEXTURE_SIZE)]):
@@ -141,7 +125,7 @@ class Spectrum:
 	def update_frustum(self, event):
 		for image in self.pieces:
 			# X frustum
-			if image.bb.left > self.parent.camera.rect.right or image.bb.right < self.parent.camera.rect.left:
+			if image.bb.left > self.view.camera.rect.right or image.bb.right < self.view.camera.rect.left:
 				image.hide()
 			else:
 				image.show()
@@ -183,12 +167,12 @@ class Spectrum:
 class SpectrumPiece(scene.Image):
 	"""The visualization of one part of the whole spectrogram."""
 
-	def __init__(self, parent):
-		self._parent2 = parent
+	def __init__(self, vispy_scene):
+		self._parent2 = vispy_scene
 		# # just set a dummy value
 		self._shape = (10.0, 22500)
 		self.bb = Rect((0, 0, 1, 1))
-		scene.Image.__init__(self, parent=parent, interpolation="linear", method='subdivide', grid=(1000, 1))
+		scene.Image.__init__(self, parent=vispy_scene, interpolation="linear", method='subdivide', grid=(1000, 1))
 		self.cmap = "izo"
 
 	@property
@@ -336,18 +320,6 @@ class SpectrumCanvas(scene.SceneCanvas):
 	def signals(self):
 		return [spectrum.signal for spectrum in self.spectra]
 
-	def load_audio(self, filenames, channels=None):
-		# update the channels per spectrum
-		if channels:
-			for spectrum, channel in zip(self.spectra, channels):
-				spectrum.selected_channel = channel
-		# called by the files widget
-		try:
-			self.open_audio_files(filenames)
-		# file could not be opened
-		except:
-			logging.exception(f"Opening audio failed")
-
 	def clear_fft_storage(self):
 		logging.info("Clearing FFT storage")
 		for spectrum in self.spectra:
@@ -383,7 +355,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 					# elif more_sparse:
 					# 	print("increasing resolution by filling gaps",self.fft_size)
 					else:
-						logging.info(f"storing new fft {spectrum.key}")
+						logging.info(f"storing new fft {spectrum.audio_path, spectrum.key}")
 						# append to the fourier job list
 						self.fourier_thread.jobs.append((
 							spectrum.signal[:, spectrum.selected_channel], self.fft_size, self.hop, "blackmanharris",
@@ -393,27 +365,14 @@ class SpectrumCanvas(scene.SceneCanvas):
 			self.fourier_thread.start()
 		# continue when fourier_thread emits a "finished" signal, connected to retrieve_fft()
 
-	def open_audio_files(self, filenames):
-		# go over all new file candidates
-		must_reset_view = False
-		for i, (audio_path, spectrum) in enumerate(zip(filenames, self.spectra)):
-			# only reload audio if this audio_path has changed
-			if spectrum.audio_path != audio_path:
-				spectrum.change_file(audio_path)
-				# pan tool has two spectra but just one file
-				if i < len(self.parent.props.files_widget.files):
-					file_widget = self.parent.props.files_widget.files[i]
-					file_widget.channel_widget.refill(spectrum.num_channels)
-					file_widget.set_sr(spectrum.sr)
-				must_reset_view = True
-		if must_reset_view:
-			self.reset_view()
-
 	def retrieve_fft(self, ):
 		logging.info("Retrieving FFT from processing thread")
 		for spec in self.spectra:
-			spec.fft_storage[spec.key] = self.fourier_thread.result[spec.audio_path, spec.key]
-			self.update_spectrum(spec)
+			# check if there's a result to fetch
+			# when there are more spectra, this is not sure
+			if (spec.audio_path, spec.key) in self.fourier_thread.result:
+				spec.fft_storage[spec.key] = self.fourier_thread.result[spec.audio_path, spec.key]
+				self.update_spectrum(spec)
 		self.fourier_thread.result.clear()
 
 	def update_spectrum(self, spec):

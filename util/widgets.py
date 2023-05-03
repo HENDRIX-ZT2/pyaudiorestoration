@@ -6,11 +6,10 @@ import sys
 
 from PyQt5 import QtGui, QtCore, QtWidgets
 
-from util import units, config, qt_theme, colormaps
+from util import units, config, qt_theme, colormaps, io_ops
 from util.config import save_json, load_json
 from util.undo import UndoStack, AddAction
 from util.units import pitch
-
 
 ICON_CACHE = {"no_icon": QtGui.QIcon()}
 
@@ -97,7 +96,9 @@ def vbox(parent, grid_layout):
     box.addLayout(grid_layout)
     box.addStretch(1)
     box.setSpacing(3)
-    # box.setContentsMargins(0, 0, 0, 0)
+
+
+# box.setContentsMargins(0, 0, 0, 0)
 
 
 def vbox2(parent, buttons):
@@ -108,6 +109,8 @@ def vbox2(parent, buttons):
 
 
 class ChannelWidget(QtWidgets.QScrollArea):
+    selected_channels = QtCore.pyqtSignal(bool)
+
     def __init__(self, ):
         super().__init__()
         self.setToolTip("Select channels for processing.")
@@ -135,14 +138,22 @@ class ChannelWidget(QtWidgets.QScrollArea):
         channel_names = ("Front Left", "Front Right", "Center", "LFE", "Back Left", "Back Right")
         for i in range(0, num_channels):
             name = channel_names[i] if i < 6 else str(i)
-            self.channel_checkboxes.append(QtWidgets.QCheckBox(name))
+            checkbox = QtWidgets.QCheckBox(name)
+            checkbox.clicked.connect(self.channel_checked)
+            self.channel_checkboxes.append(checkbox)
             # set the startup option to just resample channel 0
-            self.channel_checkboxes[-1].setChecked(True if i == 0 else False)
+            # self.channel_checkboxes[-1].setChecked(True if i == 0 else False)
+            self.channel_checkboxes[-1].setChecked(True)
             self.channel_layout.addWidget(self.channel_checkboxes[-1])
 
     @property
     def channels(self, ):
         return [i for i, channel in enumerate(self.channel_checkboxes) if channel.isChecked()]
+
+    def channel_checked(self, v):
+        """Emits the indices of all selected channels"""
+        if self.channels:
+            self.selected_channels.emit(True)
 
 
 class FileWidget(QtWidgets.QWidget):
@@ -167,6 +178,7 @@ class FileWidget(QtWidgets.QWidget):
         self.sr_label = QtWidgets.QLabel()
         self.sr_label.setAlignment(QtCore.Qt.AlignHCenter)
         self.channel_widget = ChannelWidget()
+        self.channel_widget.selected_channels.connect(self.update_selected_channel)
 
         self.icon.setIcon(get_icon("dir"))
         self.icon.setFlat(True)
@@ -187,6 +199,9 @@ class FileWidget(QtWidgets.QWidget):
 
         self.setLayout(self.qgrid)
 
+        self.signal = self.sr = self.num_channels = None
+        self.spectra = []
+
     def set_sr(self, sr):
         self.sr_label.setText(f"{sr // 1000}k")
 
@@ -200,7 +215,7 @@ class FileWidget(QtWidgets.QWidget):
             qm = QtWidgets.QMessageBox
             return qm.No == qm.question(
                 self, '', f"Do you really want to load {os.path.basename(new_filepath)}? "
-                f"You will lose unsaved work on {os.path.basename(self.filepath)}!", qm.Yes | qm.No)
+                          f"You will lose unsaved work on {os.path.basename(self.filepath)}!", qm.Yes | qm.No)
 
     def ignoreEvent(self, event):
         event.ignore()
@@ -212,6 +227,15 @@ class FileWidget(QtWidgets.QWidget):
                     self.filepath = filepath
                     self.cfg["dir_in"], self.filename = os.path.split(filepath)
                     self.entry.setText(self.filename)
+                    self.signal, self.sr, self.num_channels = io_ops.read_file(filepath)
+                    self.channel_widget.refill(self.num_channels)
+                    for spectrum in self.spectra:
+                        spectrum.signal = self.signal
+                        spectrum.sr = self.sr
+                        spectrum.change_file(filepath)
+                    self.copy_channels()
+                    self.set_sr(self.sr)
+                    self.parent.parent.parent.canvas.reset_view()
                     self.parent.poll()
             else:
                 showdialog("Unsupported File Format")
@@ -242,6 +266,19 @@ class FileWidget(QtWidgets.QWidget):
         filepath = QtWidgets.QFileDialog.getOpenFileName(self, 'Open ' + self.description, self.cfg["dir_in"],
                                                          "Audio files (*.flac *.wav)")[0]
         self.accept_file(filepath)
+        # update channels & recalculate spectrum
+        self.update_selected_channel()
+
+    def copy_channels(self):
+        for spectrum, channel in zip(self.spectra, self.channel_widget.channels):
+            assert spectrum
+            # get the first selected channel
+            spectrum.selected_channel = channel
+
+    def update_selected_channel(self, stuff=False):
+        self.copy_channels()
+        # recalculate spectrum
+        self.parent.parent.display_widget.update_fft_settings()
 
 
 class SpectrumSettingsWidget(QtWidgets.QGroupBox, ConfigStorer):
@@ -253,7 +290,8 @@ class SpectrumSettingsWidget(QtWidgets.QGroupBox, ConfigStorer):
         fft_l = QtWidgets.QLabel("FFT Size")
         self.fft_c = QtWidgets.QComboBox(self)
         self.fft_c.addItems(
-            ("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768", "65536", "131072", "262144", "524288", "1048576"))
+            ("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768", "65536", "131072", "262144",
+             "524288", "1048576"))
         self.fft_c.setToolTip("This determines the frequency resolution.")
         self.fft_c.setCurrentIndex(5)
 
@@ -563,7 +601,8 @@ class DropoutWidget(QtWidgets.QGroupBox):
 
         buttons = (
             (mode_l, self.mode_c,), (self.num_bands_l, self.num_bands_s), (self.f_upper_l, self.f_upper_s),
-            (self.f_lower_l, self.f_lower_s), (self.max_slope_l, self.max_slope_s), (self.max_width_l, self.max_width_s),
+            (self.f_lower_l, self.f_lower_s), (self.max_slope_l, self.max_slope_s),
+            (self.max_width_l, self.max_width_s),
             (self.bottom_freedom_l, self.bottom_freedom_s))
         vbox(self, grid(buttons))
 
@@ -656,7 +695,7 @@ class StackWidget(QtWidgets.QGroupBox):
         super().__init__("History")
         self.view = QtWidgets.QUndoView(stack)
         self.view.setCleanIcon(get_icon("save"))
-        buttons = ((self.view, ),)
+        buttons = ((self.view,),)
         vbox(self, grid(buttons))
 
 
@@ -749,8 +788,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.props = props_widget_cls(parent=self, count=count)
         self.canvas = canvas_widget_cls(parent=self)
         self.canvas.props = self.props
-        self.props.files_widget.on_load_file = self.canvas.load_audio
         self.props.undo_stack.canvas = self.canvas
+
+        for i, spectrum in enumerate(self.canvas.spectra):
+            # special case for pan tool, which maps one file to two spectra
+            if i == len(self.props.files_widget.files):
+                i = 0
+            w = self.props.files_widget.files[i]
+            w.spectra.append(spectrum)
 
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         splitter.addWidget(self.canvas.native)
@@ -781,6 +826,7 @@ class FilesWidget(QtWidgets.QGroupBox, ConfigStorer):
     Holds several file widgets
     controls what happens when they are loaded
     """
+
     def __init__(self, parent, count, cfg={}, ask_user=True):
         super().__init__("Files")
         self.parent = parent
@@ -806,7 +852,8 @@ class FilesWidget(QtWidgets.QGroupBox, ConfigStorer):
             self.load()
 
     def on_load_file(self, filepaths):
-        logging.warning("No loading function defined!")
+        # logging.warning("No loading function defined!")
+        pass
 
     def load(self):
         self.on_load_file(self.filepaths)
@@ -848,8 +895,8 @@ class ParamWidget(QtWidgets.QWidget):
         self.undo_stack = UndoStack(self)
         self.stack_widget = StackWidget(self.undo_stack)
         self.buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget,
-                   self.resampling_widget, self.stack_widget, self.progress_bar,  # self.audio_widget,
-                   self.inspector_widget]
+                        self.resampling_widget, self.stack_widget, self.progress_bar,  # self.audio_widget,
+                        self.inspector_widget]
         vbox2(self, self.buttons)
 
     def save(self):
@@ -877,7 +924,8 @@ class ParamWidget(QtWidgets.QWidget):
 
     def load(self):
         """Load project with all required settings"""
-        file_path = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Project', self.parent.cfg["dir_in"], self.sel_str)[0]
+        file_path = \
+        QtWidgets.QFileDialog.getOpenFileName(self, 'Open Project', self.parent.cfg["dir_in"], self.sel_str)[0]
         if not os.path.isfile(file_path):
             return
         self.parent.cfg["dir_in"], filename = os.path.split(file_path)
@@ -899,4 +947,3 @@ class ParamWidget(QtWidgets.QWidget):
         self.undo_stack.push(AddAction(_markers))
         self.parent.update_title(filename)
         self.display_widget.update_fft_settings()
-

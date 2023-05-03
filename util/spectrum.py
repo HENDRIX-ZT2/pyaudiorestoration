@@ -42,7 +42,7 @@ class Spectrum:
 		self.num_ffts = 0
 		# which channel should be used to render this spectrum from?
 		self.signal = None
-		self.filename = None
+		self.audio_path = None
 		# set a reasonable default
 		self.sr = 44100
 		self.duration = 0.0
@@ -65,20 +65,20 @@ class Spectrum:
 						more_dense = key
 		return more_dense, more_sparse
 
-	def change_file(self, filename):
+	def change_file(self, audio_path):
 		# remove all ffts of the old file from storage
 		self.fft_storage.clear()
 		# now load new audio
-		self.signal, self.sr, self.num_channels = io_ops.read_file(filename)
+		self.signal, self.sr, self.num_channels = io_ops.read_file(audio_path)
 		if len(self.signal) == 0:
 			# multichannel flacs give errors due to a bug in libsoundfile, more info below
 			# pysoundfile should soon be updated with a fixed dll
 			# https://github.com/kenowr/read_flac
-			raise AttributeError(f"Reading {filename} failed, possible libsoundfile bug")
+			raise AttributeError(f"Reading {audio_path} failed, possible libsoundfile bug")
 		if self.selected_channel >= self.num_channels:
 			logging.warning(f"Not enough audio channels ({self.num_channels}) to load, reverting to first channel")
 			self.selected_channel = 0
-		self.filename = filename
+		self.audio_path = audio_path
 		self.duration = len(self.signal) / self.sr
 
 	# @property
@@ -330,7 +330,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 	# todo - get rid of these?
 	@property
 	def filenames(self):
-		return [spectrum.filename for spectrum in self.spectra]
+		return [spectrum.audio_path for spectrum in self.spectra]
 
 	@property
 	def signals(self):
@@ -343,11 +343,10 @@ class SpectrumCanvas(scene.SceneCanvas):
 				spectrum.selected_channel = channel
 		# called by the files widget
 		try:
-			self.compute_spectra(
-				filenames, self.parent.props.display_widget.fft_size, self.parent.props.display_widget.fft_overlap)
+			self.open_audio_files(filenames)
 		# file could not be opened
 		except:
-			logging.exception(f"Computing spectra failed")
+			logging.exception(f"Opening audio failed")
 
 	def clear_fft_storage(self):
 		logging.info("Clearing FFT storage")
@@ -357,31 +356,16 @@ class SpectrumCanvas(scene.SceneCanvas):
 					logging.info(f"deleting {key}")
 					del spectrum.fft_storage[key]
 
-	def compute_spectra(self, filenames, fft_size, fft_overlap):
+	def compute_spectra(self, fft_size, fft_overlap):
 		# maybe move more into the thread
 		if self.fourier_thread.jobs:
 			logging.warning("Fourier job is still running, wait!")
 			return
 
-		# go over all new file candidates
-		must_reset_view = False
-		for i, (filename, spectrum) in enumerate(zip(filenames, self.spectra)):
-			# only reload audio if this filename has changed
-			if spectrum.filename != filename:
-				spectrum.change_file(filename)
-				# pan tool has two spectra but just one file
-				if i < len(self.parent.props.files_widget.files):
-					file_widget = self.parent.props.files_widget.files[i]
-					file_widget.channel_widget.refill(spectrum.num_channels)
-					file_widget.set_sr(spectrum.sr)
-				must_reset_view = True
-		if must_reset_view:
-			self.reset_view()
-
 		self.fft_size = fft_size
 		self.hop = fft_size // fft_overlap
 		for spectrum in self.spectra:
-			if spectrum.filename:
+			if spectrum.audio_path:
 				spectrum.key = (self.fft_size, spectrum.selected_channel, self.hop)
 				# first try to get FFT from current storage and continue directly
 				if spectrum.key in spectrum.fft_storage:
@@ -405,17 +389,33 @@ class SpectrumCanvas(scene.SceneCanvas):
 						# append to the fourier job list
 						self.fourier_thread.jobs.append((
 							spectrum.signal[:, spectrum.selected_channel], self.fft_size, self.hop, "blackmanharris",
-							self.num_cores, spectrum.key, spectrum.filename))
+							self.num_cores, spectrum.key, spectrum.audio_path))
 		# perform all fourier jobs
 		if self.fourier_thread.jobs:
 			self.fourier_thread.start()
+
+	def open_audio_files(self, filenames):
+		# go over all new file candidates
+		must_reset_view = False
+		for i, (audio_path, spectrum) in enumerate(zip(filenames, self.spectra)):
+			# only reload audio if this audio_path has changed
+			if spectrum.audio_path != audio_path:
+				spectrum.change_file(audio_path)
+				# pan tool has two spectra but just one file
+				if i < len(self.parent.props.files_widget.files):
+					file_widget = self.parent.props.files_widget.files[i]
+					file_widget.channel_widget.refill(spectrum.num_channels)
+					file_widget.set_sr(spectrum.sr)
+				must_reset_view = True
+		if must_reset_view:
+			self.reset_view()
 
 	# we continue when the thread emits a "finished" signal, conntected to retrieve_fft()
 
 	def retrieve_fft(self, ):
 		logging.info("Retrieving FFT from processing thread")
 		for spec in self.spectra:
-			spec.fft_storage[spec.key] = self.fourier_thread.result[spec.filename, spec.key]
+			spec.fft_storage[spec.key] = self.fourier_thread.result[spec.audio_path, spec.key]
 			self.update_spectrum(spec)
 		self.fourier_thread.result.clear()
 

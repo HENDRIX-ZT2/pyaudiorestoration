@@ -276,9 +276,10 @@ class SpectrumSettingsWidget(QtWidgets.QGroupBox, ConfigStorer):
         vbox(self, grid(buttons))
 
         if with_canvas:
-            # only connect in the end
-            self.fft_c.currentIndexChanged.connect(self.update_fft_settings)
-            self.overlap_c.currentIndexChanged.connect(self.update_fft_settings)
+            # these should only be updated by the user; programmatic updates should call update_fft_settings
+            self.fft_c.activated.connect(self.update_fft_settings)
+            self.overlap_c.activated.connect(self.update_fft_settings)
+            # these can be updated each time
             self.cmap_c.currentIndexChanged.connect(self.update_cmap)
             self.clear_storage.clicked.connect(self.force_clear_storage)
 
@@ -298,8 +299,8 @@ class SpectrumSettingsWidget(QtWidgets.QGroupBox, ConfigStorer):
     def fft_overlap(self, v):
         self.overlap_c.setCurrentText(str(v))
 
-    def update_fft_settings(self, ):
-        self.canvas.compute_spectra(self.canvas.filenames, fft_size=self.fft_size, fft_overlap=self.fft_overlap)
+    def update_fft_settings(self):
+        self.canvas.compute_spectra(fft_size=self.fft_size, fft_overlap=self.fft_overlap)
 
     def update_cmap(self):
         self.canvas.set_colormap(self.cmap_c.currentText())
@@ -901,4 +902,5 @@ class ParamWidget(QtWidgets.QWidget):
         self.parent.canvas.delete_traces(delete_all=True)
         self.undo_stack.push(AddAction(_markers))
         self.parent.update_file(self.files_widget.files[0].filename)
+        self.display_widget.update_fft_settings()
 

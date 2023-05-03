@@ -113,11 +113,11 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def run_resample(self):
 		spec = self.spectra[0]
-		if spec.filename and self.markers:
+		if spec.audio_path and self.markers:
 			channels = self.props.files_widget.files[0].channel_widget.channels
 			if channels:
 				self.resampling_thread.settings = {
-					"filenames": (spec.filename,),
+					"filenames": (spec.audio_path,),
 					"signal_data": ((spec.signal, spec.sr),),
 					"speed_curve": self.get_speed_curve(),
 					"use_channels": channels}

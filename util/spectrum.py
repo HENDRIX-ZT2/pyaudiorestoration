@@ -356,14 +356,12 @@ class SpectrumCanvas(scene.SceneCanvas):
 					logging.info(f"deleting {key}")
 					del spectrum.fft_storage[key]
 
-	def compute_spectra(self, fft_size, fft_overlap):
+	def compute_spectra(self):
 		# maybe move more into the thread
 		if self.fourier_thread.jobs:
 			logging.warning("Fourier job is still running, wait!")
 			return
 
-		self.fft_size = fft_size
-		self.hop = fft_size // fft_overlap
 		for spectrum in self.spectra:
 			if spectrum.audio_path:
 				spectrum.key = (self.fft_size, spectrum.selected_channel, self.hop)
@@ -393,6 +391,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		# perform all fourier jobs
 		if self.fourier_thread.jobs:
 			self.fourier_thread.start()
+		# continue when fourier_thread emits a "finished" signal, connected to retrieve_fft()
 
 	def open_audio_files(self, filenames):
 		# go over all new file candidates
@@ -409,8 +408,6 @@ class SpectrumCanvas(scene.SceneCanvas):
 				must_reset_view = True
 		if must_reset_view:
 			self.reset_view()
-
-	# we continue when the thread emits a "finished" signal, conntected to retrieve_fft()
 
 	def retrieve_fft(self, ):
 		logging.info("Retrieving FFT from processing thread")

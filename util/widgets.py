@@ -300,7 +300,9 @@ class SpectrumSettingsWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.overlap_c.setCurrentText(str(v))
 
     def update_fft_settings(self):
-        self.canvas.compute_spectra(fft_size=self.fft_size, fft_overlap=self.fft_overlap)
+        self.canvas.fft_size = self.fft_size
+        self.canvas.hop = self.fft_size // self.fft_overlap
+        self.canvas.compute_spectra()
 
     def update_cmap(self):
         self.canvas.set_colormap(self.cmap_c.currentText())

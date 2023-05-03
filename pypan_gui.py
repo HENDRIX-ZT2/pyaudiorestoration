@@ -1,11 +1,13 @@
 import numpy as np
 
 # custom modules
-from util.undo import AddAction, DeleteAction
+from util.undo import AddAction
 from util import spectrum, widgets, io_ops, markers
 
 
 class MainWindow(widgets.MainWindow):
+	EXT = ".pan"
+	STORE = {"markers": markers.PanSample}
 
 	def __init__(self):
 		widgets.MainWindow.__init__(self, "pypan", widgets.ParamWidget, Canvas, 1)
@@ -14,7 +16,7 @@ class MainWindow(widgets.MainWindow):
 		edit_menu = main_menu.addMenu('Edit')
 		button_data = (
 			(file_menu, "Open", self.props.files_widget.ask_open, "CTRL+O", "dir"),
-			(file_menu, "Save", self.canvas.save_traces, "CTRL+S", "save"),
+			(file_menu, "Save", self.props.save, "CTRL+S", "save"),
 			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R", "curve"),
 			(file_menu, "Exit", self.close, "", "exit"),
 			(edit_menu, "Undo", self.props.undo_stack.undo, "CTRL+Z", "undo"),
@@ -46,12 +48,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):
 			yield markers.PanSample(self, (a0, a1), (b0, b1), d)
 
-	def save_traces(self):
-		# get the data from the traces and regressions and save it
-		io_ops.write_lag(
-			self.filenames[0], [(lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.pan) for lag in self.markers])
-		self.parent.props.undo_stack.setClean()
-
 	def run_resample(self):
 		if self.filenames[0] and self.markers:
 			lag_curve = self.pan_line.data
@@ -60,7 +56,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			io_ops.write_file(self.filenames[0], signal[:, 1] * af, sr, 1)
 
 	def on_mouse_press(self, event):
-		# #selection
+		# selection
 		if event.button == 2:
 			closest_marker = self.get_closest(self.markers, event.pos)
 			if closest_marker:
@@ -78,7 +74,7 @@ class Canvas(spectrum.SpectrumCanvas):
 				# are they in spec_view?
 				if a is not None and b is not None:
 					if "Shift" in event.modifiers:
-						L, R = [self.fft_storage[spectrum.key] for spectrum in self.spectra]
+						L, R = [spectrum.fft_storage[spectrum.key] for spectrum in self.spectra]
 
 						t0, t1 = sorted((a[0], b[0]))
 						freqs = sorted((a[1], b[1]))

@@ -7,7 +7,8 @@ import sys
 from PyQt5 import QtGui, QtCore, QtWidgets
 
 from util import units, config, qt_theme, colormaps
-from util.undo import UndoStack
+from util.config import save_json, load_json
+from util.undo import UndoStack, AddAction
 from util.units import pitch
 
 
@@ -15,14 +16,19 @@ ICON_CACHE = {"no_icon": QtGui.QIcon()}
 
 
 class ConfigStorer:
-
     def to_cfg(self, cfg):
-        for varname in self.vars_for_saving:
-            cfg[varname] = getattr(self, varname)
+        if self.isVisible():
+            for varname in self.vars_for_saving:
+                cfg[varname] = getattr(self, varname)
 
     def from_cfg(self, cfg):
-        for varname in self.vars_for_saving:
-            setattr(self, varname, cfg[varname])
+        if self.isVisible():
+            # logging.info(f"Loading {self.__class__.__name__}")
+            for varname in self.vars_for_saving:
+                try:
+                    setattr(self, varname, cfg[varname])
+                except:
+                    logging.warning(f"Could not set {varname}")
 
 
 def get_icon(name):
@@ -204,8 +210,8 @@ class FileWidget(QtWidgets.QWidget):
             if os.path.splitext(filepath)[1].lower() in (".flac", ".wav"):
                 if not self.abort_open_new_file(filepath):
                     self.filepath = filepath
-                    self.cfg["dir_in"], filename = os.path.split(filepath)
-                    self.entry.setText(filename)
+                    self.cfg["dir_in"], self.filename = os.path.split(filepath)
+                    self.entry.setText(self.filename)
                     self.parent.poll()
             else:
                 showdialog("Unsupported File Format")
@@ -302,7 +308,9 @@ class SpectrumSettingsWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.canvas.clear_fft_storage()
 
 
-class TracingWidget(QtWidgets.QGroupBox):
+class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
+    vars_for_saving = ("mode", "tolerance")
+
     def __init__(self, ):
         super().__init__("Tracing")
         trace_l = QtWidgets.QLabel("Mode")
@@ -722,6 +730,8 @@ class InspectorWidget(QtWidgets.QLabel):
 
 
 class MainWindow(QtWidgets.QMainWindow):
+    EXT = None
+    STORE = {}
 
     def __init__(self, name, props_widget_cls, canvas_widget_cls, count):
         QtWidgets.QMainWindow.__init__(self)
@@ -764,7 +774,7 @@ class MainWindow(QtWidgets.QMainWindow):
         submenu.addAction(action)
 
 
-class FilesWidget(QtWidgets.QGroupBox):
+class FilesWidget(QtWidgets.QGroupBox, ConfigStorer):
     """
     Holds several file widgets
     controls what happens when they are loaded
@@ -822,9 +832,7 @@ class ParamWidget(QtWidgets.QWidget):
 
     def __init__(self, parent=None, count=1):
         super(ParamWidget, self).__init__(parent)
-
         self.parent = parent
-
         self.files_widget = FilesWidget(self, count, self.parent.cfg)
         self.display_widget = SpectrumSettingsWidget()
         self.tracing_widget = TracingWidget()
@@ -837,7 +845,60 @@ class ParamWidget(QtWidgets.QWidget):
         self.alignment_widget = AlignmentWidget()
         self.undo_stack = UndoStack(self)
         self.stack_widget = StackWidget(self.undo_stack)
-        buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget,
+        self.buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget,
                    self.resampling_widget, self.stack_widget, self.progress_bar,  # self.audio_widget,
                    self.inspector_widget]
-        vbox2(self, buttons)
+        vbox2(self, self.buttons)
+
+    def save(self):
+        """Save project with all required settings"""
+        sync = {}
+        for w in self.buttons:
+            if isinstance(w, ConfigStorer):
+                w.to_cfg(sync)
+        for marker_name in self.parent.STORE:
+            sync[marker_name] = list(marker.to_cfg() for marker in getattr(self.parent.canvas, marker_name))
+        cfg_path = os.path.splitext(self.files_widget.filepaths[0])[0] + self.parent.EXT
+        save_json(cfg_path, sync)
+        self.undo_stack.setClean()
+
+    @staticmethod
+    def fmt_exts(exts):
+        return ' '.join([f"*{e}" for e in exts])
+
+    @property
+    def sel_str(self):
+        ftypes = {"Audio": (".flac", ".wav"), "Project": (self.parent.EXT,)}
+        ftypes["All"] = sorted(v for vs in ftypes.values() for v in vs)
+        allowed = [f"{k} files ({self.fmt_exts(exts)})" for k, exts in sorted(ftypes.items())]
+        return ";;".join(allowed)
+
+    def load(self):
+        """Load project with all required settings"""
+        file_path = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Project', self.parent.cfg["dir_in"], self.sel_str)[0]
+        if not os.path.isfile(file_path):
+            return
+        # new style project file
+        if file_path.endswith(self.parent.EXT):
+            sync = load_json(file_path)
+            # spectrum should load after the fft settings have been set
+            # however, this causes the old spectrum to update when opening a project with different fft settings
+            # for w in reversed(self.buttons):
+            for w in self.buttons:
+                if isinstance(w, ConfigStorer):
+                    w.from_cfg(sync)
+            _markers = []
+            for marker_name, marker_class in self.parent.STORE.items():
+                _markers.extend([marker_class.from_cfg(self.parent.canvas, *item) for item in sync[marker_name]])
+        else:
+            # old style project file or audio file
+            self.files_widget.files[0].accept_file(file_path)
+            _markers = list(self.parent.canvas.load_visuals())
+            if not _markers:
+                return
+        # print(_markers)
+        # Cleanup of old data
+        self.parent.canvas.delete_traces(delete_all=True)
+        self.undo_stack.push(AddAction(_markers))
+        self.parent.update_file(self.files_widget.files[0].filename)
+

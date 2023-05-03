@@ -6,17 +6,18 @@ from PyQt5 import QtWidgets
 
 # custom modules
 from util.correlation import xcorr
-from util.undo import AddAction, DeleteAction, DeltaAction
+from util.undo import AddAction, DeltaAction
 from util import spectrum, wow_detection, qt_threads, widgets, filters, io_ops, \
 	markers
 
-from util.config import save_json, load_json, logging_setup
+from util.config import load_json, logging_setup
 
 logging_setup()
-EXT = ".tapesync"
 
 
 class MainWindow(widgets.MainWindow):
+	EXT = ".tapesync"
+	STORE = {"markers": markers.LagSample}
 
 	def __init__(self):
 		widgets.MainWindow.__init__(self, "pytapesynch", widgets.ParamWidget, Canvas, 2)
@@ -24,8 +25,8 @@ class MainWindow(widgets.MainWindow):
 		file_menu = main_menu.addMenu('File')
 		edit_menu = main_menu.addMenu('Edit')
 		button_data = (
-			(file_menu, "Open", self.canvas.load_project, "CTRL+O", "dir"),
-			(file_menu, "Save", self.canvas.save_traces, "CTRL+S", "save"),
+			(file_menu, "Open", self.props.load, "CTRL+O", "dir"),
+			(file_menu, "Save", self.props.save, "CTRL+S", "save"),
 			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R", "curve"),
 			(file_menu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B", "curve2"),
 			(file_menu, "Exit", self.close, "", "exit"),
@@ -70,33 +71,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		"""legacy code path"""
 		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):
 			yield markers.LagSample(self, (a0, a1), (b0, b1), d)
-
-	def load_project(self):
-		"""Load project with all required settings"""
-		cfg_path = QtWidgets.QFileDialog.getOpenFileName(self.parent, 'Open Project', self.parent.cfg["dir_in"],
-														 f"Tape Sync project files (*{EXT})")[0]
-		if os.path.isfile(cfg_path):
-			sync = load_json(cfg_path)
-			props = self.parent.props
-			props.files_widget.from_cfg(sync)
-			props.display_widget.from_cfg(sync)
-			props.alignment_widget.from_cfg(sync)
-			_markers = []
-			for a0, a1, b0, b1, d, corr in sync["data"]:
-				_markers.append(markers.LagSample(self, (a0, a1), (b0, b1), d, corr))
-			self.props.undo_stack.push(AddAction(_markers))
-
-	def save_traces(self):
-		"""Save project with all required settings"""
-		sync = {}
-		props = self.parent.props
-		props.files_widget.to_cfg(sync)
-		props.display_widget.to_cfg(sync)
-		props.alignment_widget.to_cfg(sync)
-		sync["data"] = list(sorted(set((lag.a[0], lag.a[1], lag.b[0], lag.b[1], lag.d, lag.corr) for lag in self.markers)))
-		cfg_path = os.path.splitext(self.filenames[0])[0]+EXT
-		save_json(cfg_path, sync)
-		props.undo_stack.setClean()
 
 	def improve_lag(self):
 		deltas = []

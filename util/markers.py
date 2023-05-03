@@ -72,6 +72,10 @@ class BaseMarker:
 		# note: this has to search the list
 		self.container.remove(self)
 
+	@classmethod
+	def from_cfg(cls, canvas, *args):
+		return cls(canvas, *args)
+
 
 class RegLine(BaseMarker):
 	"""Stores a single sinc regression's data and displays it"""
@@ -156,6 +160,9 @@ class RegLine(BaseMarker):
 		"""Adjust this regressions's phase offset according to the UI input."""
 		if self.selected:
 			self.offset = v
+
+	def to_cfg(self):
+		return self.t0, self.t1, self.amplitude, self.omega, self.phase, self.offset
 
 
 class TraceLine(BaseMarker):
@@ -257,6 +264,9 @@ class TraceLine(BaseMarker):
 		self.speed_data[:, 1] = self.speed
 		self.visuals[0].set_data(pos=self.speed_data)
 
+	def to_cfg(self):
+		return list(self.times), list(self.freqs), self.offset
+
 
 class PanSample(BaseMarker):
 	"""Stores a single sinc regression's data and displays it"""
@@ -290,6 +300,13 @@ class PanSample(BaseMarker):
 	def set_color(self, c):
 		for v in self.visuals:
 			v.color = c
+
+	def to_cfg(self):
+		return self.a[0], self.a[1], self.b[0], self.b[1], self.pan
+
+	@classmethod
+	def from_cfg(cls, canvas, a0, a1, b0, b1, pan):
+		return cls(canvas, (a0, a1), (b0, b1), pan)
 
 
 class LagSample(BaseMarker):
@@ -340,6 +357,13 @@ class LagSample(BaseMarker):
 		"""Toggle this line's selection state"""
 		self.selected = True
 		self.set_color(self.color_sel)
+
+	def to_cfg(self):
+		return self.a[0], self.a[1], self.b[0], self.b[1], self.d, self.corr
+
+	@classmethod
+	def from_cfg(cls, canvas, a0, a1, b0, b1, d, corr):
+		return cls(canvas, (a0, a1), (b0, b1), d, corr)
 
 
 class BaseLine:

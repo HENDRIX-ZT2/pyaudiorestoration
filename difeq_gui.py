@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import xml.etree.ElementTree as ET
 import os
@@ -248,18 +250,20 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.plot()
 
 	def write(self):
-		file_out = \
-		QtWidgets.QFileDialog.getSaveFileName(self, 'Save Average EQ', self.cfg["dir_out"], "TXT files (*.txt)")[0]
-		file_base = ".".join(file_out.split(".")[:-1])
-		if file_out:
-			try:
-				self.cfg["dir_out"], eq_name = os.path.split(file_out)
-				# write_eq_xml(file_base+"_AV.xml", self.freqs_av, np.mean(self.av, axis=0))
-				# write_eq_xml(file_base+"_L.xml", self.freqs_av, self.av[0])
-				# write_eq_xml(file_base+"_R.xml", self.freqs_av, self.av[1])
-				write_eq_txt(file_base + ".txt", self.freqs_av, np.mean(self.av, axis=0))
-			except PermissionError:
-				widgets.showdialog("Could not write files - do you have writing permissions there?")
+		try:
+			file_out = QtWidgets.QFileDialog.getSaveFileName(self, 'Save Average EQ', self.cfg.get("dir_out", "C:/"), "TXT files (*.txt)")[0]
+			file_base = ".".join(file_out.split(".")[:-1])
+			if file_out:
+				try:
+					self.cfg["dir_out"], eq_name = os.path.split(file_out)
+					# write_eq_xml(file_base+"_AV.xml", self.freqs_av, np.mean(self.av, axis=0))
+					# write_eq_xml(file_base+"_L.xml", self.freqs_av, self.av[0])
+					# write_eq_xml(file_base+"_R.xml", self.freqs_av, self.av[1])
+					write_eq_txt(file_base + ".txt", self.freqs_av, np.mean(self.av, axis=0))
+				except PermissionError:
+					widgets.showdialog("Could not write files - do you have writing permissions there?")
+		except:
+			logging.exception(f"Saving failed")
 
 	def plot(self):
 

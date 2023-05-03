@@ -5,13 +5,15 @@ from PyQt5 import QtWidgets
 # custom modules
 from util import spectrum, wow_detection, qt_threads, widgets, io_ops, markers
 
-from util.undo import AddAction, DeleteAction, MoveAction, MergeAction
+from util.undo import AddAction, MoveAction, MergeAction
 from util.config import logging_setup
 
 logging_setup()
 
 
 class MainWindow(widgets.MainWindow):
+	EXT = ".spd"
+	STORE = {"lines": markers.TraceLine, "regs": markers.RegLine}
 
 	def __init__(self):
 		widgets.MainWindow.__init__(self, "pyrespeeder", widgets.ParamWidget, Canvas, 1)
@@ -21,8 +23,8 @@ class MainWindow(widgets.MainWindow):
 		# view_menu = main_menu.addMenu('View')
 		# help_menu = main_menu.addMenu('Help')
 		button_data = (
-			(file_menu, "Open", self.props.files_widget.ask_open, "CTRL+O", "dir"),
-			(file_menu, "Save", self.canvas.save_traces, "CTRL+S", "save"),
+			(file_menu, "Open", self.props.load, "CTRL+O", "dir"),
+			(file_menu, "Save", self.props.save, "CTRL+S", "save"),
 			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R", "curve"),
 			(file_menu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B", "curve2"),
 			(file_menu, "Exit", self.close, "", "exit"),
@@ -77,14 +79,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		for t0, t1, amplitude, omega, phase, offset in io_ops.read_regs(self.filenames[0]):
 			yield markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
 
-	def save_traces(self):
-		# get the data from the traces and regressions and save it
-		io_ops.write_trace(self.filenames[0], [(line.offset, line.times, line.freqs) for line in self.lines])
-		io_ops.write_regs(
-			self.filenames[0],
-			[(reg.t0, reg.t1, reg.amplitude, reg.omega, reg.phase, reg.offset) for reg in self.regs])
-		self.parent.props.undo_stack.setClean()
-
 	def merge_selected_traces(self):
 		self.merge_traces(list(reversed(self.selected_markers)))
 
@@ -119,7 +113,7 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def run_resample(self):
 		spec = self.spectra[0]
-		if spec.filename and self.lines + self.regs:
+		if spec.filename and self.markers:
 			channels = self.props.files_widget.files[0].channel_widget.channels
 			if channels:
 				self.resampling_thread.settings = {
@@ -148,7 +142,7 @@ class Canvas(spectrum.SpectrumCanvas):
 
 	def resample_files(self, files):
 		channels = self.props.files_widget.files[0].channel_widget.channels
-		if self.lines + self.regs and channels:
+		if self.markers and channels:
 			self.resampling_thread.settings = {
 				"filenames"			: files,
 				"speed_curve"		: self.get_speed_curve(),
@@ -209,7 +203,7 @@ class Canvas(spectrum.SpectrumCanvas):
 	def track_wow(self, settings, trail):
 		spec = self.spectra[0]
 		track = wow_detection.Track(
-			settings.mode, self.fft_storage[spec.key], trail, self.fft_size,
+			settings.mode, spec.fft_storage[spec.key], trail, self.fft_size,
 			self.hop, spec.sr, settings.tolerance, settings.adapt)
 		marker = markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
 		self.props.undo_stack.push(AddAction((marker,)))

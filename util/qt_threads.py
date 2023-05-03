@@ -24,7 +24,7 @@ class FourierThread(BaseThread):
 	result = {}
 
 	def run(self):
-		for signal_1d, fft_size, hop, window_name, num_cores, key in self.jobs:
-			self.result[key] = fourier.get_mag(signal_1d, fft_size, hop, window_name, num_cores,
+		for signal_1d, fft_size, hop, window_name, num_cores, key, filename in self.jobs:
+			self.result[filename, key] = fourier.get_mag(signal_1d, fft_size, hop, window_name, num_cores,
 											   prog_sig=self.notifyProgress)
 		self.jobs = []

@@ -42,14 +42,50 @@ class Spectrum:
 		self.num_ffts = 0
 		# which channel should be used to render this spectrum from?
 		self.signal = None
-		self.filename = 0
+		self.filename = None
 		# set a reasonable default
 		self.sr = 44100
 		self.duration = 0.0
 		self.selected_channel = 0
-		# store one key per spectrum
-		# these are the keys that are currently in use
+		self.fft_storage = {}
 		self.key = None
+
+	def get_related_keys(self):
+		"""Return the keys for different hops but otherwise same settings"""
+		more_dense = None
+		more_sparse = None
+		# go over all keys and see if there is a bigger one
+		for key in self.fft_storage:
+			if key[0:2] == self.key[0:2]:
+				if key[2] > self.key[2]:
+					more_sparse = key
+				elif key[2] < self.key[2]:
+					# only save key if none had been set or the new key is closer to the desired key
+					if not more_dense or more_dense[2] < key[2]:
+						more_dense = key
+		return more_dense, more_sparse
+
+	def change_file(self, filename):
+		# remove all ffts of the old file from storage
+		self.fft_storage.clear()
+		# now load new audio
+		self.signal, self.sr, self.num_channels = io_ops.read_file(filename)
+		if len(self.signal) == 0:
+			# multichannel flacs give errors due to a bug in libsoundfile, more info below
+			# pysoundfile should soon be updated with a fixed dll
+			# https://github.com/kenowr/read_flac
+			raise AttributeError(f"Reading {filename} failed, possible libsoundfile bug")
+		if self.selected_channel >= self.num_channels:
+			logging.warning(f"Not enough audio channels ({self.num_channels}) to load, reverting to first channel")
+			self.selected_channel = 0
+		self.filename = filename
+		self.duration = len(self.signal) / self.sr
+
+	# @property
+	# def key(self):
+	# 	# store one key per spectrum
+	# 	# these are the keys that are currently in use
+	# 	return self.parent.fft_size, self.selected_channel, self.parent.hop
 
 	def update_data(self, imdata, hop):
 		num_bins, self.num_ffts = imdata.shape
@@ -201,7 +237,6 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.num_cores = os.cpu_count()
 		self.fft_size = 1024
 		self.hop = 256
-		self.dirty = False
 
 		self.fourier_thread = qt_threads.FourierThread()
 		self.fourier_thread.finished.connect(self.retrieve_fft)
@@ -265,7 +300,6 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.spec_yaxis.link_view(self.spec_view)
 
 		self.spectra = [Spectrum(self.spec_view, overlay=color) for color in spectra_colors]
-		self.fft_storage = {}
 		self.markers = []
 
 		# nb. this is a vispy.util.event.EventEmitter object
@@ -283,7 +317,11 @@ class SpectrumCanvas(scene.SceneCanvas):
 	@property
 	def duration(self):
 		"""Use the maximum to get total when duration differs per source"""
-		return max([spectrum.duration for spectrum in self.spectra if spectrum.signal is not None])
+		durations = [spectrum.duration for spectrum in self.spectra if spectrum.signal is not None]
+		if durations:
+			return max(durations)
+		else:
+			return 1.0
 
 	@property
 	def f_max(self):
@@ -310,127 +348,88 @@ class SpectrumCanvas(scene.SceneCanvas):
 		# file could not be opened
 		except:
 			logging.exception(f"Computing spectra failed")
-		# no issues, we can continue
-		else:
-			# Cleanup of old data
-			self.delete_traces(delete_all=True)
-			self.add_markers(self.load_visuals())
-			self.parent.update_file(self.spectra[0].filename)
-
-	def add_markers(self, markers):
-		self.parent.props.undo_stack.push(AddAction(list(markers)))
 
 	def clear_fft_storage(self):
 		logging.info("Clearing FFT storage")
-		# clear all but the current spectrum (we need it for tracing)
-		used_keys = [spectrum.key for spectrum in self.spectra]
-		for key in self.fft_storage:
-			if key not in used_keys:
-				logging.info(f"deleting {key}")
-				del self.fft_storage[key]
+		for spectrum in self.spectra:
+			for key in spectrum.fft_storage:
+				if key != spectrum.key:
+					logging.info(f"deleting {key}")
+					del spectrum.fft_storage[key]
 
 	def compute_spectra(self, filenames, fft_size, fft_overlap):
-
-		# TODO: implement adaptive / intelligent hop reusing data
 		# maybe move more into the thread
-		must_reset_view = False
-		self.dirty = False
 		if self.fourier_thread.jobs:
 			logging.warning("Fourier job is still running, wait!")
 			return
 
 		# go over all new file candidates
+		must_reset_view = False
 		for i, (filename, spectrum) in enumerate(zip(filenames, self.spectra)):
 			# only reload audio if this filename has changed
 			if spectrum.filename != filename:
-				# remove all ffts of the old file from storage
-				for k in [k for k in self.fft_storage if k[0] == spectrum.filename]:
-					del self.fft_storage[k]
-				# now load new audio
-				spectrum.signal, spectrum.sr, spectrum.num_channels = io_ops.read_file(filename)
-				if len(spectrum.signal) == 0:
-					# multichannel flacs give errors due to a bug in libsoundfile, more info below
-					# pysoundfile should soon be updated with a fixed dll
-					# https://github.com/kenowr/read_flac
-					raise AttributeError(f"Reading {filename} failed, possible libsoundfile bug")
-				spectrum.filename = filename
-				spectrum.duration = len(spectrum.signal) / spectrum.sr
+				spectrum.change_file(filename)
 				# pan tool has two spectra but just one file
 				if i < len(self.parent.props.files_widget.files):
 					file_widget = self.parent.props.files_widget.files[i]
 					file_widget.channel_widget.refill(spectrum.num_channels)
 					file_widget.set_sr(spectrum.sr)
 				must_reset_view = True
+		if must_reset_view:
+			self.reset_view()
 
 		self.fft_size = fft_size
 		self.hop = fft_size // fft_overlap
-		if must_reset_view:
-			self.reset_view()
 		for spectrum in self.spectra:
 			if spectrum.filename:
-				spectrum.key = (spectrum.filename, self.fft_size, spectrum.selected_channel, self.hop)
-				if spectrum.selected_channel >= spectrum.num_channels:
-					logging.warning(
-						f"Not enough audio channels ({spectrum.num_channels}) to load, reverting to first channel")
-					spectrum.selected_channel = 0
+				spectrum.key = (self.fft_size, spectrum.selected_channel, self.hop)
 				# first try to get FFT from current storage and continue directly
-				if spectrum.key in self.fft_storage:
-					self.dirty = True
+				if spectrum.key in spectrum.fft_storage:
+					# this happens when only loading from storage is required
+					self.update_spectrum(spectrum)
 				# check for alternate hops
 				else:
-					more_dense = None
-					more_sparse = None
-					# go over all keys and see if there is a bigger one
-					for key in self.fft_storage:
-						if key[0:3] == spectrum.key[0:3]:
-							if key[3] > spectrum.key[3]:
-								more_sparse = key
-							elif key[3] < spectrum.key[3]:
-								# only save key if none had been set or the new key is closer to the desired key
-								if not more_dense or more_dense[3] < key[3]:
-									more_dense = key
+					more_dense, more_sparse = spectrum.get_related_keys()
 					# prefer reduction via strides
 					if more_dense:
-						print("reducing resolution via stride", more_dense[3], spectrum.key[3])
-						step = spectrum.key[3] // more_dense[3]
-						self.fft_storage[spectrum.key] = np.array(self.fft_storage[more_dense][:, ::step])
-						self.continue_spectra()
+						logging.debug(f"reducing resolution via stride from {more_dense[2]} to {spectrum.key[2]}")
+						step = spectrum.key[2] // more_dense[2]
+						spectrum.fft_storage[spectrum.key] = np.array(spectrum.fft_storage[more_dense][:, ::step])
+						self.update_spectrum(spectrum)
 					# TODO: implement gap filling, will need changes to stft function
-					# # then fill missing gaps
+					# then fill missing gaps
 					# elif more_sparse:
-					# print("increasing resolution by filling gaps",self.fft_size)
-					# self.fft_storage[spectrum.key] = self.fft_storage[more_sparse]
+					# 	print("increasing resolution by filling gaps",self.fft_size)
 					else:
 						logging.info(f"storing new fft {spectrum.key}")
 						# append to the fourier job list
 						self.fourier_thread.jobs.append((
 							spectrum.signal[:, spectrum.selected_channel], self.fft_size, self.hop, "blackmanharris",
-							self.num_cores, spectrum.key))
-				# all tasks are started below
+							self.num_cores, spectrum.key, spectrum.filename))
 		# perform all fourier jobs
 		if self.fourier_thread.jobs:
 			self.fourier_thread.start()
-		# we continue when the thread emits a "finished" signal, conntected to retrieve_fft()
-		# this happens when only loading from storage is required
-		elif self.dirty:
-			self.continue_spectra()
+
+	# we continue when the thread emits a "finished" signal, conntected to retrieve_fft()
 
 	def retrieve_fft(self, ):
-		print("Retrieving FFT from processing thread")
-		self.fft_storage.update(self.fourier_thread.result)
-		self.fourier_thread.result = {}
-		self.continue_spectra()
-
-	def continue_spectra(self, ):
+		logging.info("Retrieving FFT from processing thread")
 		for spec in self.spectra:
-			spec.update_data(self.fft_storage[spec.key], self.hop)
-		self.set_clims(self.vmin, self.vmax)
-		self.set_colormap(self.cmap)
+			for filename, key in self.fourier_thread.result.keys():
+				if spec.filename == filename:
+					spec.fft_storage[key] = self.fourier_thread.result[filename, key]
+					self.update_spectrum(spec)
+		self.fourier_thread.result.clear()
+
+	def update_spectrum(self, spec):
+		spec.update_data(spec.fft_storage[spec.key], self.hop)
+		spec.set_clims(self.vmin, self.vmax)
+		spec.set_cmap(self.cmap)
 
 	# don't bother with audio until it is fixed
 	# self.props.audio_widget.set_data(signal[:,channel], spec.sr)
 
-	def reset_view(self, ):
+	def reset_view(self):
 		# (re)set the spec_view
 		self.speed_view.camera.rect = (0, -1, self.duration, 2)
 		self.spec_view.camera.rect = (0, 0, self.duration, units.to_mel(self.f_max))

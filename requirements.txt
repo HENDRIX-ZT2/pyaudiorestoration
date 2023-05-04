@@ -5,6 +5,8 @@ scipy
 numpy
 vispy
 pyfftw
+# you need to pick the right configuration for your graphics card
+# torch
 # as of 2023-04-18, the following are not available on py3.11
 librosa
 resampy # (optional)

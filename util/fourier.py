@@ -1,16 +1,20 @@
-# -*- coding: utf-8 -*-
-# Copyright (c) Vispy Development Team. All Rights Reserved.
-# Distributed under the (new) BSD License. See LICENSE.txt for more info.
 import logging
+import time
+import os
 
 import numpy as np
 from numba import jit
 import scipy
 
 try:
+	import torch
+except:
+	logging.warning("torch is not installed. If you have a NVIDIA GPU, install pytorch for cuda.")
+
+try:
 	import pyfftw
 except:
-	print("Warning: pyfftw is not installed. Run 'pip install pyfftw' to speed up spectrogram generation.")
+	logging.warning("pyfftw is not installed. Run 'pip install pyfftw' to speed up spectrogram generation.")
 
 # Constrain STFT block sizes to 256 KB
 MAX_MEM_BLOCK = 2 ** 8 * 2 ** 10
@@ -21,7 +25,7 @@ def get_mag(*args, **kwargs):
 	return abs(stft(*args, **kwargs)) + .0000001
 
 
-def stft(x, n_fft=1024, step=512, window_name='blackmanharris', num_cores=1, windowlen=None, prog_sig=None):
+def stft(x, n_fft=1024, step=512, window_name='blackmanharris'):
 	"""Compute the STFT
 
 	Parameters
@@ -44,60 +48,105 @@ def stft(x, n_fft=1024, step=512, window_name='blackmanharris', num_cores=1, win
 		Spectrogram of the data, shape (n_freqs, n_steps).
 	"""
 
-	def emit_progress():
-		if prog_sig:
-			prog_sig.emit((i + 1) / n_estimates * 100)
-
 	n_fft = int(n_fft)
-	if windowlen:
-		# smaller winlen than n_fft, needs padding
-		if windowlen > n_fft:
-			raise ValueError('if given, windowlen must be smaller than n_fft')
-
-		def segment():
-			return np.pad(w * x[i * step: i * step + windowlen], pad_width, mode="edge")
-	else:
-		# just continue with business as usual, no extra padding
-		windowlen = n_fft
-
-		def segment():
-			return w * x[i * step: i * step + windowlen]
-	pad_width = (n_fft - windowlen) // 2
-
+	step = max(n_fft // 2, 1) if step is None else int(step)
 	if x.ndim != 1:
 		raise ValueError('x must be 1D')
-	w = scipy.signal.get_window(window_name, windowlen)
-	step = max(n_fft // 2, 1) if step is None else int(step)
+	window = scipy.signal.get_window(window_name, n_fft)
+	for fft_function in (
+			torch_rfft2,
+			pyfftw_rfft2,
+			np_rfft_pick,):
+		try:
+			return fft_function(n_fft, step, window, x)
+		except:
+			logging.exception(f"FFT method {fft_function} failed")
+			continue
 
+
+def estimate_and_center(n_fft, step, x):
 	# Pad both sides with half fft size so that frames are centered
 	x = np.pad(x, int(n_fft // 2), mode="reflect")
+	n_estimates = (len(x) - n_fft) // step + 1
+	return n_estimates, x
 
-	n_freqs = n_fft // 2 + 1
-	n_estimates = (len(x) - windowlen) // step + 1
-	dtype = dtype_r2c(x.dtype)
 
-	# Pre-allocate the STFT matrix
-	result = np.empty((n_freqs, n_estimates), dtype=dtype, order='F')
+def torch_rfft2(n_fft, step, window, x):
+	start = time.time()
+	device = "cuda"
+	# device = "cpu"
+	if device == "cuda":
+		x = torch.as_tensor(x, dtype=None, device=device)
+		window = torch.as_tensor(window, dtype=None, device=device)
+		assert torch.cuda.is_available()
+		result = torch.stft(
+			x, n_fft, hop_length=step, window=window, center=True, pad_mode='reflect',
+			normalized=True, onesided=True, return_complex=True)
+		# fetch from gpu, which is somewhat costly, but still a bit faster than cpu
+		result = result.cpu()
+	else:
+		# manual implementation
+		n_estimates, x = estimate_and_center(n_fft, step, x)
+		x = torch.as_tensor(x, dtype=None, device=device)
+		# create overlapping slices from input
+		fft_in = x.unfold(0, n_fft, step)
+		# apply the window to all slices (doesn't work like this on cuda!)
+		fft_in *= window
+		# flip the dimensions to bring shape to (n_fft, n_estimates)
+		fft_in = fft_in.transpose(1, 0)
+		# print(x.shape, fft_in.shape)
+		# take the fft and normalize it
+		result = torch.fft.rfft2(fft_in, dim=0, norm="ortho")
+	logging.info(f"pytorch {time.time() - start}")
+	return result
 
-	# don't force fftw, fallback to numpy fft if pyFFTW import fails
-	try:
-		# this is the input for the FFT object
-		fft_in = pyfftw.empty_aligned(n_fft, dtype='float32')
-		# the fft object itself, which must be called for each FFT
-		fft_ob = pyfftw.builders.rfft(fft_in, threads=num_cores, planner_effort="FFTW_ESTIMATE", overwrite_input=True)
-		for i in range(n_estimates):
-			# set the data on the FFT input
-			fft_ob.input_array[:] = segment()
-			result[:, i] = fft_ob()
-			emit_progress()
-	except:
-		logging.warning("Fallback to numpy fftpack (slower)!")
+
+def pyfftw_rfft2(n_fft, step, window, x):
+	# this is the input for the FFT object
+	start = time.time()
+	n_estimates, x = estimate_and_center(n_fft, step, x)
+	# raise AttributeError
+	fft_in = pyfftw.empty_aligned((n_fft, n_estimates), dtype='float32')
+	segment_array(fft_in, n_estimates, n_fft, step, window, x)
+	fft_ob = pyfftw.builders.rfft(fft_in, axis=0, threads=os.cpu_count(), planner_effort="FFTW_ESTIMATE")
+	result = fft_ob(ortho=True, normalise_idft=False)
+	logging.info(f"Vectorized {time.time() - start}")
+	return result
+
+
+def np_rfft_pick(n_fft, step, window, x):
+	logging.warning("Fallback to numpy fftpack (slower)!")
+	n_estimates, x = estimate_and_center(n_fft, step, x)
+	# non-vectorized appears to be faster for small sizes
+	if n_fft > 512:
+		def segment():
+			return window * x[i * step: i * step + n_fft]
+		logging.info(f"using non-vectorized fft")
+		start = time.time()
+		complex_dtype = dtype_r2c(x.dtype)
+		# Pre-allocate the STFT matrix
+		n_freqs = n_fft // 2 + 1
+		result = np.empty((n_freqs, n_estimates), dtype=complex_dtype, order='F')
 		for i in range(n_estimates):
 			result[:, i] = np.fft.rfft(segment())
-			emit_progress()
+		logging.info(f"NP {time.time() - start}")
+	else:
+		logging.info(f"using vectorized fft")
+		start = time.time()
+		# Pre-allocate the STFT matrix
+		fft_in = np.empty((n_fft, n_estimates), dtype='float32')
+		segment_array(fft_in, n_estimates, n_fft, step, window, x)
+		result = np.fft.rfft(fft_in, axis=0)
+		logging.info(f"NP array {time.time() - start}")
 	# normalize for constant volume across different FFT sizes
-	result /= np.sqrt(n_fft)
-	return result
+	return result / np.sqrt(n_fft)
+
+
+@jit(nopython=True, cache=True, nogil=True)
+def segment_array(fft_in, n_estimates, n_fft, step, window, x):
+	for i in range(n_estimates):
+		# set the data on the FFT input
+		fft_in[:, i] = window * x[i * step: i * step + n_fft]
 
 
 def dtype_r2c(d, default=np.complex64):
@@ -298,10 +347,10 @@ def istft(stft_matrix, hop_length=None, win_length=None, window='blackmanharris'
 	if hop_length is None:
 		hop_length = int(win_length // 4)
 
-	ifft_window = scipy.signal.get_window(window, win_length, fftbins=True)
+	window = scipy.signal.get_window(window, win_length, fftbins=True)
 
 	# Pad out to match n_fft, and add a broadcasting axis
-	ifft_window = pad_center(ifft_window, n_fft)[:, np.newaxis]
+	window = pad_center(window, n_fft)[:, np.newaxis]
 
 	# For efficiency, trim STFT frames according to signal length if available
 	if length:
@@ -332,7 +381,7 @@ def istft(stft_matrix, hop_length=None, win_length=None, window='blackmanharris'
 		bl_t = min(bl_s + n_columns, n_frames)
 
 		# invert the block and apply the window function
-		ytmp = ifft_window * np.fft.irfft(stft_matrix[:, bl_s:bl_t], axis=0)
+		ytmp = window * np.fft.irfft(stft_matrix[:, bl_s:bl_t], axis=0)
 
 		# Overlap-add the istft block starting at the i'th frame
 		__overlap_add(y[frame * hop_length:], ytmp, hop_length)

@@ -26,8 +26,9 @@ class FourierThread(BaseThread):
 	result = {}
 
 	def run(self):
-		for signal_1d, fft_size, hop, window_name, num_cores, key, filename in self.jobs:
-			self.result[filename, key] = fourier.get_mag(
-				signal_1d, fft_size, hop, window_name, num_cores, prog_sig=self.notifyProgress)
+		for i, (signal_1d, fft_size, hop, window_name, key, filename) in enumerate(self.jobs):
+			self.notifyProgress.emit(i/len(self.jobs)*100)
+			self.result[filename, key] = fourier.get_mag(signal_1d, fft_size, hop, window_name)
 		# logging.info("Cleared Fourier jobs")
 		self.jobs.clear()
+		self.notifyProgress.emit(100)

@@ -218,7 +218,6 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.vmin = -120
 		self.vmax = 0
 		self.cmap = "izo"
-		self.num_cores = os.cpu_count()
 		self.fft_size = 1024
 		self.hop = 256
 
@@ -358,8 +357,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 						logging.info(f"storing new fft {spectrum.audio_path, spectrum.key}")
 						# append to the fourier job list
 						self.fourier_thread.jobs.append((
-							spectrum.signal[:, spectrum.selected_channel], self.fft_size, self.hop, "blackmanharris",
-							self.num_cores, spectrum.key, spectrum.audio_path))
+							spectrum.signal[:, spectrum.selected_channel], self.fft_size, self.hop, "blackmanharris", spectrum.key, spectrum.audio_path))
 		# perform all fourier jobs
 		if self.fourier_thread.jobs:
 			self.fourier_thread.start()

@@ -25,7 +25,7 @@ def trace_all(filename, blocksize, overlap, fft_size, fft_overlap, hop, start= 1
 			# continue
 		print("Tracing from", units.sec_to_timestamp(block_start), "to",
 			  units.sec_to_timestamp(block_start + len(block) / sr))
-		imdata = fourier.get_mag(block, fft_size, hop, "hann", num_cores)
+		imdata = fourier.get_mag(block, fft_size, hop)
 		
 		#we can't do the start automatically
 		#note: this is already accorded for in trace_peak

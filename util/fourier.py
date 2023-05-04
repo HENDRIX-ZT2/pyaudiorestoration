@@ -76,10 +76,10 @@ def torch_rfft2(n_fft, step, window, x):
 	device = "cuda"
 	# device = "cpu"
 	if device == "cuda":
+		assert torch.cuda.is_available()
 		# ensuring that these are 32bit (and thus the complex result 64bit) makes fetching faster
 		x = torch.as_tensor(x, dtype=torch.float32, device=device)
 		window = torch.as_tensor(window, dtype=torch.float32, device=device)
-		assert torch.cuda.is_available()
 		result = torch.stft(
 			x, n_fft, hop_length=step, window=window, center=True, pad_mode='reflect',
 			normalized=True, onesided=True, return_complex=True)

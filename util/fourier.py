@@ -52,7 +52,7 @@ def stft(x, n_fft=1024, step=512, window_name='blackmanharris'):
 	step = max(n_fft // 2, 1) if step is None else int(step)
 	if x.ndim != 1:
 		raise ValueError('x must be 1D')
-	window = scipy.signal.get_window(window_name, n_fft)
+	window = scipy.signal.get_window(window_name, n_fft).astype(np.float32)
 	for fft_function in (
 			torch_rfft2,
 			pyfftw_rfft2,
@@ -76,8 +76,9 @@ def torch_rfft2(n_fft, step, window, x):
 	device = "cuda"
 	# device = "cpu"
 	if device == "cuda":
-		x = torch.as_tensor(x, dtype=None, device=device)
-		window = torch.as_tensor(window, dtype=None, device=device)
+		# ensuring that these are 32bit (and thus the complex result 64bit) makes fetching faster
+		x = torch.as_tensor(x, dtype=torch.float32, device=device)
+		window = torch.as_tensor(window, dtype=torch.float32, device=device)
 		assert torch.cuda.is_available()
 		result = torch.stft(
 			x, n_fft, hop_length=step, window=window, center=True, pad_mode='reflect',

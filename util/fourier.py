@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import time
 import os
@@ -71,47 +72,52 @@ def estimate_and_center(n_fft, step, x):
 	return n_estimates, x
 
 
-def torch_rfft2(n_fft, step, window, x):
+@contextlib.contextmanager
+def timed_log(method_name):
 	start = time.time()
-	device = "cuda"
-	# device = "cpu"
-	if device == "cuda":
-		assert torch.cuda.is_available()
-		# ensuring that these are 32bit (and thus the complex result 64bit) makes fetching faster
-		x = torch.as_tensor(x, dtype=torch.float32, device=device)
-		window = torch.as_tensor(window, dtype=torch.float32, device=device)
-		result = torch.stft(
-			x, n_fft, hop_length=step, window=window, center=True, pad_mode='reflect',
-			normalized=True, onesided=True, return_complex=True)
-		# fetch from gpu, which is somewhat costly, but still a bit faster than cpu
-		result = result.cpu()
-	else:
-		# manual implementation
-		n_estimates, x = estimate_and_center(n_fft, step, x)
-		x = torch.as_tensor(x, dtype=None, device=device)
-		# create overlapping slices from input
-		fft_in = x.unfold(0, n_fft, step)
-		# apply the window to all slices (doesn't work like this on cuda!)
-		fft_in *= window
-		# flip the dimensions to bring shape to (n_fft, n_estimates)
-		fft_in = fft_in.transpose(1, 0)
-		# print(x.shape, fft_in.shape)
-		# take the fft and normalize it
-		result = torch.fft.rfft2(fft_in, dim=0, norm="ortho")
-	logging.info(f"pytorch {time.time() - start}")
+	yield
+	logging.info(f"{method_name} {time.time() - start:0.2f}s")
+
+
+def torch_rfft2(n_fft, step, window, x):
+	with timed_log("pytorch"):
+		device = "cuda"
+		# device = "cpu"
+		if device == "cuda":
+			assert torch.cuda.is_available()
+			# ensuring that these are 32bit (and thus the complex result 64bit) makes fetching faster
+			x = torch.as_tensor(x, dtype=torch.float32, device=device)
+			window = torch.as_tensor(window, dtype=torch.float32, device=device)
+			result = torch.stft(
+				x, n_fft, hop_length=step, window=window, center=True, pad_mode='reflect',
+				normalized=True, onesided=True, return_complex=True)
+			# fetch from gpu, which is somewhat costly, but still a bit faster than cpu
+			result = result.cpu()
+		else:
+			# manual implementation
+			n_estimates, x = estimate_and_center(n_fft, step, x)
+			x = torch.as_tensor(x, dtype=None, device=device)
+			# create overlapping slices from input
+			fft_in = x.unfold(0, n_fft, step)
+			# apply the window to all slices (doesn't work like this on when window is a tensor!)
+			fft_in *= window
+			# flip the dimensions to bring shape to (n_fft, n_estimates)
+			fft_in = fft_in.transpose(1, 0)
+			# print(x.shape, fft_in.shape)
+			# take the fft and normalize it
+			result = torch.fft.rfft2(fft_in, dim=0, norm="ortho")
 	return result
 
 
 def pyfftw_rfft2(n_fft, step, window, x):
 	# this is the input for the FFT object
-	start = time.time()
-	n_estimates, x = estimate_and_center(n_fft, step, x)
-	# raise AttributeError
-	fft_in = pyfftw.empty_aligned((n_fft, n_estimates), dtype='float32')
-	segment_array(fft_in, n_estimates, n_fft, step, window, x)
-	fft_ob = pyfftw.builders.rfft(fft_in, axis=0, threads=os.cpu_count(), planner_effort="FFTW_ESTIMATE")
-	result = fft_ob(ortho=True, normalise_idft=False)
-	logging.info(f"Vectorized {time.time() - start}")
+	with timed_log("pyfftw"):
+		n_estimates, x = estimate_and_center(n_fft, step, x)
+		# raise AttributeError
+		fft_in = pyfftw.empty_aligned((n_fft, n_estimates), dtype='float32')
+		segment_array(fft_in, n_estimates, n_fft, step, window, x)
+		fft_ob = pyfftw.builders.rfft(fft_in, axis=0, threads=os.cpu_count(), planner_effort="FFTW_ESTIMATE")
+		result = fft_ob(ortho=True, normalise_idft=False)
 	return result
 
 
@@ -122,23 +128,19 @@ def np_rfft_pick(n_fft, step, window, x):
 	if n_fft > 512:
 		def segment():
 			return window * x[i * step: i * step + n_fft]
-		logging.info(f"using non-vectorized fft")
-		start = time.time()
-		complex_dtype = dtype_r2c(x.dtype)
-		# Pre-allocate the STFT matrix
-		n_freqs = n_fft // 2 + 1
-		result = np.empty((n_freqs, n_estimates), dtype=complex_dtype, order='F')
-		for i in range(n_estimates):
-			result[:, i] = np.fft.rfft(segment())
-		logging.info(f"NP {time.time() - start}")
+		with timed_log("fftpack (non-vectorized)"):
+			complex_dtype = dtype_r2c(x.dtype)
+			# Pre-allocate the STFT matrix
+			n_freqs = n_fft // 2 + 1
+			result = np.empty((n_freqs, n_estimates), dtype=complex_dtype, order='F')
+			for i in range(n_estimates):
+				result[:, i] = np.fft.rfft(segment())
 	else:
-		logging.info(f"using vectorized fft")
-		start = time.time()
-		# Pre-allocate the STFT matrix
-		fft_in = np.empty((n_fft, n_estimates), dtype='float32')
-		segment_array(fft_in, n_estimates, n_fft, step, window, x)
-		result = np.fft.rfft(fft_in, axis=0)
-		logging.info(f"NP array {time.time() - start}")
+		with timed_log("fftpack (vectorized)"):
+			# Pre-allocate the STFT matrix
+			fft_in = np.empty((n_fft, n_estimates), dtype='float32')
+			segment_array(fft_in, n_estimates, n_fft, step, window, x)
+			result = np.fft.rfft(fft_in, axis=0)
 	# normalize for constant volume across different FFT sizes
 	return result / np.sqrt(n_fft)
 

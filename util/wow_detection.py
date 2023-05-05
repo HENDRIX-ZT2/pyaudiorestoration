@@ -124,15 +124,26 @@ class Track:
 		return fL, fU
 
 	def get_peak(self, i):
-		fft_clip = self.spectrum[self.NL:self.NU, self.frame_0 + i]
-		window = np.hanning(self.NU-self.NL)
-		peak_i = np.argmax(fft_clip * window)
+		fft_frame = self.spectrum[:, self.frame_0 + i]
+		fft_clip = fft_frame[self.NL:self.NU]
+		window_len = self.NU-self.NL
+		if window_len > 4:
+			window = np.hanning(window_len)
+		else:
+			window = np.ones(window_len)
+		peak_in_clip = np.argmax(fft_clip * window)
 		# print(peak_i)
+		peak_in_frame = self.NL + peak_in_clip
 		# make sure i_raw is really a peak and not just a border effect
-		if (fft_clip[peak_i - 1] < fft_clip[peak_i]) and (fft_clip[peak_i + 1] < fft_clip[peak_i]):
+		if self.is_peak(fft_frame, peak_in_frame):
 			# do quadratic interpolation to get more accurate peak
-			peak_i, amp_db = parabolic(fft_clip, peak_i)
-		return self.bin_2_freq(self.NL + peak_i)
+			peak_in_frame, amp_db = parabolic(fft_frame, peak_in_frame)
+		return self.bin_2_freq(peak_in_frame)
+
+	@staticmethod
+	def is_peak(fft_frame, peak_i):
+		"""Returns true if the peak is an actual peak, ie. its amplitude surpasses its neighboring bins"""
+		return fft_frame[peak_i-1] < fft_frame[peak_i] > fft_frame[peak_i+1]
 
 	def trace_peak(self):
 		for i, raw_freq in enumerate(self.freqs):

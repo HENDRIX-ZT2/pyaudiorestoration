@@ -4,6 +4,7 @@ import numpy as np
 import scipy.interpolate
 import scipy.optimize
 from util import fourier, units
+from util.correlation import xcorr
 
 
 def nan_helper(y):
@@ -102,7 +103,8 @@ class Track:
 		if self.frame_0 == self.frame_1:
 			logging.warning("No point in tracing just one FFT")
 
-	def ensure_bins(self, fL, fU):
+	def set_bin_limits(self, fL, fU):
+		"""Turn boundary frequencies into valid bin indices, enforcing a minimal bin width"""
 		# Just to be sure: clamp to valid frequency range
 		fL = max(1.0, fL)
 		fU = min(self.sr / 2, fU)
@@ -122,29 +124,22 @@ class Track:
 		return fL, fU
 
 	def get_peak(self, i):
-		fft_frame = self.spectrum[:, i]  # * window
-		peak_i = np.argmax(fft_frame[self.NL:self.NU]) + self.NL
+		fft_clip = self.spectrum[self.NL:self.NU, self.frame_0 + i]
+		window = np.hanning(self.NU-self.NL)
+		peak_i = np.argmax(fft_clip * window)
+		# print(peak_i)
 		# make sure i_raw is really a peak and not just a border effect
-		if (fft_frame[peak_i - 1] < fft_frame[peak_i]) and (fft_frame[peak_i + 1] < fft_frame[peak_i]):
+		if (fft_clip[peak_i - 1] < fft_clip[peak_i]) and (fft_clip[peak_i + 1] < fft_clip[peak_i]):
 			# do quadratic interpolation to get more accurate peak
-			peak_i = parabolic(fft_frame, peak_i)[0]
-		return self.bin_2_freq(peak_i)
+			peak_i, amp_db = parabolic(fft_clip, peak_i)
+		return self.bin_2_freq(self.NL + peak_i)
 
 	def trace_peak(self):
 		for i, raw_freq in enumerate(self.freqs):
 			fL, fU = self.freq_plus_tolerance(raw_freq)
-			self.ensure_bins(fL, fU)
+			self.set_bin_limits(fL, fU)
 			# overwrite with new result
-			self.freqs[i] = self.get_peak(self.frame_0 + i)
-		# NL, NU, window, log_prediction = adapt_band(freqs, num_bins, freq_2_bin, tolerance, "Linear", out_i)
-		# try:
-		# NL, NU, window, log_prediction = adapt_band(freqs, num_bins, freq_2_bin, tolerance, adaptation_mode, out_i)
-		# except ValueError:
-		# print("ERROR",len(freqs))
-		# NL = NL_o
-		# NU = NU_o
-		# window = np.ones(NU_o-NL_o)
-		# log_prediction = 0
+			self.freqs[i] = self.get_peak(i)
 
 	def COG(self, i):
 		# adapted from Czyzewski et al. (2007)
@@ -170,7 +165,7 @@ class Track:
 		# dfU = np.log2(fU) - SCoct0
 
 		fL, fU = self.freq_plus_tolerance(self.freqs[0])
-		self.ensure_bins(fL, fU)
+		self.set_bin_limits(fL, fU)
 		for i in range(len(self.freqs)):
 			# 18 calculate the COG with hanned frequency importance
 			self.freqs[i] = self.COG(self.frame_0 + i)
@@ -178,12 +173,12 @@ class Track:
 			# set the limits for the consecutive frame [i+1]
 			# based on those of the first frame
 			fL, fU = self.freq_plus_tolerance(self.freqs[i])
-			self.ensure_bins(fL, fU)
+			self.set_bin_limits(fL, fU)
 
 	def trace_correlation(self):
 		fL = min(self.freqs)
 		fU = max(self.freqs)
-		self.ensure_bins(fL, fU)
+		self.set_bin_limits(fL, fU)
 		num_freq_samples = (self.NU - self.NL) * 4
 
 		log_fft_freqs = np.log2(self.fft_freqs[self.NL:self.NU])
@@ -193,23 +188,20 @@ class Track:
 		# create a new array to store FFTs resampled on a log2 scale
 		resampled = np.ones((num_freq_samples, len(self.freqs) + 1), )
 		for i in range(len(self.freqs)):
-			# resampled[:,i] = np.interp(linspace_fft_freqs, log_freqs, self.spectrum[self.NL:self.NU,i])
-			interolator = scipy.interpolate.interp1d(log_fft_freqs, self.spectrum[self.NL:self.NU, i], kind='quadratic')
-			resampled[:, i] = interolator(linspace_fft_freqs)
+			interpolator = scipy.interpolate.interp1d(log_fft_freqs, self.spectrum[self.NL:self.NU, i], kind='quadratic')
+			resampled[:, i] = interpolator(linspace_fft_freqs)
 
 		wind = np.hanning(num_freq_samples)
 		# compute the change over each frame
 		changes = np.ones(len(self.freqs))
 		for i in range(len(self.freqs)):
 			# correlation against the next sample, output will be of the same length
-			# TODO: this could be optimized by doing only, say 10 correlations instead of the full set (one correlation for each input sample)
-			res = np.correlate(resampled[:, i] * wind, resampled[:, i + 1] * wind, mode="same")
+			res = xcorr(resampled[:, i]*wind, resampled[:, i + 1]*wind, mode="same")
 			# this should maybe hanned before argmax to kill obvious outliers
 			i_peak = np.argmax(res)
 			# interpolate the most accurate fit
-			i_interp = parabolic(res, i_peak)[0]
+			i_interp, corr = parabolic(res, i_peak)
 			changes[i] = (num_freq_samples // 2) - i_interp
-
 		# sum up the changes to a speed curve
 		speed = np.cumsum(changes)
 		# up to this point, we've been dealing with interpolated "indices"
@@ -341,4 +333,4 @@ def parabolic(f, x):
 	"""Helper function to refine a peak position in an array"""
 	xv = 1 / 2. * (f[x - 1] - f[x + 1]) / (f[x - 1] - 2 * f[x] + f[x + 1]) + x
 	yv = f[x] - 1 / 4. * (f[x - 1] - f[x + 1]) * (xv - x)
-	return (xv, yv)
+	return xv, yv

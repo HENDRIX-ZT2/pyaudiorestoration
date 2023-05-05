@@ -4,6 +4,7 @@ from PyQt5 import QtWidgets
 
 # custom modules
 from util import spectrum, wow_detection, qt_threads, widgets, io_ops, markers
+from util.fourier import timed_log
 
 from util.undo import AddAction, MoveAction, MergeAction
 from util.config import logging_setup

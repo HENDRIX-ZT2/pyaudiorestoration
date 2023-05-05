@@ -5,9 +5,9 @@ from vispy import scene, gloo, visuals
 from vispy.color import BaseColormap
 from vispy.geometry import Rect
 
-from util import vispy_ext, io_ops, qt_threads, units, colormaps
+from util import vispy_ext, qt_threads, units, colormaps
 
-from util.undo import AddAction, DeleteAction
+from util.undo import DeleteAction
 
 
 class FlatRed(BaseColormap):

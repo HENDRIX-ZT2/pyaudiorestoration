@@ -161,6 +161,9 @@ class FileWidget(QtWidgets.QWidget):
     Displays the current file's basename.
     """
 
+    file_changed = QtCore.pyqtSignal(str)
+    spectrum_changed = QtCore.pyqtSignal(str)
+
     def __init__(self, parent, cfg, description="", ask_user=True):
         super(FileWidget, self).__init__(parent)
         self.parent = parent
@@ -235,7 +238,12 @@ class FileWidget(QtWidgets.QWidget):
                         spectrum.change_file(filepath)
                     self.copy_channels()
                     self.set_sr(self.sr)
-                    self.parent.parent.parent.canvas.reset_view()
+                    self.file_changed.emit(filepath)
+                    # todo
+                    try:
+                        self.parent.parent.parent.canvas.reset_view()
+                    except:
+                        logging.warning(f"refactor self.parent.parent.parent.canvas.reset_view() to signal")
                     self.parent.poll()
             else:
                 showdialog("Unsupported File Format")
@@ -278,7 +286,12 @@ class FileWidget(QtWidgets.QWidget):
     def update_selected_channel(self, stuff=False):
         self.copy_channels()
         # recalculate spectrum
-        self.parent.parent.display_widget.update_fft_settings()
+        self.spectrum_changed.emit("")
+        # todo
+        try:
+            self.parent.parent.display_widget.update_fft_settings()
+        except:
+            logging.warning(f"refactor self.parent.parent.display_widget.update_fft_settings() to signal")
 
 
 class SpectrumSettingsWidget(QtWidgets.QGroupBox, ConfigStorer):
@@ -357,7 +370,7 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
         trace_l = QtWidgets.QLabel("Mode")
         self.trace_c = QtWidgets.QComboBox(self)
         self.trace_c.addItems(
-            ("Center of Gravity", "Peak", "Partials", "Correlation", "Freehand Draw", "Sine Regression"))
+            ("Center of Gravity", "Peak", "Peak Track", "Partials", "Correlation", "Freehand Draw", "Sine Regression"))
         self.trace_c.currentIndexChanged.connect(self.toggle_trace_mode)
 
         self.rpm_l = QtWidgets.QLabel("Source RPM")
@@ -844,6 +857,9 @@ class FilesWidget(QtWidgets.QGroupBox, ConfigStorer):
     controls what happens when they are loaded
     """
 
+    file_changed = QtCore.pyqtSignal(str)
+    spectrum_changed = QtCore.pyqtSignal(str)
+
     def __init__(self, parent, count, cfg={}, ask_user=True):
         super().__init__("Files")
         self.parent = parent
@@ -851,6 +867,9 @@ class FilesWidget(QtWidgets.QGroupBox, ConfigStorer):
         # idiosyncratic order here so the complicated stuff can remain as is
         descriptions = ("Reference", "Source")
         self.files = [FileWidget(self, cfg, description, ask_user) for description in descriptions[-count:]]
+        for file in self.files:
+            file.spectrum_changed.connect(self.spectrum_changed.emit)
+            file.file_changed.connect(self.file_changed.emit)
         vbox2(self, self.files)
 
     def ask_open(self):

@@ -64,6 +64,8 @@ class Track:
 			self.trace_correlation()
 		elif mode == "Peak":
 			self.trace_peak()
+		elif mode == "Peak Track":
+			self.trace_peak_track()
 		elif mode == "Freehand Draw":
 			pass
 		else:
@@ -115,19 +117,21 @@ class Track:
 			self.NL -= 1
 			self.NU += 1
 
-	def freq_plus_tolerance(self, freq):
+	def freq_plus_tolerance(self, freq, tolerance=None):
 		# so take our input frequency, log2 it, +- tolerance
 		# and take power of two of result to go back to Hz
+		if tolerance is None:
+			tolerance = self.tolerance
 		logfreq = np.log2(freq)
-		fL = np.power(2, (logfreq - self.tolerance))
-		fU = np.power(2, (logfreq + self.tolerance))
+		fL = np.power(2, (logfreq - tolerance))
+		fU = np.power(2, (logfreq + tolerance))
 		return fL, fU
 
-	def get_peak(self, i):
+	def get_peak(self, i, allow_window=False):
 		fft_frame = self.spectrum[:, self.frame_0 + i]
 		fft_clip = fft_frame[self.NL:self.NU]
 		window_len = self.NU-self.NL
-		if window_len > 4:
+		if window_len > 4 and allow_window:
 			window = np.hanning(window_len)
 		else:
 			window = np.ones(window_len)
@@ -146,11 +150,31 @@ class Track:
 		return fft_frame[peak_i-1] < fft_frame[peak_i] > fft_frame[peak_i+1]
 
 	def trace_peak(self):
+		# possible approaches
+		# start with user tolerance, then decrease down to min_bins and proceed with freq_plus_tolerance(self.freqs[i-1]
+		# or
+		# work as usual from raw_freq, but tag outliers as NaN, then do a second pass to interp them from the surrounding
+		# either lerp or with peak interpolation
+		# this is mostly driven from the user input and never strays from it
 		for i, raw_freq in enumerate(self.freqs):
 			fL, fU = self.freq_plus_tolerance(raw_freq)
 			self.set_bin_limits(fL, fU)
 			# overwrite with new result
 			self.freqs[i] = self.get_peak(i)
+
+	def trace_peak_track(self):
+		"""start with user tolerance, then decrease down to min_bins and proceed with freq_plus_tolerance(self.freqs[i-1]"""
+
+		freq = self.freqs[0]
+		for i, raw_freq in enumerate(self.freqs):
+			if i > 2:
+				tolerance = self.tolerance / 2
+			else:
+				tolerance = self.tolerance
+			fL, fU = self.freq_plus_tolerance(freq, tolerance)
+			self.set_bin_limits(fL, fU)
+			# overwrite with new result
+			self.freqs[i] = self.get_peak(i, allow_window=False)
 
 	def COG(self, i):
 		# adapted from Czyzewski et al. (2007)

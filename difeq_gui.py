@@ -133,6 +133,12 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.b_save = QtWidgets.QPushButton('=')
 		self.b_save.setToolTip("Write the average EQ curve to an XML file.")
 		self.b_save.clicked.connect(self.write)
+		self.s_highpass = QtWidgets.QSpinBox()
+		self.s_highpass.valueChanged.connect(self.plot)
+		self.s_highpass.setRange(0, 6000)
+		self.s_highpass.setSingleStep(500)
+		self.s_highpass.setValue(0)
+		self.s_highpass.setToolTip("Do not influence under this frequency")
 		self.s_rolloff_start = QtWidgets.QSpinBox()
 		self.s_rolloff_start.valueChanged.connect(self.plot)
 		self.s_rolloff_start.setRange(0, 22000)
@@ -187,13 +193,14 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.qgrid.addWidget(self.b_add, 3, 1)
 		self.qgrid.addWidget(self.b_delete, 4, 1)
 		self.qgrid.addWidget(self.b_save, 5, 1)
-		self.qgrid.addWidget(self.s_rolloff_start, 6, 1)
-		self.qgrid.addWidget(self.s_rolloff_end, 7, 1)
-		self.qgrid.addWidget(self.c_channels, 8, 1)
-		self.qgrid.addWidget(self.s_output_res, 9, 1)
-		self.qgrid.addWidget(self.s_smoothing, 10, 1)
-		self.qgrid.addWidget(self.s_strength, 11, 1)
-		self.qgrid.addWidget(self.c_gain, 12, 1)
+		self.qgrid.addWidget(self.s_highpass, 6, 1)
+		self.qgrid.addWidget(self.s_rolloff_start, 7, 1)
+		self.qgrid.addWidget(self.s_rolloff_end, 8, 1)
+		self.qgrid.addWidget(self.c_channels, 9, 1)
+		self.qgrid.addWidget(self.s_output_res, 10, 1)
+		self.qgrid.addWidget(self.s_smoothing, 11, 1)
+		self.qgrid.addWidget(self.s_strength, 12, 1)
+		self.qgrid.addWidget(self.c_gain, 13, 1)
 		# self.qgrid.addWidget(self.b_noise, 11, 1)
 
 		self.colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
@@ -283,6 +290,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			reduction_step = num_in // num_out
 			# take the average curve of all differential EQs
 			av_in = np.mean(np.asarray(self.eqs), axis=0)
+			highpass = self.s_highpass.value()
 			rolloff_start = self.s_rolloff_start.value()
 			rolloff_end = self.s_rolloff_end.value()
 
@@ -309,7 +317,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
 			# fade out
 			for channel in (0, 1):
+				# todo make rolloff_end a band parameter in octaves?
 				self.av[channel] *= np.interp(self.freqs_av, (rolloff_start, rolloff_end), (1, 0))
+				self.av[channel] *= np.interp(self.freqs_av, (0, highpass), (0, 1))
 
 			# plot the contributing raw curves
 			for name, eq in zip(self.names, np.mean(np.asarray(self.eqs), axis=1)):

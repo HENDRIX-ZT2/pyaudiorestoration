@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import os
 import scipy.signal
@@ -122,28 +124,31 @@ class MainWindow(QtWidgets.QMainWindow):
 
 	def process_max_mono(self, fft_size, hop):
 		for file_name in self.file_names:
-			file_path = self.names_to_full_paths[file_name]
-			signal, sr, channels = io_ops.read_file(file_path)
-			if channels != 2:
-				print("expects stereo input")
-				continue
+			try:
+				file_path = self.names_to_full_paths[file_name]
+				signal, sr, channels = io_ops.read_file(file_path)
+				if channels != 2:
+					print("expects stereo input")
+					continue
 
-			n = len(signal)
-			# pad input stereo signal
-			y_pad = fourier.fix_length(signal, n + fft_size // 2, axis=0)
-			# take FFT for each channel
-			D_L = fourier.stft(y_pad[:, 0], n_fft=fft_size, step=hop)
-			D_R = fourier.stft(y_pad[:, 1], n_fft=fft_size, step=hop)
+				n = len(signal)
+				# pad input stereo signal
+				y_pad = fourier.fix_length(signal, n + fft_size // 2, axis=0)
+				# take FFT for each channel
+				D_L = np.array(fourier.stft(y_pad[:, 0], n_fft=fft_size, step=hop))
+				D_R = np.array(fourier.stft(y_pad[:, 1], n_fft=fft_size, step=hop))
 
-			for op_type, mask in (
-					("max", np.abs(D_L) > np.abs(D_R)),
-					("min", np.abs(D_L) < np.abs(D_R))
-					):
-				D_out = np.where(mask, D_L, D_R)
-				# take iFFT
-				y_out = fourier.istft(D_out, length=n, hop_length=hop)
+				for op_type, mask in (
+						("max", np.abs(D_L) > np.abs(D_R)),
+						("min", np.abs(D_L) < np.abs(D_R))
+						):
+					D_out = np.where(mask, D_L, D_R)
+					# take iFFT
+					y_out = fourier.istft(D_out, length=n, hop_length=hop)
 
-				io_ops.write_file(file_path, y_out, sr, 1, suffix=op_type)
+					io_ops.write_file(file_path, y_out, sr, 1, suffix=op_type)
+			except:
+				logging.exception(f"Failed for {file_name}")
 
 	def process_heuristic(self, fft_size, hop):
 		# get params from gui

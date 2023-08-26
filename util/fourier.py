@@ -298,7 +298,7 @@ def tiny(x):
 	return np.finfo(dtype).tiny
 
 
-def istft(stft_matrix, hop_length=None, win_length=None, window='blackmanharris', center=True, dtype=None, length=None):
+def istft(stft_matrix, hop_length=None, win_length=None, window_name='blackmanharris', center=True, dtype=None, length=None):
 	"""
 	Inverse short-time Fourier transform (ISTFT).
 	Converts a complex-valued spectrogram ``stft_matrix`` to time-series ``y``
@@ -349,8 +349,7 @@ def istft(stft_matrix, hop_length=None, win_length=None, window='blackmanharris'
 	# Set the default hop, if it's not already specified
 	if hop_length is None:
 		hop_length = int(win_length // 4)
-
-	window = scipy.signal.get_window(window, win_length, fftbins=True)
+	window = scipy.signal.get_window(window_name, win_length, fftbins=True)
 
 	# Pad out to match n_fft, and add a broadcasting axis
 	window = pad_center(window, n_fft)[:, np.newaxis]
@@ -392,7 +391,7 @@ def istft(stft_matrix, hop_length=None, win_length=None, window='blackmanharris'
 		frame += (bl_t - bl_s)
 
 	# Normalize by sum of squared window
-	ifft_window_sum = window_sumsquare(window,
+	ifft_window_sum = window_sumsquare(window_name,
 									   n_frames,
 									   win_length=win_length,
 									   n_fft=n_fft,
@@ -475,14 +474,14 @@ def __window_ss_fill(x, win_sq, n_frames, hop_length):  # pragma: no cover
 		x[sample:min(n, sample + n_fft)] += win_sq[:max(0, min(n_fft, n - sample))]
 
 
-def window_sumsquare(window, n_frames, hop_length=512, win_length=None, n_fft=2048,
+def window_sumsquare(window_name, n_frames, hop_length=512, win_length=None, n_fft=2048,
 					 dtype=np.float32, norm=None):
 	"""Compute the sum-square envelope of a window function at a given hop length.
 	This is used to estimate modulation effects induced by windowing observations
 	in short-time Fourier transforms.
 	Parameters
 	----------
-	window : string
+	window_name : string
 	n_frames : int > 0
 		The number of analysis frames
 	hop_length : int > 0
@@ -522,7 +521,7 @@ def window_sumsquare(window, n_frames, hop_length=512, win_length=None, n_fft=20
 	x = np.zeros(n, dtype=dtype)
 
 	# Compute the squared window at the desired length
-	win_sq = scipy.signal.get_window(window, win_length)
+	win_sq = scipy.signal.get_window(window_name, win_length)
 	win_sq = normalize(win_sq, norm=norm) ** 2
 	win_sq = pad_center(win_sq, n_fft)
 

@@ -1,0 +1,28 @@
+{
+	"fft_overlap": 4,
+	"fft_size": 128,
+	"markers": [
+		[
+			0.437039125431265,
+			17246.594093370568,
+			0.5920519754017158,
+			1752.0153744768966,
+			0.023871752437350232,
+			0.57102968122382
+		],
+		[
+			31.43664794970266,
+			18668.18724262771,
+			31.592787441282944,
+			672.5956877594803,
+			1.5000947552746462,
+			0.6198419633939488
+		]
+	],
+	"reference": "C:/Users/arnfi/PycharmProjects/pyaudiorestoration/samples/rhythm.flac",
+	"resampling_mode": "Sinc",
+	"sinc_quality": 50,
+	"smoothing": 3,
+	"source": "C:/Users/arnfi/PycharmProjects/pyaudiorestoration/samples/rhythm+5percent.flac",
+	"suffix": ""
+}

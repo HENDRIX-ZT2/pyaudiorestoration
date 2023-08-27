@@ -148,6 +148,11 @@ class Spectrum:
 	def f_max(self):
 		return self.sr / 2
 
+	def get_signal_around(self, t, width):
+		t0 = t - width
+		t1 = t + width
+		return self.get_signal(t0, t1)
+
 	def get_signal(self, t0, t1):
 		"""Get a signal from t0 to t1, padded as needed"""
 		ref_sample0 = int(t0*self.sr)

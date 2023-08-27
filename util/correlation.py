@@ -25,9 +25,10 @@ def find_delay(a, b, ignore_phase=False, window_name=None):
 	# we are not necessarily interested in the largest positive value if the correlation is negative
 	if ignore_phase:
 		logging.warning("Ignoring phase")
-		np.abs(res, out=res)
-	# get the index of the strongest correlation
-	max_index = np.argmax(res)
+		max_index = np.argmax(np.abs(res))
+	else:
+		# get the index of the strongest correlation
+		max_index = np.argmax(res)
 	# logging.debug(f"max_index {max_index}")
 	# refine the index with interpolation to get the most accurate fit
 	i_peak, corr = parabolic(res, max_index)

@@ -2,6 +2,7 @@ import logging
 import os
 
 import numpy as np
+import resampy
 from PyQt5 import QtWidgets
 
 # custom modules
@@ -88,20 +89,48 @@ class Canvas(spectrum.SpectrumCanvas):
 			self.spectra[-1].set_offset(trace.d)
 			self.update_corr_view(trace)
 
-	def correlate_sources(self, t0, t1, delay, lower, upper, window_name=None):
+	def correlate_sources(self, t0, t1, delay, lower, upper, window_name=None, match_speed=True):
 		# todo - this isn't dealing with different sample rates
 		sr = self.sr
+		t_center = (t0 + t1) / 2
+		t_width = (t1 - t0) / 2
 		ref, src = self.spectra
-		ref_sig = ref.get_signal(t0, t1)
-		src_sig = src.get_signal(t0 - delay, t1 - delay)
-		sample_delay, corr = find_delay(
-			filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
-			filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3),
-			ignore_phase=self.parent.props.alignment_widget.ignore_phase, window_name=window_name)
-		logging.info(f"Moved by {sample_delay} samples")
-		# update the lag marker
-		time_delay = sample_delay / sr
-		return time_delay, corr
+		ref_sig = ref.get_signal_around(t_center, t_width)
+		# print(f"speed {speed}")
+		if match_speed:
+			# get rough speed difference for src
+			speed = self.get_speed_at(t_center)
+			# get respeeded duration around center
+			src_sig = src.get_signal_around(t_center - delay, t_width / speed)
+			# resample to match expected speed of ref
+			src_sig_res = resampy.resample(src_sig, sr / speed, sr, axis=0, filter='sinc_window', num_zeros=8)
+			sample_delay_res, corr_res = find_delay(
+				filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
+				filters.butter_bandpass_filter(src_sig_res, lower, upper, sr, order=3),
+				ignore_phase=self.parent.props.alignment_widget.ignore_phase, window_name=window_name)
+			# correct delay for speed change
+			return sample_delay_res / sr * speed, corr_res
+		else:
+			src_sig = src.get_signal_around(t_center - delay, t_width)
+			# print(f"len(ref_sig) {len(ref_sig)} len(src_sig) {len(src_sig)} len(src_sig_res) {len(src_sig_res)}")
+			sample_delay, corr = find_delay(
+				filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
+				filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3),
+				ignore_phase=self.parent.props.alignment_widget.ignore_phase, window_name=window_name)
+			return sample_delay / sr, corr
+		# logging.info(f"corr: raw {corr} vs res {corr_res}")
+		# logging.info(f"delay: raw {sample_delay} vs res {sample_delay_res}")
+		# logging.info(f"Moved by {sample_delay} samples")
+
+		# from matplotlib import pyplot as plt
+		# # '-', '--', '-.', ':', 'None', ' ', '', 'solid', 'dashed', 'dashdot', 'dotted'
+		# plt.plot(np.arange(0, len(ref_sig), 1), ref_sig, label=f"ref_sig", linestyle='-.')
+		# # plt.plot(src_sig, label=f"src_sig", linestyle='--')
+		# plt.plot(np.arange(0, len(src_sig_res), 1), src_sig_res, label=f"src_sig_res", linestyle='-.')
+		# plt.plot(np.arange(0, len(src_sig_res), 1)+sample_delay_res, src_sig_res, label=f"src_sig_res_al", linestyle='-.')
+		# plt.vlines(len(ref_sig)/2, -0.1, 0.1, linestyles='--')
+		# plt.legend(frameon=True, framealpha=0.75)
+		# plt.show()
 
 	def run_resample(self):
 		self.resample_files((self.filenames[1],))
@@ -142,6 +171,25 @@ class Canvas(spectrum.SpectrumCanvas):
 	def update_corr_view(self, closest_marker):
 		v = "None" if closest_marker.corr is None else f"{closest_marker.corr:.3f}"
 		self.parent.props.alignment_widget.corr_l.setText(v)
+
+	def get_speed_at(self, t):
+		width = 0.1
+		# calc speed across range
+		data = self.lag_line.data
+		# smooth / lowpass lag curve to get a better derivative
+		filtered = data[:, 1]
+		filtered = filters.butter_bandpass_filter(filtered, 0, 15, self.lag_line.marker_sr, order=3)
+		# for input in t, sample lag at t+-range (0.5 s?)
+		before = np.interp(t-width, data[:, 0], filtered)
+		after = np.interp(t+width, data[:, 0], filtered)
+		speed = (after - before) / (2 * width) + 1.0
+		logging.info(f"Source runs {(speed-1)*100:0.2f}% wrong")
+		return speed
+		# from matplotlib import pyplot as plt
+		# plt.plot(filtered, label=f"filtered")
+		# plt.plot(data[:, 1], label=f"raw")
+		# plt.legend(frameon=True, framealpha=0.75)
+		# plt.show()
 
 	def on_mouse_release(self, event):
 		# coords of the click on the vispy canvas

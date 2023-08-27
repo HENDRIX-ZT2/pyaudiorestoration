@@ -2,6 +2,7 @@ import logging
 
 import numpy as np
 
+import util.correlation
 
 try:
 	import resampy
@@ -170,7 +171,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
 			# get peak from the selected region 
 			raw_index = np.argmax(self.spectrum[border_L:border_R]) + border_L
-			interp_index, dB = wow_detection.parabolic(self.spectrum, raw_index)
+			interp_index, dB = util.correlation.parabolic(self.spectrum, raw_index)
 
 			# convert to frequency
 			freq = interp_index * self.sr / self.fft_size

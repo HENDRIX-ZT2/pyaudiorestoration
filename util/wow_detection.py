@@ -3,8 +3,8 @@ import logging
 import numpy as np
 import scipy.interpolate
 import scipy.optimize
-from util import fourier, units
-from util.correlation import xcorr
+from util import fourier
+from util.correlation import xcorr, parabolic
 
 
 def nan_helper(y):
@@ -364,8 +364,3 @@ def trace_sine_reg(speed_curve, t0, t1, rpm=None):
 	return res["amp"], res["omega"], res["phase"], 0
 
 
-def parabolic(f, x):
-	"""Helper function to refine a peak position in an array"""
-	xv = 1 / 2. * (f[x - 1] - f[x + 1]) / (f[x - 1] - 2 * f[x] + f[x + 1]) + x
-	yv = f[x] - 1 / 4. * (f[x - 1] - f[x + 1]) * (xv - x)
-	return xv, yv

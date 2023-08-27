@@ -150,17 +150,17 @@ class Spectrum:
 
 	def get_signal(self, t0, t1):
 		"""Get a signal from t0 to t1, padded as needed"""
-		ref_t0 = int(t0*self.sr)
-		ref_t1 = int(t1*self.sr)
+		ref_sample0 = int(t0*self.sr)
+		ref_sample1 = int(t1*self.sr)
 		ref_pad_l = 0
 		ref_pad_r = 0
 		# pad if needed
-		if ref_t0 < 0:
-			ref_pad_l = abs(ref_t0)
+		if ref_sample0 < 0:
+			ref_pad_l = abs(ref_sample0)
 			ref_t0 = 0
-		if ref_t1 > len(self.signal):
-			ref_pad_r = ref_t1 - len(self.signal)
-		sig = self.signal[ref_t0:ref_t1, self.selected_channel]
+		if ref_sample1 > len(self.signal):
+			ref_pad_r = ref_sample1 - len(self.signal)
+		sig = self.signal[ref_sample0:ref_sample1, self.selected_channel]
 		return np.pad(sig, (ref_pad_l, ref_pad_r), "constant", constant_values=0)
 
 

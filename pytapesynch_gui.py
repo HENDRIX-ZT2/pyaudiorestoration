@@ -5,7 +5,7 @@ import numpy as np
 from PyQt5 import QtWidgets
 
 # custom modules
-from util.correlation import xcorr
+from util.correlation import xcorr, find_delay
 from util.undo import AddAction, DeltaAction
 from util import spectrum, wow_detection, qt_threads, widgets, filters, io_ops, \
 	markers
@@ -77,44 +77,31 @@ class Canvas(spectrum.SpectrumCanvas):
 		selected = self.selected_markers
 		for lag in selected:
 			try:
-				# todo - this isn't dealing with different sample rates
-				sr = self.sr
 				# prepare some values
-				t0 = lag.a[0]
-				t1 = lag.b[0]
-				ref, src = self.spectra
-				ref_sig = ref.get_signal(t0, t1)
-				src_sig = src.get_signal(t0-lag.d, t1-lag.d)
-
-				freqs = sorted((lag.a[1], lag.b[1]))
-				lower = max(freqs[0], 1)
-				upper = min(freqs[1], sr // 2 - 1)
-				# correlate both sources
-				res = xcorr(
-					filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
-					filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3), mode="same")
-
-				# interpolate to get the most accurate fit
-				# we are not necessarily interested in the largest positive value if the correlation is negative
-				if self.parent.props.alignment_widget.ignore_phase:
-					logging.warning("Ignoring phase")
-					np.abs(res, out=res)
-
-				# get the index of the strongest correlation
-				max_index = np.argmax(res)
-				# refine the index with interpolation
-				i_peak, lag.corr = wow_detection.parabolic(res, max_index)
-				result = i_peak - len(ref_sig) // 2
-				# update the lag marker
-				delta = result / sr
-				deltas.append(delta)
-				logging.info(f"Moved by {result} samples")
+				t0, t1, lower, upper = self.get_times_freqs(lag.a, lag.b, self.sr)
+				time_delay, lag.corr = self.correlate_sources(t0, t1, lag.d, lower, upper)
+				deltas.append(time_delay)
 			except:
 				logging.exception(f"Refining failed")
 		self.props.undo_stack.push(DeltaAction(selected, deltas))
 		for trace in selected:
 			self.spectra[-1].set_offset(trace.d)
 			self.update_corr_view(trace)
+
+	def correlate_sources(self, t0, t1, delay, lower, upper, window_name=None):
+		# todo - this isn't dealing with different sample rates
+		sr = self.sr
+		ref, src = self.spectra
+		ref_sig = ref.get_signal(t0, t1)
+		src_sig = src.get_signal(t0 - delay, t1 - delay)
+		sample_delay, corr = find_delay(
+			filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
+			filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3),
+			ignore_phase=self.parent.props.alignment_widget.ignore_phase, window_name=window_name)
+		logging.info(f"Moved by {sample_delay} samples")
+		# update the lag marker
+		time_delay = sample_delay / sr
+		return time_delay, corr
 
 	def run_resample(self):
 		self.resample_files((self.filenames[1],))
@@ -172,47 +159,36 @@ class Canvas(spectrum.SpectrumCanvas):
 					elif "Shift" in event.modifiers:
 						marker = markers.LagSample(self, a, b)
 						self.props.undo_stack.push(AddAction((marker,)))
-					# elif "Alt" in event.modifiers:
-						# print()
-						# print("Start")
-						# #first get the time range for both
-						# #apply bandpass
-						# #split into pieces and look up the delay for each
-						# #correlate all the pieces
-						# sr = self.sr
-						# dur = int(0.2 *sr)
-						# times = sorted((a[0], b[0]))
-						# ref_t0 = int(sr*times[0])
-						# ref_t1 = int(sr*times[1])
-						# # src_t0 = int(sr*lag.a[0]+lag.d)
-						# # src_t1 = src_t0+ref_t1-ref_t0
-						# freqs = sorted((a[1], b[1]))
-						# lower = max(freqs[0], 1)
-						# upper = min(freqs[1], sr//2-1)
-						# # channels = [i for i in range(len(self.channel_checkboxes)) if self.channel_checkboxes[i].isChecked()]
-						# ref_ob = sf.SoundFile(self.props.reffilename)
-						# ref_sig = ref_ob.read(always_2d=True, dtype='float32')
-						# src_ob = sf.SoundFile(self.props.srcfilename)
-						# src_sig = src_ob.read(always_2d=True, dtype='float32')
-						# sample_times = np.arange(ref_t0, ref_t1, dur//32)
-						# data = self.lag_line.data
-						# sample_lags = np.interp(sample_times, data[:, 0]*sr, data[:, 1]*sr)
+					elif "Alt" in event.modifiers:
+						logging.info("Azimuth mode")
+						# first get the time range for both
+						sr = self.sr
+						dur = 0.2
+						overlap = 32
+						ref_t0, ref_t1, lower, upper = self.get_times_freqs(a, b, sr)
+
+						sample_times = np.arange(ref_t0, ref_t1, dur/overlap)
+						data = self.lag_line.data
+						sample_lags = np.interp(sample_times, data[:, 0], data[:, 1])
 						
-						# #could do a stack
-						# out = np.zeros((len(sample_times), 2), dtype=np.float32)
-						# out[:, 0] = sample_times/sr
-						# for i, (x, d) in enumerate(zip(sample_times, sample_lags)):
-						#
-						# 	ref_s = filters.butter_bandpass_filter(ref_sig[x:x+dur,0], lower, upper, sr, order=3)
-						# 	src_s = filters.butter_bandpass_filter(src_sig[x-int(d):x-int(d)+dur,0], lower, upper, sr, order=3)
-						# 	res = np.correlate(ref_s*np.hanning(dur), src_s*np.hanning(dur), mode="same")
-						# 	i_peak = np.argmax(res)
-						# 	# interpolate the most accurate fit
-						# 	result = wow_detection.parabolic(res, i_peak)[0] -(len(ref_s)//2)
-						# 	# print("extra accuracy (smp)",int(d)+result)
-						# 	out[i, 1] = (int(d)+result)/sr
-						# self.lag_line.data =out
-						# self.lag_line.line_speed.set_data(pos=out)
+						# could do a stack
+						out = np.zeros((len(sample_times), 2), dtype=np.float32)
+						out[:, 0] = sample_times
+						# apply bandpass
+						# split into pieces and look up the delay for each
+						# correlate all the pieces
+						for i, (x, d) in enumerate(zip(sample_times, sample_lags)):
+							time_delay, corr = self.correlate_sources(x, x+dur, d, lower, upper, "hann")
+							out[i, 1] = d+time_delay
+						self.lag_line.data = out
+						self.lag_line.line_speed.set_data(pos=out)
+
+	def get_times_freqs(self, a, b, sr):
+		ref_t0, ref_t1 = sorted((a[0], b[0]))
+		freqs = sorted((a[1], b[1]))
+		lower = max(freqs[0], 1)
+		upper = min(freqs[1], sr // 2 - 1)
+		return ref_t0, ref_t1, lower, upper
 
 
 if __name__ == '__main__':

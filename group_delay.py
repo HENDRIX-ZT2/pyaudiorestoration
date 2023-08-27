@@ -3,8 +3,7 @@
 # plot x: freq, y: phase delay, correlation
 import logging
 
-from util.wow_detection import parabolic
-from util.correlation import xcorr
+from util.correlation import xcorr, parabolic
 
 logging.basicConfig(level=logging.INFO)
 # logging.basicConfig(level=logging.DEBUG)

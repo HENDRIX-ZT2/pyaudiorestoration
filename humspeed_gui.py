@@ -2,40 +2,22 @@ import logging
 
 import numpy as np
 
+
 try:
 	import resampy
 except:
-	print("Resampy is not installed")
-	print("In the commandline, run: pip install resampy")
+	logging.warning("Resampy is not installed. In the commandline, run: pip install resampy")
 	resampy = None
 from PyQt5 import QtWidgets
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 import matplotlib.pyplot as plt
-from util import fourier, io_ops, units, wow_detection, widgets, config
-
-
-def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L"):
-	signal, sr, channels = io_ops.read_file(filename)
-	spectra = []
-	channel_map = {"L": (0,), "R": (1,), "L+R": (0, 1)}
-	for channel in channel_map[channel_mode]:
-		print("channel", channel)
-		if channel == channels:
-			print("not enough channels for L/R comparison  - fallback to mono")
-			break
-		# get the magnitude spectrum
-		imdata = units.to_dB(fourier.get_mag(signal[:, channel], fft_size, hop, "hann"))
-		spec = np.mean(np.array(imdata), axis=1)
-		spectra.append(spec)
-	if len(spectra) > 1:
-		return np.mean(spectra, axis=0), sr
-	else:
-		return spectra[0], sr
+from util import fourier, io_ops, wow_detection, widgets, config
+from util.spectrum_flat import spectrum_from_audio
 
 
 def get_spectrum(file_src, channel_mode, fft_size):
-	print("Analyzing channels:", channel_mode)
+	logging.info(f"Analyzing channels: {channel_mode}")
 	# get the averaged spectrum for this audio file
 	hop = fft_size * 2
 	spectrum, sr = spectrum_from_audio(file_src, fft_size, hop, channel_mode)
@@ -54,7 +36,9 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.file_src = ""
 		self.freqs = None
 		self.spectrum = None
-		self.fft_size = 131072
+		# self.fft_size = 131072
+		# self.fft_size = 262144  # 2**18
+		self.fft_size = 524288  # 2**19
 		self.marker_freqs = []
 		self.marker_dBs = []
 		self.ratios = []

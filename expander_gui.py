@@ -5,7 +5,9 @@ from PyQt5 import QtWidgets
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 import matplotlib.pyplot as plt
-from util import fourier, io_ops, units, widgets, config
+from util import io_ops, units, widgets, config
+from util.spectrum_flat import spectrum_from_audio
+
 
 def make_odd(n):
 	if n % 2:
@@ -13,23 +15,6 @@ def make_odd(n):
 	else:
 		return n+1
 
-def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L"):
-	signal, sr, channels = io_ops.read_file(filename)
-	spectra = []
-	channel_map = {"L":(0,), "R":(1,), "L,R":(0,1), "Mean":(0,1)}
-	for channel in channel_map[channel_mode]:
-		print("channel",channel)
-		if channel == channels:
-			print("not enough channels for L/R comparison  - fallback to mono")
-			break
-		#get the magnitude spectrum
-		imdata = units.to_dB(fourier.get_mag(signal[:, channel], fft_size, hop, "hann"))
-		spectra.append(imdata)
-	# take mean across axis
-	if channel_mode == "Mean":
-		return (np.mean(spectra, axis=0), ), sr
-	else:
-		return spectra, sr
 	
 class MainWindow(QtWidgets.QMainWindow):
 	def __init__(self, parent=None):

@@ -7,34 +7,11 @@ from PyQt5 import QtWidgets, QtGui, QtCore
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 import matplotlib.pyplot as plt
-from util import fourier, io_ops, filters, widgets, units, config
+from util import fourier, filters, widgets, config
+from util.spectrum_flat import spectrum_from_audio_stereo
 
 
 # todo: make global sr set by the first file that is loaded, make all others fit
-
-
-def spectrum_from_audio(filename, fft_size=4096, hop=256, channel_mode="L", start=None, end=None):
-	print("reading", filename)
-	signal, sr, channels = io_ops.read_file(filename)
-	print(sr)
-	spectra = []
-	channel_map = {"L": (0,), "R": (1,), "L+R": (0, 1)}
-	for channel in channel_map[channel_mode]:
-		print("channel", channel)
-		if channel == channels:
-			print("not enough channels for L/R comparison  - fallback to mono")
-			break
-		# get the magnitude spectrum
-		# avoid divide by 0 error in log
-		imdata = units.to_dB(fourier.get_mag(signal[:, channel], fft_size, hop, "hann"))
-		# fetch from pytorch to take mean
-		spec = np.mean(np.array(imdata), axis=1)
-		spectra.append(spec)
-	# pad the data so we can compare this in a stereo setting if required
-	if len(spectra) < 2:
-		spectra.append(spectra[0])
-	# return np.mean(spectra, axis=0), sr
-	return spectra, sr
 
 
 def indent(e, level=0):
@@ -76,8 +53,8 @@ def get_eq(file_src, file_ref, channel_mode):
 	fft_size = 16384
 	hop = 8192
 	# todo: set custom times for both, if given
-	spectra_src, sr_src = spectrum_from_audio(file_src, fft_size, hop, channel_mode)
-	spectra_ref, sr_ref = spectrum_from_audio(file_ref, fft_size, hop, channel_mode)
+	spectra_src, sr_src = spectrum_from_audio_stereo(file_src, fft_size, hop, channel_mode)
+	spectra_ref, sr_ref = spectrum_from_audio_stereo(file_ref, fft_size, hop, channel_mode)
 
 	freqs = fourier.fft_freqs(fft_size, sr_src)
 	# resample the ref spectrum to match the source

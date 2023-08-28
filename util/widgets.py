@@ -527,7 +527,7 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
 
 
 class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
-    vars_for_saving = ("smoothing",)
+    vars_for_saving = ("smoothing", "ignore_phase",)
 
     def __init__(self, ):
         super().__init__("Alignment")
@@ -560,6 +560,10 @@ class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
 
     @property
     def ignore_phase(self): return self.ignore_phase_b.isChecked()
+
+    @ignore_phase.setter
+    def ignore_phase(self, is_checked):
+        self.ignore_phase_b.setChecked(is_checked)
 
 
 class DropoutWidget(QtWidgets.QGroupBox):

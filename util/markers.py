@@ -317,7 +317,7 @@ class LagSample(BaseMarker):
 	color_def = (1, 1, 1, .5)
 	color_sel = (0, 0, 1, 1)
 
-	def __init__(self, vispy_canvas, a, b, d=None, corr=None):
+	def __init__(self, vispy_canvas, a, b, d=None, corr=0):
 		BaseMarker.__init__(self, vispy_canvas, self.color_def, self.color_sel)
 		self.a = a
 		self.b = b
@@ -520,6 +520,10 @@ class PanLine(BaseLine):
 
 class LagLine(BaseLine):
 	"""Stores and displays the average, ie. master speed curve."""
+	colors_val = [(1, 0, 0, 1), (0.5, 0.5, 0.5, 1), (0, 1, 0, 1)]
+	colors_range = (-1, 0, 1)
+	color_interp = interpolate.CubicSpline(colors_range, colors_val, bc_type="clamped")
+
 	def __init__(self, vispy_canvas):
 		super().__init__(vispy_canvas)
 		self.smoothing = 3
@@ -528,27 +532,35 @@ class LagLine(BaseLine):
 		self.vispy_canvas.markers.sort(key=lambda tup: tup.t)
 		sample_times = [sample.t for sample in self.vispy_canvas.markers]
 		sample_lags = [sample.d for sample in self.vispy_canvas.markers]
+		sample_corrs = [sample.corr for sample in self.vispy_canvas.markers]
 
 		# ensure that k doesn't exceed the order possible to infer from amount of samples
 		if len(self.vispy_canvas.markers) == 0:
-			return 0
+			return 0, 0
 		elif len(self.vispy_canvas.markers) == 1:
-			return np.interp(times, sample_times, sample_lags)
+			return np.interp(times, sample_times, sample_lags), np.interp(times, sample_times, sample_corrs)
 		else:
 			# using bezier splines
 			k = min(self.smoothing, len(self.vispy_canvas.markers)-1)
-			s = interpolate.InterpolatedUnivariateSpline(sample_times, sample_lags, k=k)
-			return s(times)
+			lags_s = interpolate.InterpolatedUnivariateSpline(sample_times, sample_lags, k=k)
+			corrs_s = interpolate.InterpolatedUnivariateSpline(sample_times, sample_corrs, k=k)
+			return lags_s(times), corrs_s(times)
+
+	def get_colors(self, corr):
+		color = self.color_interp(corr)
+		return color.clip(0.0, 1.0)
 
 	def update(self):
 		logging.info(f"Updating sync line")
 		if self.vispy_canvas.markers:
 			times = self.get_times()
 			try:
-				lag = self.sample_at(times)
+				lag, corr = self.sample_at(times)
 				self.data = np.stack((times, lag), axis=-1)
+				# map the correlation to color range
+				color = self.get_colors(corr)
 			except:
 				logging.exception(f"LagLine.update failed")
 		else:
 			self.data = self.empty
-		self.line_speed.set_data(pos=self.data)
+		self.line_speed.set_data(pos=self.data, color=color)

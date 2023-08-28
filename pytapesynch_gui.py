@@ -108,6 +108,16 @@ class Canvas(spectrum.SpectrumCanvas):
 				filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
 				filters.butter_bandpass_filter(src_sig_res, lower, upper, sr, order=3),
 				ignore_phase=self.parent.props.alignment_widget.ignore_phase, window_name=window_name)
+
+			# from matplotlib import pyplot as plt
+			# # '-', '--', '-.', ':', 'None', ' ', '', 'solid', 'dashed', 'dashdot', 'dotted'
+			# plt.plot(np.arange(0, len(ref_sig), 1), ref_sig, label=f"ref_sig", linestyle='-.')
+			# # plt.plot(src_sig, label=f"src_sig", linestyle='--')
+			# plt.plot(np.arange(0, len(src_sig_res), 1), src_sig_res, label=f"src_sig_res", linestyle='-.')
+			# plt.plot(np.arange(0, len(src_sig_res), 1)+sample_delay_res, src_sig_res, label=f"src_sig_res_al", linestyle='-.')
+			# plt.vlines(len(ref_sig)/2, -0.1, 0.1, linestyles='--')
+			# plt.legend(frameon=True, framealpha=0.75)
+			# plt.show()
 			# correct delay for speed change
 			return sample_delay_res / sr * speed, corr_res
 		else:
@@ -122,15 +132,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		# logging.info(f"delay: raw {sample_delay} vs res {sample_delay_res}")
 		# logging.info(f"Moved by {sample_delay} samples")
 
-		# from matplotlib import pyplot as plt
-		# # '-', '--', '-.', ':', 'None', ' ', '', 'solid', 'dashed', 'dashdot', 'dotted'
-		# plt.plot(np.arange(0, len(ref_sig), 1), ref_sig, label=f"ref_sig", linestyle='-.')
-		# # plt.plot(src_sig, label=f"src_sig", linestyle='--')
-		# plt.plot(np.arange(0, len(src_sig_res), 1), src_sig_res, label=f"src_sig_res", linestyle='-.')
-		# plt.plot(np.arange(0, len(src_sig_res), 1)+sample_delay_res, src_sig_res, label=f"src_sig_res_al", linestyle='-.')
-		# plt.vlines(len(ref_sig)/2, -0.1, 0.1, linestyles='--')
-		# plt.legend(frameon=True, framealpha=0.75)
-		# plt.show()
 
 	def run_resample(self):
 		self.resample_files((self.filenames[1],))
@@ -166,14 +167,14 @@ class Canvas(spectrum.SpectrumCanvas):
 			click = self.px_to_spectrum(event.pos)
 			if click is not None:
 				# sample the lag curve at the click's time and move the source spectrum
-				self.spectra[-1].set_offset(self.lag_line.sample_at(click[0]))
+				self.spectra[-1].set_offset(self.lag_line.sample_at(click[0])[0])
 
 	def update_corr_view(self, closest_marker):
 		v = "None" if closest_marker.corr is None else f"{closest_marker.corr:.3f}"
 		self.parent.props.alignment_widget.corr_l.setText(v)
 
 	def get_speed_at(self, t):
-		width = 0.1
+		width = 0.05
 		# calc speed across range
 		data = self.lag_line.data
 		# smooth / lowpass lag curve to get a better derivative
@@ -209,10 +210,10 @@ class Canvas(spectrum.SpectrumCanvas):
 						self.props.undo_stack.push(AddAction((marker,)))
 					elif "Alt" in event.modifiers:
 						logging.info("Azimuth mode")
-						# first get the time range for both
 						sr = self.sr
-						dur = 0.2
+						dur = 0.1
 						overlap = 32
+						# first get the time range for selection
 						ref_t0, ref_t1, lower, upper = self.get_times_freqs(a, b, sr)
 
 						sample_times = np.arange(ref_t0, ref_t1, dur/overlap)
@@ -221,15 +222,19 @@ class Canvas(spectrum.SpectrumCanvas):
 						
 						# could do a stack
 						out = np.zeros((len(sample_times), 2), dtype=np.float32)
+						corrs = np.zeros(len(sample_times), dtype=np.float32)
 						out[:, 0] = sample_times
 						# apply bandpass
 						# split into pieces and look up the delay for each
 						# correlate all the pieces
 						for i, (x, d) in enumerate(zip(sample_times, sample_lags)):
-							time_delay, corr = self.correlate_sources(x, x+dur, d, lower, upper, "hann")
+							time_delay, corr = self.correlate_sources(x-dur, x+dur, d, lower, upper, "hann")
 							out[i, 1] = d+time_delay
+							corrs[i] = corr
+							# break
 						self.lag_line.data = out
-						self.lag_line.line_speed.set_data(pos=out)
+						colors = self.lag_line.get_colors(corrs)
+						self.lag_line.line_speed.set_data(pos=out, color=colors)
 
 	def get_times_freqs(self, a, b, sr):
 		ref_t0, ref_t1 = sorted((a[0], b[0]))

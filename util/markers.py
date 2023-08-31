@@ -330,7 +330,6 @@ class LagSample(BaseMarker):
 			self.d = vispy_canvas.spectra[-1].offset
 		else:
 			self.d = d
-		print(self.d)
 		self.width = abs(a[0] - b[0])
 		self.t = (a[0] + b[0]) / 2
 		self.f = (a[1] + b[1]) / 2

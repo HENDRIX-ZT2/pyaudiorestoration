@@ -14,6 +14,8 @@ from util import spectrum, wow_detection, qt_threads, widgets, filters, io_ops, 
 	markers
 
 from util.config import load_json, logging_setup
+from util.wow_detection import interp_nans
+
 np.warnings.filterwarnings('error', category=np.VisibleDeprecationWarning)
 logging_setup()
 
@@ -221,8 +223,9 @@ class Canvas(spectrum.SpectrumCanvas):
 					elif "Alt" in event.modifiers:
 						logging.info("Azimuth mode")
 						sr = self.sr
-						dur = 0.2
-						overlap = 32
+						dur = self.parent.props.alignment_widget.win_s.value()
+						overlap = self.parent.props.alignment_widget.overlap_s.value()
+						reject = self.parent.props.alignment_widget.reject_s.value()
 						# first get the time range for selection
 						ref_t0, ref_t1, lower, upper = self.get_times_freqs(a, b, sr)
 
@@ -230,9 +233,9 @@ class Canvas(spectrum.SpectrumCanvas):
 						if not len(sample_times):
 							return
 						data = self.lag_line.data
+						# get the current lag for each time we want to sample
 						sample_lags = np.interp(sample_times, data[:, 0], data[:, 1])
-						
-						# could do a stack
+
 						out = np.zeros((len(sample_times), 2), dtype=np.float64)
 						corrs = np.zeros(len(sample_times), dtype=np.float64)
 						out[:, 0] = sample_times
@@ -241,17 +244,16 @@ class Canvas(spectrum.SpectrumCanvas):
 						# correlate all the pieces
 						for i, (x, d) in enumerate(zip(sample_times, sample_lags)):
 							time_delay, corr = self.correlate_sources(x-dur, x+dur, d, lower, upper, "hann")
-							out[i, 1] = d+time_delay
 							corrs[i] = corr
+							# reject if correlation is too weak
+							if abs(corr) < reject:
+								out[i, 1] = np.NaN
+							else:
+								out[i, 1] = d+time_delay
+						# lerp rejected lags
+						interp_nans(out[:, 1])
 						# filter outliers
-						# out[:, 1] = scipy.signal.medfilt(out[:, 1], kernel_size=make_odd(overlap))
 						out[:, 1] = scipy.ndimage.median_filter(out[:, 1], size=make_odd(overlap), footprint=None, output=None, mode='nearest', cval=0.0, origin=0,)
-						# todo - verify this filter
-						out[:, 1] = filters.butter_bandpass_filter(out[:, 1], 0, 0.7, 1.0, order=3)
-						corrs = scipy.signal.medfilt(corrs, kernel_size=make_odd(overlap))
-						# self.lag_line.data = out
-						# colors = self.lag_line.get_colors(corrs)
-						# self.lag_line.line_speed.set_data(pos=out, color=colors)
 						marker = markers.AzimuthLine(self, out[:, 0], out[:, 1], corrs, lower, upper)
 						self.props.undo_stack.push(AddAction((marker,)))
 

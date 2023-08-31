@@ -559,7 +559,32 @@ class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.smoothing_s.setValue(3)
         self.smoothing_s.setToolTip("Degree of the smoothing spline")
 
-        buttons = ((self.ignore_phase_b,), (corr_l, self.corr_l), (self.smoothing_l, self.smoothing_s))
+        self.win_l = QtWidgets.QLabel("Window")
+        self.win_s = QtWidgets.QDoubleSpinBox()
+        self.win_s.setRange(0.001, 10)
+        self.win_s.setSingleStep(.05)
+        self.win_s.setValue(0.2)
+        self.win_s.setSuffix(" s")
+        self.win_s.setToolTip("Length of window for azimuth comparison")
+
+        self.overlap_l = QtWidgets.QLabel("Overlap")
+        self.overlap_s = QtWidgets.QSpinBox()
+        self.overlap_s.setRange(1, 100)
+        self.overlap_s.setSingleStep(1)
+        self.overlap_s.setValue(32)
+        self.overlap_s.setToolTip("Amount of overlap between azimuth detection windows")
+
+        self.reject_l = QtWidgets.QLabel("Reject")
+        self.reject_s = QtWidgets.QDoubleSpinBox()
+        self.reject_s.setRange(0.0, 1.0)
+        self.reject_s.setSingleStep(.05)
+        self.reject_s.setValue(0.1)
+        self.reject_s.setToolTip("Reject alignment value if correlation goes lower than this value")
+
+        buttons = (
+            (self.ignore_phase_b,), (corr_l, self.corr_l), (self.smoothing_l, self.smoothing_s),
+            (self.win_l, self.win_s), (self.overlap_l, self.overlap_s), (self.reject_l, self.reject_s)
+        )
         vbox(self, grid(buttons))
 
     @property

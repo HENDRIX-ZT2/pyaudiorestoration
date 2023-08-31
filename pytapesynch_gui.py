@@ -14,7 +14,7 @@ from util import spectrum, wow_detection, qt_threads, widgets, filters, io_ops, 
 	markers
 
 from util.config import load_json, logging_setup
-
+np.warnings.filterwarnings('error', category=np.VisibleDeprecationWarning)
 logging_setup()
 
 
@@ -177,7 +177,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			click = self.px_to_spectrum(event.pos)
 			if click is not None:
 				# sample the lag curve at the click's time and move the source spectrum
-				self.spectra[-1].set_offset(self.lag_line.sample_at((click[0],))[0])
+				self.spectra[-1].set_offset(self.lag_line.sample_at((click[0],))[0][0])
 
 	def update_corr_view(self, closest_marker):
 		v = "None" if closest_marker.corr is None else f"{closest_marker.corr:.3f}"
@@ -227,6 +227,8 @@ class Canvas(spectrum.SpectrumCanvas):
 						ref_t0, ref_t1, lower, upper = self.get_times_freqs(a, b, sr)
 
 						sample_times = np.arange(ref_t0, ref_t1, dur/overlap)
+						if not len(sample_times):
+							return
 						data = self.lag_line.data
 						sample_lags = np.interp(sample_times, data[:, 0], data[:, 1])
 						

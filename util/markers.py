@@ -330,12 +330,13 @@ class LagSample(BaseMarker):
 			self.d = vispy_canvas.spectra[-1].offset
 		else:
 			self.d = d
+		print(self.d)
 		self.width = abs(a[0] - b[0])
 		self.t = (a[0] + b[0]) / 2
 		self.f = (a[1] + b[1]) / 2
 		self.height = abs(a[1] - b[1])
-		self.speed_center = (self.t, self.d)
-		self.spec_center = (self.t, self.f)
+		self.speed_center = np.array((self.t, self.d))
+		self.spec_center = np.array((self.t, self.f))
 		# create & store speed visual
 		r = 0.1
 		rect = scene.Rectangle(center=self.speed_center, width=r, height=r, radius=0)
@@ -611,7 +612,7 @@ class LagLine(BaseLine):
 	def interp(self, times, keys, values):
 		# ensure that k doesn't exceed the order possible to infer from amount of samples
 		if len(keys) == 0:
-			return 0
+			return np.interp(times, (0,), (0,))
 		elif len(keys) == 1:
 			return np.interp(times, keys, values)
 		else:

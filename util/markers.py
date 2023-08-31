@@ -382,6 +382,8 @@ class AzimuthLine(BaseMarker):
 		self.times = np.asarray(times)
 		self.lags = np.asarray(lags)
 		self.corrs = np.asarray(corrs)
+		self.lower = lower
+		self.upper = upper
 
 		self.d = np.mean(self.lags)
 		self.corr = np.mean(self.corrs)
@@ -432,7 +434,7 @@ class AzimuthLine(BaseMarker):
 		# self.vispy_canvas.props.tracing_widget.target_s.setValue(np.mean(target_freqs))
 
 	def to_cfg(self):
-		return list(self.times), list(self.freqs), self.offset
+		return list(self.times), list(self.lags), list(self.corrs), float(self.lower), float(self.upper)
 
 
 class BaseLine:
@@ -501,7 +503,7 @@ class MasterSpeedLine(BaseLine):
 		if self.vispy_canvas.lines:
 			times = self.get_times()
 			lines_times = [line.times for line in self.vispy_canvas.lines]
-			lines_values = [line.speeds for line in self.vispy_canvas.lines]
+			lines_values = [line.speed for line in self.vispy_canvas.lines]
 			mean_with_nans = self.sample_lines(times, lines_times, lines_values)
 			# lerp over nan areas
 			wow_detection.interp_nans(mean_with_nans)
@@ -620,11 +622,11 @@ class LagLine(BaseLine):
 
 	def sample_at(self, times):
 		self.vispy_canvas.markers.sort(key=lambda marker: marker.t)
-		markers = [m for m in self.vispy_canvas.markers if isinstance(m, LagSample)]
-		sample_times = [sample.t for sample in markers]
-		sample_lags = [sample.d for sample in markers]
-		sample_corrs = [sample.corr for sample in markers]
-		azimuths = [m for m in self.vispy_canvas.markers if isinstance(m, AzimuthLine)]
+		lags = self.vispy_canvas.lags
+		sample_times = [sample.t for sample in lags]
+		sample_lags = [sample.d for sample in lags]
+		sample_corrs = [sample.corr for sample in lags]
+		azimuths = self.vispy_canvas.azimuths
 		azimuths_times = [sample.times for sample in azimuths]
 		azimuths_lags = [sample.lags for sample in azimuths]
 		azimuths_corrs = [sample.corrs for sample in azimuths]

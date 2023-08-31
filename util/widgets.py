@@ -990,7 +990,9 @@ class ParamWidget(QtWidgets.QWidget):
                     w.from_cfg(sync)
             _markers = []
             for marker_name, marker_class in self.parent.STORE.items():
-                _markers.extend([marker_class.from_cfg(self.parent.canvas, *item) for item in sync[marker_name]])
+                # for marker_name in marker_names:
+                if marker_name in sync:
+                    _markers.extend([marker_class.from_cfg(self.parent.canvas, *item) for item in sync[marker_name]])
         else:
             # old style project file or audio file
             self.files_widget.files[0].accept_file(file_path)

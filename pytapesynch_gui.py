@@ -20,7 +20,7 @@ logging_setup()
 
 class MainWindow(widgets.MainWindow):
 	EXT = ".tapesync"
-	STORE = {"markers": markers.LagSample}
+	STORE = {"lags": markers.LagSample, "azimuths": markers.AzimuthLine}
 
 	def __init__(self):
 		widgets.MainWindow.__init__(self, "pytapesynch", widgets.ParamWidget, Canvas, 2)
@@ -62,6 +62,14 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.tracing_widget.setVisible(False)
 		self.freeze()
 		self.parent.props.alignment_widget.smoothing_s.valueChanged.connect(self.update_smoothing)
+
+	@property
+	def lags(self):
+		return [m for m in self.markers if isinstance(m, markers.LagSample)]
+
+	@property
+	def azimuths(self):
+		return [m for m in self.markers if isinstance(m, markers.AzimuthLine)]
 
 	def update_lines(self):
 		self.lag_line.update()
@@ -223,8 +231,8 @@ class Canvas(spectrum.SpectrumCanvas):
 						sample_lags = np.interp(sample_times, data[:, 0], data[:, 1])
 						
 						# could do a stack
-						out = np.zeros((len(sample_times), 2), dtype=np.float32)
-						corrs = np.zeros(len(sample_times), dtype=np.float32)
+						out = np.zeros((len(sample_times), 2), dtype=np.float64)
+						corrs = np.zeros(len(sample_times), dtype=np.float64)
 						out[:, 0] = sample_times
 						# apply bandpass
 						# split into pieces and look up the delay for each

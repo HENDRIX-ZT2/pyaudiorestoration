@@ -28,3 +28,10 @@ def moving_average(a, n=3) :
 	ret = np.cumsum(a, dtype=float)
 	ret[n:] = ret[n:] - ret[:-n]
 	return ret[n - 1:] / n
+
+
+def make_odd(n):
+	if n % 2:
+		return n
+	else:
+		return n+1

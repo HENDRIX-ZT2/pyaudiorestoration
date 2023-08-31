@@ -6,10 +6,18 @@ from scipy import interpolate
 
 # custom modules
 from util import wow_detection, filters
-
+from util.wow_detection import nan_helper
 
 line_settings = {"method": 'gl', "antialias": False, "width": 2.0}
 wide_line_settings = {"method": 'gl', "antialias": False, "width": 5.0}
+colors_val = [(1, 0, 0, 1), (0.5, 0.5, 0.5, 1), (0, 1, 0, 1)]
+colors_range = (-1, 0, 1)
+color_interp = interpolate.CubicSpline(colors_range, colors_val, bc_type="clamped")
+
+
+def get_colors(corr):
+	color = color_interp(corr)
+	return color.clip(0.0, 1.0)
 
 
 class BaseMarker:
@@ -225,13 +233,9 @@ class TraceLine(BaseMarker):
 
 	def toggle(self):
 		"""Toggle this line's selection state"""
-		if self.selected:
-			self.deselect()
-		else:
-			self.select()
+		super().toggle()
 
 		# TODO: evaluate performance penalty of looping here!
-
 		# go over all selected markers
 		target_freqs = [marker.spec_center[1] / (2 ** marker.offset) for marker in self.container if marker.selected]
 		# to set the offset properly, we need to know
@@ -368,6 +372,69 @@ class LagSample(BaseMarker):
 		return cls(canvas, (a0, a1), (b0, b1), d, corr)
 
 
+class AzimuthLine(BaseMarker):
+
+	def __init__(self, vispy_canvas, times, lags, corrs, lower, upper):
+
+		color_def = (1, 0, 0, .5)
+		color_sel = (0, 1, 0, .5)
+		BaseMarker.__init__(self, vispy_canvas, color_def, color_sel)
+		self.times = np.asarray(times)
+		self.lags = np.asarray(lags)
+		self.corrs = np.asarray(corrs)
+
+		self.d = np.mean(self.lags)
+		self.corr = np.mean(self.corrs)
+		self.width = self.end - self.start
+		self.height = abs(upper - lower)
+
+		# calculate the centers
+		mean_times = np.mean(self.times)
+		self.spec_center = np.array((mean_times, (lower + upper)/2))
+		self.speed_center = np.array((mean_times, np.mean(self.lags)))
+
+		# create the speed curve visualization
+		self.lags_data = np.stack((self.times, self.lags), axis=-1)
+		color_line = get_colors(self.corrs)
+		self.visuals.append(scene.Line(pos=self.lags_data, color=color_line, **line_settings))
+		# self.visuals[0].set_gl_state('additive')
+
+		# create the spectral visualization
+		rect = scene.Rectangle(center=self.spec_center, width=self.width, height=self.height, radius=0)
+		rect.color = self.color_def
+		rect.transform = vispy_canvas.spectra[-1].mel_transform
+		self.visuals.append(rect)
+		# the data is in Hz, so to visualize correctly, it has to be mel'ed
+		self.visuals[1].transform = vispy_canvas.spectra[0].mel_transform
+
+	@property
+	def start(self):
+		return self.times[0]
+
+	@property
+	def end(self):
+		return self.times[-1]
+
+	@property
+	def t(self):
+		return (self.start+self.end)/2
+
+	def set_color(self, c):
+		# don't override the  line color
+		# api inconsistency
+		# self.visuals[0].set_data(color=c)
+		self.visuals[1].color = c
+
+	def toggle(self):
+		"""Toggle this line's selection state"""
+		super().toggle()
+		# todo - do stuff
+		# self.vispy_canvas.props.tracing_widget.target_s.setValue(np.mean(target_freqs))
+
+	def to_cfg(self):
+		return list(self.times), list(self.freqs), self.offset
+
+
 class BaseLine:
 	def __init__(self, vispy_canvas, color=(1, 0, 0, .5)):
 		self.vispy_canvas = vispy_canvas
@@ -403,6 +470,29 @@ class BaseLine:
 		np.power(2, out[:, 1], out[:, 1])
 		return out
 
+	def filter_bandpass(self, samples_in):
+		# bandpass filter the output
+		lowcut, highcut = sorted(self.bands)
+		samples = filters.butter_bandpass_filter(samples_in, lowcut, highcut, self.marker_sr, order=3)
+		return samples
+
+	def sample_lines(self, times, lines_times, lines_values):
+		# create the array for sampling
+		out = np.zeros((len(times), len(lines_times)), dtype=np.float32)
+		# lerp and sample all lines, use NAN for missing parts
+		for i, (line_times, line_values) in enumerate(zip(lines_times, lines_values)):
+			line_sampled = np.interp(times, line_times, line_values, left=np.nan, right=np.nan)
+			out[:, i] = line_sampled
+		# take the mean and ignore nans
+		return np.nanmean(out, axis=1)
+
+	def update(self):
+		pass
+
+	def update_bands(self, bands):
+		self.bands = bands
+		self.update()
+
 
 class MasterSpeedLine(BaseLine):
 	"""Stores and displays the average, ie. master speed curve."""
@@ -410,21 +500,12 @@ class MasterSpeedLine(BaseLine):
 	def update(self):
 		if self.vispy_canvas.lines:
 			times = self.get_times()
-			# create the array for sampling
-			out = np.zeros((len(times), len(self.vispy_canvas.lines)), dtype=np.float32)
-			# lerp and sample all lines, use NAN for missing parts
-			for i, line in enumerate(self.vispy_canvas.lines):
-				line_sampled = np.interp(times, line.times, line.speed, left=np.nan, right=np.nan)
-				out[:, i] = line_sampled
-			# take the mean and ignore nans
-			mean_with_nans = np.nanmean(out, axis=1)
+			lines_times = [line.times for line in self.vispy_canvas.lines]
+			lines_values = [line.speeds for line in self.vispy_canvas.lines]
+			mean_with_nans = self.sample_lines(times, lines_times, lines_values)
 			# lerp over nan areas
 			wow_detection.interp_nans(mean_with_nans)
-			# bandpass filter the output
-			lowcut, highcut = sorted(self.bands)
-			samples = filters.butter_bandpass_filter(mean_with_nans, lowcut, highcut, self.marker_sr, order=3)
-
-			self.data = np.stack((times, samples), axis=-1)
+			self.data = np.stack((times, self.filter_bandpass(mean_with_nans)), axis=-1)
 		else:
 			self.data = self.empty
 		self.line_speed.set_data(pos=self.data)
@@ -520,45 +601,53 @@ class PanLine(BaseLine):
 
 class LagLine(BaseLine):
 	"""Stores and displays the average, ie. master speed curve."""
-	colors_val = [(1, 0, 0, 1), (0.5, 0.5, 0.5, 1), (0, 1, 0, 1)]
-	colors_range = (-1, 0, 1)
-	color_interp = interpolate.CubicSpline(colors_range, colors_val, bc_type="clamped")
 
 	def __init__(self, vispy_canvas):
 		super().__init__(vispy_canvas)
 		self.smoothing = 3
 
-	def sample_at(self, times):
-		self.vispy_canvas.markers.sort(key=lambda tup: tup.t)
-		sample_times = [sample.t for sample in self.vispy_canvas.markers]
-		sample_lags = [sample.d for sample in self.vispy_canvas.markers]
-		sample_corrs = [sample.corr for sample in self.vispy_canvas.markers]
-
+	def interp(self, times, keys, values):
 		# ensure that k doesn't exceed the order possible to infer from amount of samples
-		if len(self.vispy_canvas.markers) == 0:
-			return 0, 0
-		elif len(self.vispy_canvas.markers) == 1:
-			return np.interp(times, sample_times, sample_lags), np.interp(times, sample_times, sample_corrs)
+		if len(keys) == 0:
+			return 0
+		elif len(keys) == 1:
+			return np.interp(times, keys, values)
 		else:
 			# using bezier splines
-			k = min(self.smoothing, len(self.vispy_canvas.markers)-1)
-			lags_s = interpolate.InterpolatedUnivariateSpline(sample_times, sample_lags, k=k)
-			corrs_s = interpolate.InterpolatedUnivariateSpline(sample_times, sample_corrs, k=k)
-			return lags_s(times), corrs_s(times)
+			k = min(self.smoothing, len(keys)-1)
+			lags_s = interpolate.InterpolatedUnivariateSpline(keys, values, k=k)
+			return lags_s(times)
 
-	def get_colors(self, corr):
-		color = self.color_interp(corr)
-		return color.clip(0.0, 1.0)
+	def sample_at(self, times):
+		self.vispy_canvas.markers.sort(key=lambda marker: marker.t)
+		markers = [m for m in self.vispy_canvas.markers if isinstance(m, LagSample)]
+		sample_times = [sample.t for sample in markers]
+		sample_lags = [sample.d for sample in markers]
+		sample_corrs = [sample.corr for sample in markers]
+		azimuths = [m for m in self.vispy_canvas.markers if isinstance(m, AzimuthLine)]
+		azimuths_times = [sample.times for sample in azimuths]
+		azimuths_lags = [sample.lags for sample in azimuths]
+		azimuths_corrs = [sample.corrs for sample in azimuths]
+		azimuths_sampled_with_nans = self.sample_lines(times, azimuths_times, azimuths_lags)
+		corrs_sampled_with_nans = self.sample_lines(times, azimuths_times, azimuths_corrs)
+		lags_sampled = self.interp(times, sample_times, sample_lags)
+		corrs_sampled = self.interp(times, sample_times, sample_corrs)
+		nans, x = nan_helper(azimuths_sampled_with_nans)
+		azimuths_sampled_with_nans[nans] = lags_sampled[nans]
+		corrs_sampled_with_nans[nans] = corrs_sampled[nans]
+		return azimuths_sampled_with_nans, corrs_sampled_with_nans
 
 	def update(self):
 		logging.info(f"Updating sync line")
+		color = (1, 0, 0, 1)
 		if self.vispy_canvas.markers:
 			times = self.get_times()
 			try:
 				lag, corr = self.sample_at(times)
+				lag = self.filter_bandpass(lag)
 				self.data = np.stack((times, lag), axis=-1)
 				# map the correlation to color range
-				color = self.get_colors(corr)
+				color = get_colors(corr)
 			except:
 				logging.exception(f"LagLine.update failed")
 		else:

@@ -3,10 +3,12 @@ import os
 
 import numpy as np
 import resampy
+import scipy
 from PyQt5 import QtWidgets
 
 # custom modules
 from util.correlation import xcorr, find_delay
+from util.filters import make_odd
 from util.undo import AddAction, DeltaAction
 from util import spectrum, wow_detection, qt_threads, widgets, filters, io_ops, \
 	markers
@@ -56,6 +58,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.resampling_thread.notifyProgress.connect(self.parent.props.progress_bar.setValue)
 		self.fourier_thread.notifyProgress.connect(self.parent.props.progress_bar.setValue)
 		self.parent.props.display_widget.canvas = self
+		self.parent.props.filters_widget.bands_changed.connect(self.lag_line.update_bands)
 		self.parent.props.tracing_widget.setVisible(False)
 		self.freeze()
 		self.parent.props.alignment_widget.smoothing_s.valueChanged.connect(self.update_smoothing)
@@ -132,7 +135,6 @@ class Canvas(spectrum.SpectrumCanvas):
 		# logging.info(f"delay: raw {sample_delay} vs res {sample_delay_res}")
 		# logging.info(f"Moved by {sample_delay} samples")
 
-
 	def run_resample(self):
 		self.resample_files((self.filenames[1],))
 
@@ -167,7 +169,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			click = self.px_to_spectrum(event.pos)
 			if click is not None:
 				# sample the lag curve at the click's time and move the source spectrum
-				self.spectra[-1].set_offset(self.lag_line.sample_at(click[0])[0])
+				self.spectra[-1].set_offset(self.lag_line.sample_at((click[0],))[0])
 
 	def update_corr_view(self, closest_marker):
 		v = "None" if closest_marker.corr is None else f"{closest_marker.corr:.3f}"
@@ -211,7 +213,7 @@ class Canvas(spectrum.SpectrumCanvas):
 					elif "Alt" in event.modifiers:
 						logging.info("Azimuth mode")
 						sr = self.sr
-						dur = 0.1
+						dur = 0.2
 						overlap = 32
 						# first get the time range for selection
 						ref_t0, ref_t1, lower, upper = self.get_times_freqs(a, b, sr)
@@ -231,10 +233,17 @@ class Canvas(spectrum.SpectrumCanvas):
 							time_delay, corr = self.correlate_sources(x-dur, x+dur, d, lower, upper, "hann")
 							out[i, 1] = d+time_delay
 							corrs[i] = corr
-							# break
-						self.lag_line.data = out
-						colors = self.lag_line.get_colors(corrs)
-						self.lag_line.line_speed.set_data(pos=out, color=colors)
+						# filter outliers
+						# out[:, 1] = scipy.signal.medfilt(out[:, 1], kernel_size=make_odd(overlap))
+						out[:, 1] = scipy.ndimage.median_filter(out[:, 1], size=make_odd(overlap), footprint=None, output=None, mode='nearest', cval=0.0, origin=0,)
+						# todo - verify this filter
+						out[:, 1] = filters.butter_bandpass_filter(out[:, 1], 0, 0.7, 1.0, order=3)
+						corrs = scipy.signal.medfilt(corrs, kernel_size=make_odd(overlap))
+						# self.lag_line.data = out
+						# colors = self.lag_line.get_colors(corrs)
+						# self.lag_line.line_speed.set_data(pos=out, color=colors)
+						marker = markers.AzimuthLine(self, out[:, 0], out[:, 1], corrs, lower, upper)
+						self.props.undo_stack.push(AddAction((marker,)))
 
 	def get_times_freqs(self, a, b, sr):
 		ref_t0, ref_t1 = sorted((a[0], b[0]))

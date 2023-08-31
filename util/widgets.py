@@ -404,22 +404,6 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
         adapt_l.setVisible(False)
         self.adapt_c.setVisible(False)
 
-        band0_l = QtWidgets.QLabel("Highpass")
-        self.band0_s = QtWidgets.QDoubleSpinBox()
-        self.band0_s.setRange(0, 10000)
-        self.band0_s.setSingleStep(.1)
-        self.band0_s.setValue(0)
-        self.band0_s.setToolTip("Cull wow below this frequency from the final speed curve.")
-        self.band0_s.valueChanged.connect(self.update_bands)
-
-        band1_l = QtWidgets.QLabel("Lowpass")
-        self.band1_s = QtWidgets.QDoubleSpinBox()
-        self.band1_s.setRange(.01, 10000)
-        self.band1_s.setSingleStep(.1)
-        self.band1_s.setValue(20)
-        self.band1_s.setToolTip("Cull flutter above this frequency from the final speed curve.")
-        self.band1_s.valueChanged.connect(self.update_bands)
-
         target_l = QtWidgets.QLabel("Target Frequency")
         self.target_s = QtWidgets.QDoubleSpinBox()
         self.target_s.setRange(0, 30000)
@@ -442,8 +426,8 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
 
         buttons = (
             (show_l, self.show_c), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (self.rpm_l, self.rpm_c),
-            (self.phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (band0_l, self.band0_s),
-            (band1_l, self.band1_s), (target_l, self.target_s), (self.target_b,), (self.autoalign_b,))
+            (self.phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (target_l, self.target_s),
+            (self.target_b,), (self.autoalign_b,))
         vbox(self, grid(buttons))
 
         self.toggle_trace_mode()
@@ -509,10 +493,6 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
             for reg in self.canvas.regs:
                 reg.show()
 
-    def update_bands(self):
-        self.canvas.master_speed.bands = (self.band0_s.value(), self.band1_s.value())
-        self.canvas.master_speed.update()
-
     def update_phase_offset(self):
         v = self.phase_s.value()
         for reg in self.canvas.regs:
@@ -524,6 +504,38 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
         for reg in self.canvas.lines:
             reg.lock_to(f)
         self.canvas.master_speed.update()
+
+
+class FiltersWidget(QtWidgets.QGroupBox, ConfigStorer):
+    vars_for_saving = ()
+
+    bands_changed = QtCore.pyqtSignal(tuple)
+
+    def __init__(self, ):
+        super().__init__("Filters")
+        band0_l = QtWidgets.QLabel("Highpass")
+        self.band0_s = QtWidgets.QDoubleSpinBox()
+        self.band0_s.setRange(0, 10000)
+        self.band0_s.setSingleStep(.1)
+        self.band0_s.setValue(0)
+        self.band0_s.setToolTip("Cull wow below this frequency from the final speed curve.")
+        self.band0_s.valueChanged.connect(self.update_bands)
+
+        band1_l = QtWidgets.QLabel("Lowpass")
+        self.band1_s = QtWidgets.QDoubleSpinBox()
+        self.band1_s.setRange(.01, 10000)
+        self.band1_s.setSingleStep(.1)
+        self.band1_s.setValue(20)
+        self.band1_s.setToolTip("Cull flutter above this frequency from the final speed curve.")
+        self.band1_s.valueChanged.connect(self.update_bands)
+        buttons = (
+            (band0_l, self.band0_s),
+            (band1_l, self.band1_s),
+        )
+        vbox(self, grid(buttons))
+
+    def update_bands(self):
+        self.bands_changed.emit((self.band0_s.value(), self.band1_s.value()))
 
 
 class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
@@ -925,6 +937,7 @@ class ParamWidget(QtWidgets.QWidget):
         self.files_widget = FilesWidget(self, count, self.parent.cfg)
         self.display_widget = SpectrumSettingsWidget()
         self.tracing_widget = TracingWidget()
+        self.filters_widget = FiltersWidget()
         self.resampling_widget = ResamplingWidget()
         self.progress_bar = QtWidgets.QProgressBar(self)
         self.progress_bar.setRange(0, 100)
@@ -935,7 +948,7 @@ class ParamWidget(QtWidgets.QWidget):
         self.undo_stack = UndoStack(self)
         self.stack_widget = StackWidget(self.undo_stack)
         self.buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget,
-                        self.resampling_widget, self.stack_widget, self.progress_bar,  # self.audio_widget,
+                        self.filters_widget, self.resampling_widget, self.stack_widget, self.progress_bar,  # self.audio_widget,
                         self.inspector_widget]
         vbox2(self, self.buttons)
 

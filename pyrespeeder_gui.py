@@ -62,6 +62,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.fourier_thread.notifyProgress.connect(self.parent.props.progress_bar.setValue)
 		self.parent.props.display_widget.canvas = self
 		self.parent.props.tracing_widget.canvas = self
+		self.parent.props.filters_widget.bands_changed.connect(self.master_speed.update_bands)
 		self.parent.props.alignment_widget.setVisible(False)
 		self.freeze()
 

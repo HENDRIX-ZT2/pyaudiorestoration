@@ -8,6 +8,8 @@ from numba import jit  # , prange, guvectorize
 import math
 import threading
 
+from util.timing import log_duration
+
 
 @jit(nopython=True, nogil=True, cache=True, fastmath=True)
 def find_cutoff(array, cutoff):
@@ -159,76 +161,78 @@ def lag_to_pos(sampletimes, lags, num_imput_samples):
 
 def run(filenames, signal_data=None, speed_curve=None, resampling_mode="Linear", sinc_quality=50, use_channels=(0, ),
 		prog_sig=None, lag_curve=None, suffix=""):
-	if prog_sig: prog_sig.notifyProgress.emit(0)
-	if signal_data is None: signal_data = [None for filename in filenames]
+	if prog_sig:
+		prog_sig.notifyProgress.emit(0)
+	if signal_data is None:
+		signal_data = [None for filename in filenames]
 	for filename, sig_data in zip(filenames, signal_data):
 		start_time = time()
-		logging.info(f"Resampling '{os.path.basename(filename)}'... {resampling_mode}, {sinc_quality}, {use_channels}")
-		# read the file
-		if sig_data:
-			signal, sr = sig_data
-		else:
-			from util import io_ops
-			signal, sr, channels = io_ops.read_file(filename)
-		if resampling_mode == "Linear":
-			samples_in = np.arange(len(signal))
-		lowpass = 0
-		if speed_curve is not None:
-			sampletimes = speed_curve[:, 0] * sr
-			speeds = speed_curve[:, 1]
-			sample_at = speed_to_pos(sampletimes, speeds, len(signal))
-		# the problem is we don't really need the lerped speeds but what happens from the cumsum
-		# get the speed for every output sample
-		# if resampling_mode == "Sinc":
-		# lowpass = np.interp(np.arange( len(sample_at) ), sampletimes, speeds)
-		elif lag_curve is not None:
-			sampletimes = lag_curve[:, 0] * sr
-			lags = lag_curve[:, 1] * sr
-			# lag_to_pos(sampletimes, lags, len(signal))
-			# at this point we can not tell the exact duration as the sampling is too sparse
-			# delta_lag = np.max(lags) - np.min(lags)
-			# print(delta_lag)
-			num_output_samples = len(signal) + abs(lags[-1])
-			# print(num_output_samples)
-			# print(sampletimes, sampletimes-lags)
-			sample_at = np.interp(np.arange(num_output_samples), sampletimes, sampletimes - lags)
-			# print(sample_at[0], sample_at[-1])
-			trim_end = find_cutoff(sample_at, len(signal))
-			if trim_end is not None:
-				logging.debug(f"Trimmed to sample {trim_end[0]}")
-				sample_at = sample_at[:trim_end[0]]
-			# ensure we have no sub-zero values, saves one max() in sinc interpolator
-			np.clip(sample_at, 0, None, out=sample_at)
-		# with lerped speed curve
-		# speeds = np.diff(lag_curve[:,1])/np.diff(lag_curve[:,0])+1
-		# sampletimes = (lag_curve[:-1,0]+np.diff(lag_curve[:,0])/2)*sr
-		# sample_at = speed_to_pos(sampletimes, speeds)
-		logging.info(f"Preparation took {time() - start_time:.3f} seconds.")
-		start_time = time()
+		with log_duration("Preparing"):
+			logging.info(f"Resampling '{os.path.basename(filename)}'... {resampling_mode}, {sinc_quality}, {use_channels}")
+			# read the file
+			if sig_data:
+				signal, sr = sig_data
+			else:
+				from util import io_ops
+				signal, sr, channels = io_ops.read_file(filename)
+			if resampling_mode == "Linear":
+				samples_in = np.arange(len(signal))
+			lowpass = 0
+			if speed_curve is not None:
+				sampletimes = speed_curve[:, 0] * sr
+				speeds = speed_curve[:, 1]
+				sample_at = speed_to_pos(sampletimes, speeds, len(signal))
+			# the problem is we don't really need the lerped speeds but what happens from the cumsum
+			# get the speed for every output sample
+			# if resampling_mode == "Sinc":
+			# lowpass = np.interp(np.arange( len(sample_at) ), sampletimes, speeds)
+			elif lag_curve is not None:
+				sampletimes = lag_curve[:, 0] * sr
+				lags = lag_curve[:, 1] * sr
+				# lag_to_pos(sampletimes, lags, len(signal))
+				# at this point we can not tell the exact duration as the sampling is too sparse
+				# delta_lag = np.max(lags) - np.min(lags)
+				# print(delta_lag)
+				num_output_samples = len(signal) + abs(lags[-1])
+				# print(num_output_samples)
+				# print(sampletimes, sampletimes-lags)
+				sample_at = np.interp(np.arange(num_output_samples), sampletimes, sampletimes - lags)
+				# print(sample_at[0], sample_at[-1])
+				trim_end = find_cutoff(sample_at, len(signal))
+				if trim_end is not None:
+					logging.debug(f"Trimmed to sample {trim_end[0]}")
+					sample_at = sample_at[:trim_end[0]]
+				# ensure we have no sub-zero values, saves one max() in sinc interpolator
+				np.clip(sample_at, 0, None, out=sample_at)
+			# with lerped speed curve
+			# speeds = np.diff(lag_curve[:,1])/np.diff(lag_curve[:,0])+1
+			# sampletimes = (lag_curve[:-1,0]+np.diff(lag_curve[:,0])/2)*sr
+			# sample_at = speed_to_pos(sampletimes, speeds)
 
-		length = len(sample_at)
-		# create multichannel output array
-		num_channels = len(use_channels)
-		# first create the output array
-		output = np.empty((length, num_channels), dtype="float32")
+		with log_duration("Resampling"):
+			length = len(sample_at)
+			# create multichannel output array
+			num_channels = len(use_channels)
+			# first create the output array
+			output = np.empty((length, num_channels), dtype="float32")
 
-		# enumerate because maybe we want to resample less channels than input has
-		for out_channel, in_channel in enumerate(use_channels):
-			if resampling_mode == "Sinc":
-				sinc_wrapper_mt(output[:, out_channel], sample_at, signal[:, in_channel], lowpass, sinc_quality)
-			elif resampling_mode == "Linear":
-				output[:, out_channel] = np.interp(sample_at, samples_in, signal[:, in_channel])
-			if prog_sig: prog_sig.notifyProgress.emit((out_channel + 1) / num_channels * 100)
+			# enumerate because maybe we want to resample less channels than input has
+			for out_channel, in_channel in enumerate(use_channels):
+				if resampling_mode == "Sinc":
+					sinc_wrapper_mt(output[:, out_channel], sample_at, signal[:, in_channel], lowpass, sinc_quality)
+				elif resampling_mode == "Linear":
+					output[:, out_channel] = np.interp(sample_at, samples_in, signal[:, in_channel], left=0.0, right=0.0)
+				if prog_sig:
+					prog_sig.notifyProgress.emit((out_channel + 1) / num_channels * 100)
 
 		# after all pieces have been resampled, write it out to the file
-		logging.info(f"Resampling took {time() - start_time:.3f} seconds.")
-		start_time = time()
-		out_file_path = f"{os.path.splitext(filename)[0]}_res{suffix}.wav"
-		with sf.SoundFile(out_file_path, 'w+', sr, num_channels, subtype='FLOAT') as outfile:
-			outfile.write(output)
-		if prog_sig: prog_sig.notifyProgress.emit(100)
-		logging.info(f"Writing took {time() - start_time:.3f} seconds.")
-	logging.info("Done!\n")
+		with log_duration("Writing"):
+			out_file_path = f"{os.path.splitext(filename)[0]}_res{suffix}.wav"
+			with sf.SoundFile(out_file_path, 'w+', sr, num_channels, subtype='FLOAT') as outfile:
+				outfile.write(output)
+			if prog_sig:
+				prog_sig.notifyProgress.emit(100)
+	logging.info("Done!")
 
 
 def timefunc(correct, s, func, *args, **kwargs):

@@ -6,16 +6,10 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 import matplotlib.pyplot as plt
 from util import io_ops, units, widgets, config
+from util.filters import make_odd
 from util.spectrum_flat import spectrum_from_audio
 
 
-def make_odd(n):
-	if n % 2:
-		return n
-	else:
-		return n+1
-
-	
 class MainWindow(QtWidgets.QMainWindow):
 	def __init__(self, parent=None):
 		super(MainWindow, self).__init__(parent)
@@ -137,7 +131,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		# clip_upper = self.s_clip_upper.value()
 		
 		# sample over an uneven number of points in volume curve
-		smoothing = make_odd( int(self.s_smoothing.value() * self.sr / self.fft_hop) )
+		smoothing = make_odd(int(self.s_smoothing.value() * self.sr / self.fft_hop))
 		
 		# update volume curve
 		if self.spectra:

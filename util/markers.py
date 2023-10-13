@@ -620,6 +620,15 @@ class LagLine(BaseLine):
 			lags_s = interpolate.InterpolatedUnivariateSpline(keys, values, k=k)
 			return lags_s(times)
 
+	def get_times(self):
+		dur = self.vispy_canvas.duration
+		lag, corr = self.sample_at((dur,))
+		# print(lag)
+		dur += lag[0]
+		num = int(dur * self.marker_sr)
+		# get the times at which the average should be sampled
+		return np.linspace(0, dur, num=num)
+
 	def sample_at(self, times):
 		self.vispy_canvas.markers.sort(key=lambda marker: marker.t)
 		lags = self.vispy_canvas.lags

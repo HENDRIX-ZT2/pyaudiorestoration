@@ -203,10 +203,10 @@ class MainWindow(QtWidgets.QMainWindow):
 			self.plot()
 
 	def add_noise(self):
-		file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.cfg["dir_in"],
+		file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.cfg.get("dir_in", "C:/"),
 														 "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
 		if file_src:
-			file_ref = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', self.cfg["dir_in"],
+			file_ref = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', self.cfg.get("dir_in", "C:/"),
 															 "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
 			if file_ref:
 				channel_mode = self.c_channels.currentText()

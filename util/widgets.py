@@ -271,7 +271,7 @@ class FileWidget(QtWidgets.QWidget):
             self.accept_file(filepath)
 
     def ask_open(self):
-        filepath = QtWidgets.QFileDialog.getOpenFileName(self, 'Open ' + self.description, self.cfg["dir_in"],
+        filepath = QtWidgets.QFileDialog.getOpenFileName(self, 'Open ' + self.description, self.cfg.get("dir_in", "C:/"),
                                                          "Audio files (*.flac *.wav)")[0]
         self.accept_file(filepath)
         # update channels & recalculate spectrum
@@ -1003,7 +1003,7 @@ class ParamWidget(QtWidgets.QWidget):
     def load(self):
         """Load project with all required settings"""
         file_path = \
-        QtWidgets.QFileDialog.getOpenFileName(self, 'Open Project', self.parent.cfg["dir_in"], self.sel_str)[0]
+        QtWidgets.QFileDialog.getOpenFileName(self, 'Open Project', self.parent.cfg.get("dir_in", "C:/"), self.sel_str)[0]
         if not os.path.isfile(file_path):
             return
         self.parent.cfg["dir_in"], filename = os.path.split(file_path)

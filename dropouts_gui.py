@@ -89,7 +89,7 @@ class MainWindow(QtWidgets.QMainWindow):
 	def open_audio(self):
 		# just a wrapper around load_audio so we can access that via drag & drop and button
 		# pyqt5 returns a tuple
-		src_files = QtWidgets.QFileDialog.getOpenFileNames(self, 'Open Sources', self.cfg["dir_in"],
+		src_files = QtWidgets.QFileDialog.getOpenFileNames(self, 'Open Sources', self.cfg.get("dir_in", "C:/"),
 														   "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
 		for audio_path in src_files:
 			self.load_audio(audio_path)

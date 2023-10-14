@@ -4,55 +4,28 @@ import numpy as np
 from scipy.ndimage.filters import uniform_filter1d
 
 from PyQt5 import QtWidgets
-from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
-import matplotlib.pyplot as plt
 from util import io_ops, units, widgets, config
 from util.filters import make_odd
 from util.spectrum_flat import spectrum_from_audio_stereo
+from util.widgets import PlotMainWindow
 
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(PlotMainWindow):
 	def __init__(self, parent=None):
-		super(MainWindow, self).__init__(parent)
+		super().__init__(parent)
 
 		self.central_widget = QtWidgets.QWidget(self)
 		self.setCentralWidget(self.central_widget)
 
 		self.setWindowTitle('Spectral Expander')
 		self.file_src = ""
-		# self.freqs = None
 		self.spectra = []
 		self.fft_size = 512
 		self.sr = 44100
 		self.fft_hop = self.fft_size // 8
-		self.marker_freqs = []
-		self.marker_dBs = []
-		self.ratios = []
 		self.vol_curves = []
 		self.cfg = config.load_config()
 
-		self.cb = QtWidgets.QApplication.clipboard()
-
-		# a figure instance to plot on
-		self.fig, self.ax = plt.subplots(nrows=1, ncols=1)
-
-		self.ax.set_xlabel('Frequency (Hz)')
-		self.ax.set_ylabel('Volume (dB)')
-
-		# the range is not automatically fixed
-		self.fig.patch.set_facecolor((53 / 255, 53 / 255, 53 / 255))
-		self.ax.set_facecolor((35 / 255, 35 / 255, 35 / 255))
-		# this is the Canvas Widget that displays the `figure`
-		# it takes the `fig` instance as a parameter to __init__
-		self.canvas = FigureCanvas(self.fig)
-		self.canvas.mpl_connect('button_press_event', self.onclick)
-
-		# this is the Navigation widget
-		# it takes the Canvas widget and a parent
-		self.toolbar = NavigationToolbar(self.canvas, self)
-
-		# Just some button connected to `plot` method
 		self.files_widget = widgets.FilesWidget(self, 1, self.cfg)
 		self.files_widget.on_load_file = self.open_file
 
@@ -92,7 +65,6 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.c_channels.addItems(list(("L+R", "L", "R", "Mean")))
 		self.c_channels.setToolTip("Which channels should be analyzed?")
 
-		tolerance_l = QtWidgets.QLabel("Tolerance")
 		self.s_smoothing = QtWidgets.QDoubleSpinBox()
 		self.s_smoothing.setRange(.001, 5)
 		self.s_smoothing.setSingleStep(.01)
@@ -117,11 +89,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		self.central_widget.setLayout(self.qgrid)
 
-		self.s_band_lower.valueChanged.connect(self.on_param_changed)
-		self.s_band_upper.valueChanged.connect(self.on_param_changed)
-		self.s_clip_lower.valueChanged.connect(self.on_param_changed)
-		self.s_clip_upper.valueChanged.connect(self.on_param_changed)
-		self.s_smoothing.valueChanged.connect(self.on_param_changed)
+		for btn in (self.s_band_lower, self.s_band_upper, self.s_clip_lower, self.s_clip_upper, self.s_smoothing):
+			btn.valueChanged.connect(self.on_param_changed)
 		self.c_channels.currentIndexChanged.connect(self.update_spectrum)
 
 	def on_param_changed(self, ):
@@ -187,11 +156,9 @@ class MainWindow(QtWidgets.QMainWindow):
 		if self.file_src:
 			logging.info("Expanding")
 			# get input
-
 			clip_lower = self.s_clip_lower.value()
 			clip_upper = self.s_clip_upper.value()
 			signal, sr, channels = io_ops.read_file(self.file_src)
-
 			for channel_i in range(channels):
 				# map curve to channel output
 				if channel_i < len(self.vol_curves):
@@ -212,21 +179,16 @@ class MainWindow(QtWidgets.QMainWindow):
 			io_ops.write_file(self.file_src, signal, sr, channels, "_decompressed")
 
 	def plot(self):
-		# discards the old graph
-		self.ax.clear()
-		if self.spectra:
-			# draw clipped curves
-			for clipped in self.vol_curves:
-				self.ax.plot(self.t, clipped, linewidth=0.5, alpha=0.85)
-			# draw bounds
-			for bt in (self.s_clip_lower, self.s_clip_upper):
-				v = bt.value()
-				self.ax.plot((self.t[0], self.t[-1]), (v, v), linestyle="--", color="red", linewidth=0.5, alpha=0.85)
-			self.ax.legend(self.c_channels.currentText().split(","), loc='upper left')
-		self.ax.set_xlabel('Time [s]')
-		self.ax.set_ylabel('Input [dB]')
-		# refresh canvas
-		self.canvas.draw()
+		with self.update_plot('Time [s]', 'Input [dB]'):
+			if self.spectra:
+				# draw clipped curves
+				for clipped in self.vol_curves:
+					self.ax.plot(self.t, clipped, linewidth=0.5, alpha=0.85)
+				# draw bounds
+				for bt in (self.s_clip_lower, self.s_clip_upper):
+					v = bt.value()
+					self.ax.plot((self.t[0], self.t[-1]), (v, v), linestyle="--", color="red", linewidth=0.5, alpha=0.85)
+				self.ax.legend(self.c_channels.currentText().split(","), loc='upper left')
 
 
 if __name__ == '__main__':

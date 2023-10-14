@@ -12,6 +12,7 @@ from util.spectrum_flat import spectrum_from_audio_stereo
 
 
 # todo: make global sr set by the first file that is loaded, make all others fit
+from util.widgets import PlotMainWindow
 
 
 def indent(e, level=0):
@@ -64,9 +65,9 @@ def get_eq(file_src, file_ref, channel_mode):
 	return freqs, np.asarray(spectra_ref) - np.asarray(spectra_src)
 
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(PlotMainWindow):
 	def __init__(self, parent=None):
-		super(MainWindow, self).__init__(parent)
+		super().__init__(parent)
 
 		self.central_widget = QtWidgets.QWidget(self)
 		self.setCentralWidget(self.central_widget)
@@ -81,22 +82,6 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.av = []
 		self.freqs_av = []
 		self.cfg = config.load_config()
-
-		# a figure instance to plot on
-		self.fig, self.ax = plt.subplots(nrows=1, ncols=1)
-
-		# the range is not automatically fixed
-		# self.fig.patch.set_facecolor(SECONDARY.getRgb())
-		# self.ax.set_facecolor(SECONDARY.getRgb())
-		self.fig.patch.set_facecolor((53 / 255, 53 / 255, 53 / 255))
-		self.ax.set_facecolor((35 / 255, 35 / 255, 35 / 255))
-		# this is the Canvas Widget that displays the `figure`
-		# it takes the `fig` instance as a parameter to __init__
-		self.canvas = FigureCanvas(self.fig)
-
-		# this is the Navigation widget
-		# it takes the Canvas widget and a parent
-		self.toolbar = NavigationToolbar(self.canvas, self)
 
 		# Just some button connected to `plot` method
 		self.files_widget = widgets.FilesWidget(self, 2, self.cfg, ask_user=False)
@@ -202,20 +187,20 @@ class MainWindow(QtWidgets.QMainWindow):
 			self.update_color(eq_name)
 			self.plot()
 
-	def add_noise(self):
-		file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.cfg.get("dir_in", "C:/"),
-														 "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
-		if file_src:
-			file_ref = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', self.cfg.get("dir_in", "C:/"),
-															 "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
-			if file_ref:
-				channel_mode = self.c_channels.currentText()
-				self.freqs, self.eq_noise = get_eq(file_src, file_ref, channel_mode)
-				# self.listWidget.addItem(eq_name)
-				# self.names.append(eq_name)
-				# self.eqs.append( eq )
-				# self.update_color(eq_name)
-				self.plot()
+	# def add_noise(self):
+	# 	file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.cfg.get("dir_in", "C:/"),
+	# 													 "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
+	# 	if file_src:
+	# 		file_ref = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', self.cfg.get("dir_in", "C:/"),
+	# 														 "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
+	# 		if file_ref:
+	# 			channel_mode = self.c_channels.currentText()
+	# 			self.freqs, self.eq_noise = get_eq(file_src, file_ref, channel_mode)
+	# 			# self.listWidget.addItem(eq_name)
+	# 			# self.names.append(eq_name)
+	# 			# self.eqs.append( eq )
+	# 			# self.update_color(eq_name)
+	# 			self.plot()
 
 	def update_color(self, eq_name):
 		item = self.listWidget.findItems(eq_name, QtCore.Qt.MatchFixedString)[-1]
@@ -251,65 +236,61 @@ class MainWindow(QtWidgets.QMainWindow):
 			logging.exception(f"Saving failed")
 
 	def plot(self):
+		with self.update_plot('Frequency (Hz)', 'Volume Change (dB)'):
+			if self.freqs is not None:
+				# todo: just calculate it from SR and bin count
+				# again, just show from 20Hz
+				from20Hz = (np.abs(self.freqs - 20)).argmin()
 
-		# discards the old graph
-		self.ax.clear()
-		if self.freqs is not None:
-			# todo: just calculate it from SR and bin count
-			# again, just show from 20Hz
-			from20Hz = (np.abs(self.freqs - 20)).argmin()
+			if self.names:
+				num_in = 2000
+				# average over n samples, then reduce the step according to the desired output
+				n = self.s_smoothing.value()
+				num_out = self.s_output_res.value()
+				reduction_step = num_in // num_out
+				# take the average curve of all differential EQs
+				av_in = np.mean(np.asarray(self.eqs), axis=0)
+				highpass = self.s_highpass.value()
+				rolloff_start = self.s_rolloff_start.value()
+				rolloff_end = self.s_rolloff_end.value()
 
-		if self.names:
-			num_in = 2000
-			# average over n samples, then reduce the step according to the desired output
-			n = self.s_smoothing.value()
-			num_out = self.s_output_res.value()
-			reduction_step = num_in // num_out
-			# take the average curve of all differential EQs
-			av_in = np.mean(np.asarray(self.eqs), axis=0)
-			highpass = self.s_highpass.value()
-			rolloff_start = self.s_rolloff_start.value()
-			rolloff_end = self.s_rolloff_end.value()
+				# audacity EQ starts at 20Hz
+				freqs_spaced = np.power(2, np.linspace(np.log2(20), np.log2(self.freqs[-1]), num=num_in))
 
-			# audacity EQ starts at 20Hz
-			freqs_spaced = np.power(2, np.linspace(np.log2(20), np.log2(self.freqs[-1]), num=num_in))
+				avs = []
+				# smoothen the curves, and reduce the points with step indexing
+				self.freqs_av = filters.moving_average(freqs_spaced, n=n)[::reduction_step]
+				for channel in (0, 1):
+					# interpolate this channel's EQ, then smoothen and reduce keys for this channel
+					avs.append(
+						filters.moving_average(np.interp(freqs_spaced, self.freqs, av_in[channel]), n=n)[::reduction_step])
+				self.av = np.asarray(avs)
 
-			avs = []
-			# smoothen the curves, and reduce the points with step indexing
-			self.freqs_av = filters.moving_average(freqs_spaced, n=n)[::reduction_step]
-			for channel in (0, 1):
-				# interpolate this channel's EQ, then smoothen and reduce keys for this channel
-				avs.append(
-					filters.moving_average(np.interp(freqs_spaced, self.freqs, av_in[channel]), n=n)[::reduction_step])
-			self.av = np.asarray(avs)
+				# get the gain of the filtered  EQ
+				idx1 = np.abs(self.freqs_av - 70).argmin()
+				idx2 = np.abs(self.freqs_av - rolloff_end).argmin()
+				gain = np.mean(self.av[:, idx1:idx2])
+				strength = self.s_strength.value() / 100
+				if self.c_gain.isChecked():
+					self.av -= gain
+				self.av *= strength
 
-			# get the gain of the filtered  EQ
-			idx1 = np.abs(self.freqs_av - 70).argmin()
-			idx2 = np.abs(self.freqs_av - rolloff_end).argmin()
-			gain = np.mean(self.av[:, idx1:idx2])
-			strength = self.s_strength.value() / 100
-			if self.c_gain.isChecked():
-				self.av -= gain
-			self.av *= strength
+				# fade out
+				for channel in (0, 1):
+					# todo make rolloff_end a band parameter in octaves?
+					self.av[channel] *= np.interp(self.freqs_av, (rolloff_start, rolloff_end), (1, 0))
+					self.av[channel] *= np.interp(self.freqs_av, (0, highpass), (0, 1))
 
-			# fade out
-			for channel in (0, 1):
-				# todo make rolloff_end a band parameter in octaves?
-				self.av[channel] *= np.interp(self.freqs_av, (rolloff_start, rolloff_end), (1, 0))
-				self.av[channel] *= np.interp(self.freqs_av, (0, highpass), (0, 1))
-
-			# plot the contributing raw curves
-			for name, eq in zip(self.names, np.mean(np.asarray(self.eqs), axis=1)):
-				self.ax.semilogx(self.freqs[from20Hz:], eq[from20Hz:], basex=2, linestyle="--", linewidth=.5, alpha=.5,
-								 color=self.colors[self.names.index(name) + 1])
-			# take the average
-			self.ax.semilogx(self.freqs_av, np.mean(self.av, axis=0), basex=2, linewidth=2.5, alpha=1,
-							 color=self.colors[0])
-		if self.eq_noise is not None:
-			self.ax.semilogx(self.freqs[from20Hz:], np.mean(self.eq_noise, axis=0)[from20Hz:], basex=2, linestyle="-.",
-							 linewidth=.5, alpha=.5, color="white")
-		# refresh canvas
-		self.canvas.draw()
+				# plot the contributing raw curves
+				for name, eq in zip(self.names, np.mean(np.asarray(self.eqs), axis=1)):
+					self.ax.semilogx(self.freqs[from20Hz:], eq[from20Hz:], basex=2, linestyle="--", linewidth=.5, alpha=.5,
+									 color=self.colors[self.names.index(name) + 1])
+				# take the average
+				self.ax.semilogx(self.freqs_av, np.mean(self.av, axis=0), basex=2, linewidth=2.5, alpha=1,
+								 color=self.colors[0])
+			if self.eq_noise is not None:
+				self.ax.semilogx(self.freqs[from20Hz:], np.mean(self.eq_noise, axis=0)[from20Hz:], basex=2, linestyle="-.",
+								 linewidth=.5, alpha=.5, color="white")
 
 
 if __name__ == '__main__':

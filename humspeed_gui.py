@@ -3,6 +3,7 @@ import logging
 import numpy as np
 
 import util.correlation
+from util.widgets import PlotMainWindow
 
 try:
 	import resampy
@@ -10,10 +11,7 @@ except:
 	logging.warning("Resampy is not installed. In the commandline, run: pip install resampy")
 	resampy = None
 from PyQt5 import QtWidgets
-from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
-import matplotlib.pyplot as plt
-from util import fourier, io_ops, wow_detection, widgets, config
+from util import fourier, io_ops, widgets, config
 from util.spectrum_flat import spectrum_from_audio
 
 
@@ -26,9 +24,9 @@ def get_spectrum(file_src, channel_mode, fft_size):
 	return freqs, spectrum, sr
 
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(PlotMainWindow):
 	def __init__(self, parent=None):
-		super(MainWindow, self).__init__(parent)
+		super().__init__(parent)
 
 		self.central_widget = QtWidgets.QWidget(self)
 		self.setCentralWidget(self.central_widget)
@@ -48,25 +46,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		self.cb = QtWidgets.QApplication.clipboard()
 
-		# a figure instance to plot on
-		self.fig, self.ax = plt.subplots(nrows=1, ncols=1)
-
-		self.ax.set_xlabel('Frequency (Hz)')
-		self.ax.set_ylabel('Volume (dB)')
-
-		# the range is not automatically fixed
-		self.fig.patch.set_facecolor((53 / 255, 53 / 255, 53 / 255))
-		self.ax.set_facecolor((35 / 255, 35 / 255, 35 / 255))
-		# this is the Canvas Widget that displays the `figure`
-		# it takes the `fig` instance as a parameter to __init__
-		self.canvas = FigureCanvas(self.fig)
-		self.canvas.mpl_connect('button_press_event', self.onclick)
-
-		# this is the Navigation widget
-		# it takes the Canvas widget and a parent
-		self.toolbar = NavigationToolbar(self.canvas, self)
-
-		# Just some button connected to `plot` method
 		self.files_widget = widgets.FilesWidget(self, 1, self.cfg)
 		self.files_widget.on_load_file = self.open_file
 
@@ -114,9 +93,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		self.central_widget.setLayout(self.qgrid)
 
-		self.s_base_hum.valueChanged.connect(self.on_hum_param_changed)
-		self.s_num_harmonies.valueChanged.connect(self.on_hum_param_changed)
-		self.s_tolerance.valueChanged.connect(self.on_hum_param_changed)
+		for btn in (self.s_base_hum, self.s_num_harmonies, self.s_tolerance):
+			btn.valueChanged.connect(self.on_hum_param_changed)
 		self.c_channels.currentIndexChanged.connect(self.update_spectrum)
 
 	def on_hum_param_changed(self, ):
@@ -207,8 +185,9 @@ class MainWindow(QtWidgets.QMainWindow):
 	def resample(self, ):
 		if self.file_src and self.ratios:
 			if resampy is None:
-				print("Can't resample without resampy!")
-			print("Resampling...")
+				logging.warning("Can't resample without resampy!")
+				return
+			logging.info("Resampling")
 			# get input
 			ratio = self.ratios[-1]
 			percentage = (ratio - 1) * 100
@@ -219,17 +198,12 @@ class MainWindow(QtWidgets.QMainWindow):
 			io_ops.write_file(self.file_src, res, sr, channels, "_resampled_%.3f" % percentage)
 
 	def plot(self):
-		# discards the old graph
-		self.ax.clear()
-		self.ax.set_xlabel('Frequency (Hz)')
-		self.ax.set_ylabel('Volume (dB)')
-		if self.freqs is not None:
-			# cutoff view at 500Hz
-			end = np.argmin(np.abs(self.freqs - 500))
-			self.ax.plot(self.freqs[:end], self.spectrum[:end], linewidth=0.5, alpha=0.85)
-			self.ax.plot(self.marker_freqs, self.marker_dBs, 'b+', ms=14)
-		# refresh canvas
-		self.canvas.draw()
+		with self.update_plot('Frequency (Hz)', 'Volume (dB)'):
+			if self.freqs is not None:
+				# cutoff view at 500Hz
+				end = np.argmin(np.abs(self.freqs - 500))
+				self.ax.plot(self.freqs[:end], self.spectrum[:end], linewidth=0.5, alpha=0.85)
+				self.ax.plot(self.marker_freqs, self.marker_dBs, 'b+', ms=14)
 
 
 if __name__ == '__main__':

@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 import numpy as np
@@ -5,6 +6,9 @@ import vispy
 import sys
 
 from PyQt5 import QtGui, QtCore, QtWidgets
+from matplotlib import pyplot as plt
+from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 from util import units, config, qt_theme, colormaps, io_ops
 from util.config import save_json, load_json
@@ -1027,3 +1031,38 @@ class ParamWidget(QtWidgets.QWidget):
         self.undo_stack.push(AddAction(_markers))
         self.parent.update_title(filename)
         self.display_widget.update_fft_settings()
+
+
+class PlotMainWindow(QtWidgets.QMainWindow):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_plot()
+
+    def setup_plot(self):
+        # a figure instance to plot on
+        self.fig, self.ax = plt.subplots(nrows=1, ncols=1)
+        self.ax.set_xlabel('Frequency (Hz)')
+        self.ax.set_ylabel('Volume (dB)')
+        # the range is not automatically fixed
+        self.fig.patch.set_facecolor((53 / 255, 53 / 255, 53 / 255))
+        self.ax.set_facecolor((35 / 255, 35 / 255, 35 / 255))
+        # this is the Canvas Widget that displays the `figure`
+        # it takes the `fig` instance as a parameter to __init__
+        self.canvas = FigureCanvas(self.fig)
+        self.canvas.mpl_connect('button_press_event', self.onclick)
+        # this is the Navigation widget
+        # it takes the Canvas widget and a parent
+        self.toolbar = NavigationToolbar(self.canvas, self)
+
+    @contextlib.contextmanager
+    def update_plot(self, x_label=None, y_label=None):
+        # discards the old graph
+        self.ax.clear()
+        yield
+        self.ax.set_xlabel(x_label)
+        self.ax.set_ylabel(y_label)
+        # refresh canvas
+        self.canvas.draw()
+
+    def onclick(self, event):
+        pass

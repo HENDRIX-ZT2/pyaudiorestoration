@@ -5,7 +5,7 @@ import os
 
 import numpy as np
 from numba import jit
-import scipy
+from scipy import signal as dsp
 
 try:
 	import torch
@@ -53,7 +53,7 @@ def stft(x, n_fft=1024, step=512, window_name='blackmanharris'):
 	step = max(n_fft // 2, 1) if step is None else int(step)
 	if x.ndim != 1:
 		raise ValueError('x must be 1D')
-	window = scipy.signal.get_window(window_name, n_fft).astype(np.float32)
+	window = dsp.get_window(window_name, n_fft).astype(np.float32)
 	for fft_function in (
 			torch_rfft2,
 			pyfftw_rfft2,
@@ -349,7 +349,7 @@ def istft(stft_matrix, hop_length=None, win_length=None, window_name='blackmanha
 	# Set the default hop, if it's not already specified
 	if hop_length is None:
 		hop_length = int(win_length // 4)
-	window = scipy.signal.get_window(window_name, win_length, fftbins=True)
+	window = dsp.get_window(window_name, win_length, fftbins=True)
 
 	# Pad out to match n_fft, and add a broadcasting axis
 	window = pad_center(window, n_fft)[:, np.newaxis]
@@ -521,7 +521,7 @@ def window_sumsquare(window_name, n_frames, hop_length=512, win_length=None, n_f
 	x = np.zeros(n, dtype=dtype)
 
 	# Compute the squared window at the desired length
-	win_sq = scipy.signal.get_window(window_name, win_length)
+	win_sq = dsp.get_window(window_name, win_length)
 	win_sq = normalize(win_sq, norm=norm) ** 2
 	win_sq = pad_center(win_sq, n_fft)
 

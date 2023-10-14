@@ -4,8 +4,6 @@ import numpy as np
 import xml.etree.ElementTree as ET
 import os
 from PyQt5 import QtWidgets, QtGui, QtCore
-from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 import matplotlib.pyplot as plt
 from util import fourier, filters, widgets, config
 from util.spectrum_flat import spectrum_from_audio_stereo

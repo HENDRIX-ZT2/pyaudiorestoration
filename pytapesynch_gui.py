@@ -1,5 +1,4 @@
 import logging
-import os
 
 import numpy as np
 import resampy
@@ -7,13 +6,12 @@ import scipy
 from PyQt5 import QtWidgets
 
 # custom modules
-from util.correlation import xcorr, find_delay
+from util.correlation import find_delay
 from util.filters import make_odd
 from util.undo import AddAction, DeltaAction
-from util import spectrum, wow_detection, qt_threads, widgets, filters, io_ops, \
-	markers
+from util import spectrum, qt_threads, widgets, filters, io_ops, markers
 
-from util.config import load_json, logging_setup
+from util.config import logging_setup
 from util.wow_detection import interp_nans
 
 np.warnings.filterwarnings('error', category=np.VisibleDeprecationWarning)

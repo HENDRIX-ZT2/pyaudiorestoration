@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 from scipy.ndimage.filters import uniform_filter1d
 
@@ -7,7 +9,7 @@ from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as Navigatio
 import matplotlib.pyplot as plt
 from util import io_ops, units, widgets, config
 from util.filters import make_odd
-from util.spectrum_flat import spectrum_from_audio
+from util.spectrum_flat import spectrum_from_audio_stereo
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -87,7 +89,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.s_clip_upper.setToolTip("Upper gain boundary of noise floor")
 		
 		self.c_channels = QtWidgets.QComboBox(self)
-		self.c_channels.addItems(list(("L,R","L","R","Mean")))
+		self.c_channels.addItems(list(("L+R", "L", "R", "Mean")))
 		self.c_channels.setToolTip("Which channels should be analyzed?")
 		
 		tolerance_l = QtWidgets.QLabel("Tolerance")
@@ -155,11 +157,14 @@ class MainWindow(QtWidgets.QMainWindow):
 	
 	def update_spectrum(self,):
 		if self.file_src:
-			self.spectra, self.sr = spectrum_from_audio(self.file_src, self.fft_size, self.fft_hop, self.c_channels.currentText())
-			# get the time stamp at which each fft is taken
-			self.t = np.arange(0, self.fft_hop * len(self.spectra[0][0]), self.fft_hop) / self.sr
-			self.on_param_changed()
-	
+			try:
+				self.spectra, self.sr = spectrum_from_audio_stereo(self.file_src, self.fft_size, self.fft_hop, self.c_channels.currentText(), temporal_mean=False)
+				# get the time stamp at which each fft is taken
+				self.t = np.arange(0, self.fft_hop * len(self.spectra[0][0]), self.fft_hop) / self.sr
+				self.on_param_changed()
+			except:
+				logging.exception("Failed")
+
 	def onclick(self, event):
 		""" Update dB bounds on right click"""
 		if event.xdata and event.ydata:

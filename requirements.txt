@@ -1,6 +1,6 @@
 pyqt5
 soundfile
-matplotlib
+matplotlib==2.2.5
 scipy
 numpy
 vispy

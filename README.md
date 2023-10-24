@@ -26,7 +26,9 @@ A set of tools to restore audio quality from a variety of old analog sources, su
    - Run `python -m pip install --upgrade pip` to make sure your `pip` is up to date.
    - Run `pip install -r requirements.txt` to install the dependencies.
 
-4) In some cases, you have to troubleshoot the installation of some dependencies. Here is a list of known issues:
+4) If you have a supported GPU, install [pytorch](https://pytorch.org/get-started/locally/) with CUDA to massively speed up slow calculations by running them on the GPU. 
+
+5) In some cases, you have to troubleshoot the installation of some dependencies. Here is a list of known issues:
    - `freetype-py` may have trouble to downloading `freetype.dll`. In that case, download it from [FreeType](https://www.freetype.org/download.html) and place it in a folder included in your system's path.
 
 

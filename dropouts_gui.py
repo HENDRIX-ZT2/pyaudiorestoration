@@ -117,10 +117,14 @@ class MainWindow(QtWidgets.QMainWindow):
 		fft_size = self.display_widget.fft_size
 		fft_overlap = self.display_widget.fft_overlap
 		hop = fft_size // fft_overlap
-		if self.dropout_widget.mode == "Heuristic":
-			self.process_heuristic(fft_size, hop)
-		else:
-			self.process_max_mono(fft_size, hop)
+		try:
+			if self.dropout_widget.mode == "Heuristic":
+				self.process_heuristic(fft_size, hop)
+			else:
+				self.process_max_mono(fft_size, hop)
+		except:
+			logging.exception("Failed")
+		logging.exception("Done")
 
 	def process_max_mono(self, fft_size, hop):
 		for file_name in self.file_names:
@@ -175,6 +179,8 @@ class MainWindow(QtWidgets.QMainWindow):
 				# which range should dropouts be detected in?
 				imdata = fourier.get_mag(signal[:, channel], fft_size, hop, "hann")
 				imdata = units.to_dB(imdata)
+				# cast to np incase torch was used
+				imdata = np.array(imdata)
 				# now what we generally don't want to do is "fix" dropouts of the lower bands only
 				# basically, the gain of a band should be always controlled by that of the band above
 				# only the top band acts freely

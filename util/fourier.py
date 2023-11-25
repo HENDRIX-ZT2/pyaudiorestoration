@@ -208,7 +208,7 @@ def dtype_c2r(d, default=np.float32):
 	"""
 	mapping = {np.dtype(np.complex64): np.float32,
 			   np.dtype(np.complex128): np.float64,
-			   np.dtype(np.complex): np.float}
+			   np.dtype(complex): float}
 
 	# If we're given a real type already, return it
 	dt = np.dtype(d)
@@ -603,7 +603,7 @@ def normalize(S, norm=np.inf, axis=0, threshold=None, fill=None):
 		raise ParameterError('Input must be finite')
 
 	# All norms only depend on magnitude, let's do that first
-	mag = np.abs(S).astype(np.float)
+	mag = np.abs(S).astype(float)
 
 	# For max/min norms, filling with 1 works
 	fill_norm = 1

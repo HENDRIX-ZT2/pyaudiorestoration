@@ -16,8 +16,11 @@ def load_config():
 
 def save_json(json_path, dic):
 	logging.info(f"Saving {os.path.basename(json_path)}")
-	with open(json_path, "w") as json_writer:
-		json.dump(dic, json_writer, indent="\t", sort_keys=True)
+	try:
+		with open(json_path, "w") as json_writer:
+			json.dump(dic, json_writer, indent="\t", sort_keys=True)
+	except OSError:
+		logging.exception(f"Saving failed, perhaps lack of disk space")
 
 
 def load_json(json_path):

@@ -168,12 +168,13 @@ class FileWidget(QtWidgets.QWidget):
     file_changed = QtCore.pyqtSignal(str)
     spectrum_changed = QtCore.pyqtSignal(str)
 
-    def __init__(self, parent, cfg, description="", ask_user=True):
+    def __init__(self, parent, cfg, description="", ask_user=True, cfg_key="dir_in"):
         super(FileWidget, self).__init__(parent)
         self.parent = parent
         self.cfg = cfg
+        self.cfg_key = cfg_key
         if not self.cfg:
-            self.cfg["dir_in"] = "C://"
+            self.cfg[self.cfg_key] = "C://"
 
         self.filepath = ""
         self.description = description
@@ -232,7 +233,7 @@ class FileWidget(QtWidgets.QWidget):
             if os.path.splitext(filepath)[1].lower() in (".flac", ".wav"):
                 if not self.abort_open_new_file(filepath):
                     self.filepath = filepath
-                    self.cfg["dir_in"], self.filename = os.path.split(filepath)
+                    self.cfg[self.cfg_key], self.filename = os.path.split(filepath)
                     self.entry.setText(self.filename)
                     self.signal, self.sr, self.num_channels = io_ops.read_file(filepath)
                     self.channel_widget.refill(self.num_channels)
@@ -275,7 +276,7 @@ class FileWidget(QtWidgets.QWidget):
             self.accept_file(filepath)
 
     def ask_open(self):
-        filepath = QtWidgets.QFileDialog.getOpenFileName(self, 'Open ' + self.description, self.cfg.get("dir_in", "C:/"),
+        filepath = QtWidgets.QFileDialog.getOpenFileName(self, 'Open ' + self.description, self.cfg.get(self.cfg_key, "C:/"),
                                                          "Audio files (*.flac *.wav)")[0]
         self.accept_file(filepath)
         # update channels & recalculate spectrum
@@ -910,8 +911,8 @@ class FilesWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.parent = parent
         # note: count must be 1 or 2
         # idiosyncratic order here so the complicated stuff can remain as is
-        descriptions = ("Reference", "Source")
-        self.files = [FileWidget(self, cfg, description, ask_user) for description in descriptions[-count:]]
+        labels = ("Reference", "Source")
+        self.files = [FileWidget(self, cfg, label, ask_user, cfg_key=f"dir_in_{label.lower()}") for label in labels[-count:]]
         for file in self.files:
             file.spectrum_changed.connect(self.spectrum_changed.emit)
             file.file_changed.connect(self.file_changed.emit)

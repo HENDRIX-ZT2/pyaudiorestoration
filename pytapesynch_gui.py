@@ -14,7 +14,7 @@ from util import spectrum, qt_threads, widgets, filters, io_ops, markers
 from util.config import logging_setup
 from util.wow_detection import interp_nans
 
-np.warnings.filterwarnings('error', category=np.VisibleDeprecationWarning)
+# np.warnings.filterwarnings('error', category=np.VisibleDeprecationWarning)
 logging_setup()
 
 
@@ -149,7 +149,7 @@ class Canvas(spectrum.SpectrumCanvas):
 	def run_resample_batch(self):
 		filenames = QtWidgets.QFileDialog.getOpenFileNames(
 			self.parent, 'Open Files for Batch Resampling',
-			self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
+			self.parent.cfg.get("dir_in", ""), "Audio files (*.flac *.wav)")[0]
 		if filenames:
 			self.resample_files(filenames)
 

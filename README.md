@@ -12,10 +12,7 @@ A set of tools to restore audio quality from a variety of old analog sources, su
 ### Installation
 1) You need to install a suitable version of [Python](https://www.python.org/downloads/) first.
    - Recommended Python version: 
-     - at least 3.7+
-     - tested on 3.79
-     - 3.10 seems to support all dependencies; not tested
-     - 3.11 does not support all dependencies as of 2023-04-21
+     - 3.11 as of 2025-05-22
    - Use 64-bit python as 32-bit python doesn't work for all dependencies.
    - Make sure you check `Add Python to PATH` during installation.
 

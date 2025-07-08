@@ -12,6 +12,7 @@ from scipy.signal import savgol_filter
 
 from util import fourier, widgets, config, filters, io_ops, units
 from util.correlation import xcorr
+from util.units import to_fac
 
 
 def pairwise(iterable):
@@ -307,7 +308,7 @@ class MainWindow(QtWidgets.QMainWindow):
 					# we don't want to make pops more quiet, so clip at 1
 					# clip the upper boundary according to band above (was processed before)
 					# -> clip the factor to be between 1 and the factor of the band above (with some tolerance)
-					correction_fac = np.clip(np.power(10, gain_curve / 20), 1, correction_fac * bottom_freedom)
+					correction_fac = np.clip(to_fac(gain_curve), 1, correction_fac * bottom_freedom)
 					# resample to match the signal
 					vol_corr = signal[:, channel] * np.interp(np.linspace(0, 1, len(signal[:, channel])),
 															  np.linspace(0, 1, len(correction_fac)),

@@ -1,215 +1,246 @@
-import numpy as np
 import logging
+
+import matplotlib.pyplot as plt
+import numpy as np
+import resampy
+import scipy
 from PyQt5 import QtWidgets
+from scipy.interpolate import LinearNDInterpolator, RegularGridInterpolator
 
 # custom modules
-from util import spectrum, wow_detection, qt_threads, widgets, io_ops, markers
-from util.fourier import timed_log
+from util.correlation import find_delay
+from util.filters import make_odd
+from util.fourier import to_mag
+from util.undo import AddAction, DeltaAction
+from util import spectrum, qt_threads, widgets, filters, io_ops, markers, fourier
 
-from util.undo import AddAction, MoveAction, MergeAction
 from util.config import logging_setup
+from util.units import to_fac, to_dB
+from util.wow_detection import interp_nans
 
+# np.warnings.filterwarnings('error', category=np.VisibleDeprecationWarning)
 logging_setup()
 
 
 class MainWindow(widgets.MainWindow):
-	EXT = ".drp"
-	STORE = {"lines": markers.TraceLine, "regs": markers.RegLine}
+	EXT = ".drop"
+	STORE = {"dropouts": markers.DropoutSample, }
 
 	def __init__(self):
 		widgets.MainWindow.__init__(self, "Dropout Healer", widgets.ParamWidget, Canvas, 1)
+		self.props.display_widget.fft_size = 512
+		self.props.display_widget.fft_overlap = 16
 		main_menu = self.menuBar()
 		file_menu = main_menu.addMenu('File')
 		edit_menu = main_menu.addMenu('Edit')
-		# view_menu = main_menu.addMenu('View')
-		# help_menu = main_menu.addMenu('Help')
 		button_data = (
 			(file_menu, "Open", self.props.load, "CTRL+O", "dir"),
 			(file_menu, "Save", self.props.save, "CTRL+S", "save"),
 			(file_menu, "Resample", self.canvas.run_resample, "CTRL+R", "curve"),
 			(file_menu, "Batch Resample", self.canvas.run_resample_batch, "CTRL+B", "curve2"),
 			(file_menu, "Exit", self.close, "", "exit"),
+			(edit_menu, "Select All", self.canvas.select_all, "CTRL+A", "select_extend"),
+			# (edit_menu, "Improve", self.canvas.improve_lag, "CTRL+I"),
+			(edit_menu, "Delete Selected", self.canvas.delete_traces, "DEL", "x"),
 			(edit_menu, "Undo", self.props.undo_stack.undo, "CTRL+Z", "undo"),
 			(edit_menu, "Redo", self.props.undo_stack.redo, "CTRL+Y", "redo"),
-			(edit_menu, "Select All", self.canvas.select_all, "CTRL+A", "select_extend"),
-			(edit_menu, "Invert Selection", self.canvas.invert_selection, "CTRL+I", "select_intersect"),
-			(edit_menu, "Merge Selected", self.canvas.merge_selected_traces, "CTRL+M"),
-			(edit_menu, "Merge Overlapping", self.canvas.group_traces, "CTRL+G"),
-			(edit_menu, "Delete Selected", self.canvas.delete_traces, "DEL", "x"),
-			# (edit_menu, "Play/Pause", self.canvas.audio_widget.play_pause, "SPACE"),
-			)
+			(edit_menu, "Play/Pause", self.props.audio_widget.play_pause, "SPACE"),
+		)
 		self.add_to_menu(button_data)
 
 
 class Canvas(spectrum.SpectrumCanvas):
 
 	def __init__(self, parent):
-		spectrum.SpectrumCanvas.__init__(self, spectra_colors=(None,), y_axis='Octaves')
+		spectrum.SpectrumCanvas.__init__(self, bgcolor="black")
 		self.create_native()
 		self.native.setParent(parent)
 
 		self.unfreeze()
 		self.parent = parent
-		self.show_regs = True
-		self.show_lines = True
-		self.grouped_traces = []
-		self.master_speed = markers.MasterSpeedLine(self)
-		self.master_reg_speed = markers.MasterRegLine(self, (0, 0, 1, .5))
+		self.lag_line = markers.DropoutLine(self)
 
 		# threading & links
 		self.resampling_thread = qt_threads.ResamplingThread()
 		self.resampling_thread.notifyProgress.connect(self.parent.props.progress_bar.setValue)
 		self.fourier_thread.notifyProgress.connect(self.parent.props.progress_bar.setValue)
 		self.parent.props.display_widget.canvas = self
-		self.parent.props.tracing_widget.canvas = self
-		self.parent.props.filters_widget.bands_changed.connect(self.master_speed.update_bands)
-		self.parent.props.alignment_widget.setVisible(False)
+		self.parent.props.filters_widget.bands_changed.connect(self.lag_line.update_bands)
+		self.parent.props.tracing_widget.setVisible(False)
 		self.freeze()
+		self.parent.props.alignment_widget.smoothing_s.valueChanged.connect(self.update_smoothing)
 
 	@property
-	def lines(self):
-		return [m for m in self.markers if isinstance(m, markers.TraceLine)]
+	def dropouts(self):
+		return [m for m in self.markers if isinstance(m, markers.DropoutSample)]
 
-	@property
-	def regs(self):
-		return [m for m in self.markers if isinstance(m, markers.RegLine)]
+	def update_lines(self):
+		self.lag_line.update()
+
+	def update_smoothing(self, k):
+		logging.info(f"setting k={k}")
+		self.lag_line.smoothing = k
+		self.lag_line.update()
 
 	def load_visuals(self, ):
-		# read any saved traces or regressions
-		for offset, times, freqs in io_ops.read_trace(self.filenames[0]):
-			yield markers.TraceLine(self, times, freqs, offset=offset)
-		for t0, t1, amplitude, omega, phase, offset in io_ops.read_regs(self.filenames[0]):
-			yield markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
-
-	def merge_selected_traces(self):
-		self.merge_traces(list(reversed(self.selected_markers)))
-
-	def merge_traces(self, traces_to_merge):
-		if traces_to_merge and len(traces_to_merge) > 1:
-			logging.info(f"Merging {len(traces_to_merge)} lines")
-			t0 = 999999
-			t1 = 0
-			means = []
-			offsets = []
-			for trace in traces_to_merge:
-				t0 = min(t0, trace.speed_data[0, 0])
-				t1 = max(t1, trace.speed_data[-1, 0])
-				means.append(trace.spec_center[1])
-				offsets.append(trace.offset)
-			sr = self.sr
-			hop = self.hop
-			i0 = int(t0 * sr / hop)
-			i1 = int(t1 * sr / hop)
-			data = self.master_speed.data[i0:i1]
-			freqs = np.power(2, data[:, 1] + np.log2(np.mean(means)))
-			line = markers.TraceLine(self, data[:, 0], freqs, offset=None, auto_align=True)
-			self.props.undo_stack.push(MergeAction((line,), traces_to_merge))
-
-	def group_traces(self):
-		"""Convert overlapping traces into grouped representations"""
-		groups = self.master_speed.get_overlapping_lines()
-		logging.info(f"Merging {len(groups)} groups")
-		for group in groups:
-			self.merge_traces(group)
+		"""legacy code path"""
+		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):
+			yield markers.LagSample(self, (a0, a1), (b0, b1), d)
 
 	def run_resample(self):
-		spec = self.spectra[0]
-		if spec.audio_path and self.markers:
-			channels = self.props.files_widget.files[0].channel_widget.channels
-			if channels:
-				self.resampling_thread.settings = {
-					"filenames": (spec.audio_path,),
-					"signal_data": ((spec.signal, spec.sr),),
-					"speed_curve": self.get_speed_curve(),
-					"use_channels": channels}
-				self.props.resampling_widget.bump_index()
-				self.props.resampling_widget.to_cfg(self.resampling_thread.settings)
-				self.resampling_thread.start()
-
-	def get_speed_curve(self):
-		if self.regs:
-			speed_curve = self.master_reg_speed.get_linspace()
-			logging.info("Using regressed speed")
-		else:
-			speed_curve = self.master_speed.get_linspace()
-			logging.info("Using measured speed")
-		return speed_curve
+		self.resample_files((self.filenames[1],))
 
 	def run_resample_batch(self):
 		filenames = QtWidgets.QFileDialog.getOpenFileNames(
 			self.parent, 'Open Files for Batch Resampling',
-			self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
+			self.parent.cfg.get("dir_in", ""), "Audio files (*.flac *.wav)")[0]
 		if filenames:
 			self.resample_files(filenames)
 
+	def time_2_frame(self, t):
+		# todo unify on spectrum class
+		return int(t * self.sr / self.hop)
+
+	def freq_2_bin(self, f):
+		# todo unify on spectrum class
+		return max(1, min(self.fft_size//2, int(round(f * self.fft_size / self.sr))))
+
 	def resample_files(self, files):
 		channels = self.props.files_widget.files[0].channel_widget.channels
-		if self.markers and channels:
-			self.resampling_thread.settings = {
-				"filenames"			: files,
-				"speed_curve"		: self.get_speed_curve(),
-				"use_channels"		: channels}
-			self.props.resampling_widget.bump_index()
-			self.props.resampling_widget.to_cfg(self.resampling_thread.settings)
-			self.resampling_thread.start()
+		if self.filenames[0] and self.markers and channels:
+			# lag_curve = self.lag_line.data
+			# self.resampling_thread.settings = {
+			# 	"filenames"			: files,
+			# 	"lag_curve"			: lag_curve,
+			# 	"use_channels"		: channels}
+			# self.props.resampling_widget.bump_index()
+			# self.props.resampling_widget.to_cfg(self.resampling_thread.settings)
+			# self.resampling_thread.start()
+			fft_size = self.fft_size
+			hop = self.hop
 
-	def update_lines(self):
-		self.master_speed.update()
-		self.master_reg_speed.update()
+			for file_path in files:
+				signal, sr, num_channels = io_ops.read_file(file_path)
+				# if num_channels != 2:
+				# 	print("expects stereo input")
+				# 	continue
+				n = len(signal)
+				# pad input stereo signal
+				y_pad = fourier.fix_length(signal, n + fft_size // 2, axis=0)
+				# take FFT for each channel
+				D_L = np.array(fourier.stft(y_pad[:, 0], n_fft=fft_size, step=hop))
+				# print(D_L.shape, fft_size)
+				# D_R = np.array(fourier.stft(y_pad[:, 1], n_fft=fft_size, step=hop))
+				DL_mag = to_dB(to_mag(D_L))
+				boost_mask = np.zeros(D_L.shape, dtype=float)
+				# peaks =
+				for drop in self.markers:
+					frame_c = self.time_2_frame(drop.t)
+					frame_l = self.time_2_frame(drop.t - (drop.width / 2))
+					frame_r = self.time_2_frame(drop.t + (drop.width / 2))
+					# todo - parametrize frame_hw as percentage, set from UI for selected or as preset
+					frame_hw = frame_c - frame_l
+					bin_l = self.freq_2_bin(drop.f - (drop.height / 2))
+					bin_u = self.freq_2_bin(drop.f + (drop.height / 2))
 
+					region_mag = DL_mag[bin_l:bin_u, frame_l:frame_r]
+					# print(drop.t, frame_l, frame_c, frame_r, bin_l, bin_u)
+
+					# take mean of left and right frames
+					# lerp or regress desired spectrum for each bin
+					mag_left = np.mean(DL_mag[bin_l:bin_u, frame_l-frame_hw:frame_l], axis=1)
+					mag_right = np.mean(DL_mag[bin_l:bin_u, frame_r:frame_r+frame_hw], axis=1)
+
+					# plt.plot(mag_left)
+					# plt.plot(mag_right)
+					# plt.show()
+
+					fp_frames = np.linspace(frame_l, frame_r, num=frame_r-frame_l)
+					fp_bins = np.linspace(bin_l, bin_u, num=bin_u-bin_l)
+
+					interp = RegularGridInterpolator(((frame_l, frame_r), fp_bins), (mag_left, mag_right))
+					mp_bins, mp_frames = np.meshgrid(fp_bins, fp_frames)  # 2D grid for interpolation
+					fp_dB = interp((mp_frames, mp_bins))
+					fp_dB = np.swapaxes(fp_dB, 0, 1)
+					# plt.pcolormesh(fp_dB, shading='auto')
+					# calculate boost to bring dropout up to desired volume
+					diff = fp_dB-region_mag
+					np.clip(diff, 0, 255, out=diff)
+					# print(diff)
+					# plt.pcolormesh(diff, shading='auto')
+					# plt.show()
+					# store boost in mask
+					boost_mask[bin_l:bin_u, frame_l:frame_r] = diff
+				# correct fft data with boost
+				D_out = D_L * to_fac(boost_mask)
+				# take iFFT
+				y_out = fourier.istft(D_out, length=n, hop_length=hop)
+
+				io_ops.write_file(file_path, y_out, sr, 1, suffix="_drops")
+		
 	def on_mouse_press(self, event):
-		# #audio cursor
-		# b = self.px_to_spectrum(event.pos)
-		# #are they in spec_view?
-		# if b is not None:
-		# self.props.audio_widget.cursor(b[0])
-		# selection, single or multi
+		# selection
+		if event.button == 1:
+			# audio cursor
+			b = self.px_to_spectrum(event.pos)
+			# are they in spec_view?
+			if b is not None:
+				self.props.audio_widget.set_cursor(b[0])
 		if event.button == 2:
 			closest_marker = self.get_closest(self.markers, event.pos)
 			if closest_marker:
 				closest_marker.select_handle("Shift" in event.modifiers)
+				self.update_corr_view(closest_marker)
 				event.handled = True
 
+	def update_corr_view(self, closest_marker):
+		v = "None" if closest_marker.corr is None else f"{closest_marker.corr:.3f}"
+		self.parent.props.alignment_widget.corr_l.setText(v)
+
+	def get_speed_at(self, t):
+		width = 0.05
+		# calc speed across range
+		data = self.lag_line.data
+		# smooth / lowpass lag curve to get a better derivative
+		filtered = data[:, 1]
+		filtered = filters.butter_bandpass_filter(filtered, 0, 15, self.lag_line.marker_sr, order=3)
+		# for input in t, sample lag at t+-range (0.5 s?)
+		before = np.interp(t-width, data[:, 0], filtered)
+		after = np.interp(t+width, data[:, 0], filtered)
+		speed = (after - before) / (2 * width) + 1.0
+		logging.info(f"Source runs {(speed-1)*100:0.2f}% wrong")
+		return speed
+		# from matplotlib import pyplot as plt
+		# plt.plot(filtered, label=f"filtered")
+		# plt.plot(data[:, 1], label=f"raw")
+		# plt.legend(frameon=True, framealpha=0.75)
+		# plt.show()
+
 	def on_mouse_release(self, event):
-		if self.filenames[0] and (event.trail() is not None) and event.button == 1 and "Control" in event.modifiers:
-			# event.trail() is integer pixel coordinates on vispy canvas
-			trail = [self.px_to_spectrum(click) for click in event.trail()]
-			# filter out any clicks outside of spectrum, for which px_to_spectrum returns None
-			trail = [x for x in trail if x is not None]
-			if trail:
-				t0 = trail[0][0]
-				t1 = trail[-1][0]
-				settings = self.props.tracing_widget
-				# maybe query it here from the button instead of the other way
-				if settings.mode == "Sine Regression":
-					amplitude, omega, phase, offset = wow_detection.trace_sine_reg(
-						self.master_speed.get_linspace(), t0, t1, settings.rpm)
-					if amplitude == 0:
-						logging.warning("Regressed to no amplitude, trying to sample regression curve")
-						amplitude, omega, phase, offset = wow_detection.trace_sine_reg(
-							self.master_reg_speed.get_linspace(), t0, t1, settings.rpm)
-					marker = markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
-					self.props.undo_stack.push(AddAction((marker,)))
-				else:
-					self.track_wow(settings, trail)
-				return
+		# coords of the click on the vispy canvas
+		if self.filenames[1] and (event.trail() is not None) and event.button == 1:
+			last_click = event.trail()[0]
+			click = event.pos
+			if last_click is not None:
+				a = self.px_to_spectrum(last_click)
+				b = self.px_to_spectrum(click)
+				# are they in spec_view?
+				if a is not None and b is not None:
+					# direct mode
+					if "Shift" in event.modifiers:
+						marker = markers.DropoutSample(self, a, b)
+						self.props.undo_stack.push(AddAction((marker,)))
+					# batch detection
+					elif "Alt" in event.modifiers:
+						pass
+						# self.props.undo_stack.push(AddAction((markers,)))
 
-			# or in speed view?
-			trail = [self.px_to_speed(click) for click in event.trail()]
-			trail = [x for x in trail if x is not None]
-			if trail:
-				# only interested in the Y difference, so we can move the selected speed trace up or down
-				a = trail[0]
-				b = trail[-1]
-				self.props.undo_stack.push(MoveAction(self.selected_markers, a[1], b[1]))
-
-	def track_wow(self, settings, trail):
-		spec = self.spectra[0]
-		track = wow_detection.Track(
-			settings.mode, spec.fft_storage[spec.key], trail, self.fft_size,
-			self.hop, spec.sr, settings.tolerance, settings.adapt)
-		marker = markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
-		self.props.undo_stack.push(AddAction((marker,)))
+	def get_times_freqs(self, a, b, sr):
+		ref_t0, ref_t1 = sorted((a[0], b[0]))
+		freqs = sorted((a[1], b[1]))
+		lower = max(freqs[0], 1)
+		upper = min(freqs[1], sr // 2 - 1)
+		return ref_t0, ref_t1, lower, upper
 
 
 if __name__ == '__main__':

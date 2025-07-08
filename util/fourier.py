@@ -20,10 +20,13 @@ except:
 # Constrain STFT block sizes to 256 KB
 MAX_MEM_BLOCK = 2 ** 8 * 2 ** 10
 
+def to_mag(spectrum):
+	return abs(spectrum) + .0000001
+
 
 def get_mag(*args, **kwargs):
 	"""Get the magnitude spectrum from complex input"""
-	return abs(stft(*args, **kwargs)) + .0000001
+	return to_mag(stft(*args, **kwargs))
 
 
 def stft(x, n_fft=1024, step=512, window_name='blackmanharris'):

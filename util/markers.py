@@ -315,6 +315,63 @@ class PanSample(BaseMarker):
 		return cls(canvas, (a0, a1), (b0, b1), pan)
 
 
+class DropoutSample(BaseMarker):
+	"""Stores a single sinc regression's data and displays it"""
+
+	color_def = (1, 1, 1, .5)
+	color_sel = (0, 0, 1, 1)
+
+	def __init__(self, vispy_canvas, a, b, d=None, corr=0):
+		BaseMarker.__init__(self, vispy_canvas, self.color_def, self.color_sel)
+		self.a = a
+		self.b = b
+		self.corr = corr
+		if d is None:
+			self.d = vispy_canvas.spectra[-1].offset
+		else:
+			self.d = d
+		self.width = abs(a[0] - b[0])
+		self.t = (a[0] + b[0]) / 2
+		self.f = (a[1] + b[1]) / 2
+		self.height = abs(a[1] - b[1])
+		self.speed_center = np.array((self.t, self.d))
+		self.spec_center = np.array((self.t, self.f))
+		# create & store speed visual
+		r = 0.1
+		rect = scene.Rectangle(center=self.speed_center, width=r, height=r, radius=0)
+		rect.color = self.color_def
+		self.visuals.append(rect)
+
+		# create & store spec visual
+		rect = scene.Rectangle(center=self.spec_center, width=self.width, height=self.height, radius=0)
+		rect.color = self.color_def
+		rect.transform = vispy_canvas.spectra[-1].mel_transform
+		rect.set_gl_state('additive')
+		self.visuals.append(rect)
+
+	def set_offset(self, d):
+		self.d += d
+		speed_vis = self.visuals[0]
+		speed_vis.pos[:, 1] += d
+		speed_vis.pos = np.array(speed_vis.pos)
+
+	def set_color(self, c):
+		for v in self.visuals:
+			v.color = c
+
+	def select(self):
+		"""Toggle this line's selection state"""
+		self.selected = True
+		self.set_color(self.color_sel)
+
+	def to_cfg(self):
+		return self.a[0], self.a[1], self.b[0], self.b[1], self.d, self.corr
+
+	@classmethod
+	def from_cfg(cls, canvas, a0, a1, b0, b1, d, corr):
+		return cls(canvas, (a0, a1), (b0, b1), d, corr)
+
+
 class LagSample(BaseMarker):
 	"""Stores a single sinc regression's data and displays it"""
 
@@ -647,6 +704,52 @@ class LagLine(BaseLine):
 		azimuths_sampled_with_nans[nans] = lags_sampled[nans]
 		corrs_sampled_with_nans[nans] = corrs_sampled[nans]
 		return azimuths_sampled_with_nans, corrs_sampled_with_nans
+
+	def update(self):
+		logging.info(f"Updating sync line")
+		color = (1, 0, 0, 1)
+		if self.vispy_canvas.markers:
+			times = self.get_times()
+			try:
+				lag, corr = self.sample_at(times)
+				lag = self.filter_bandpass(lag)
+				self.data = np.stack((times, lag), axis=-1)
+				# map the correlation to color range
+				color = get_colors(corr)
+			except:
+				logging.exception(f"LagLine.update failed")
+		else:
+			self.data = self.empty
+		self.line_speed.set_data(pos=self.data, color=color)
+
+
+class DropoutLine(LagLine):
+	"""Stores and displays the average, ie. master speed curve."""
+
+	def __init__(self, vispy_canvas):
+		super().__init__(vispy_canvas)
+		self.smoothing = 3
+
+	def interp(self, times, keys, values):
+		# ensure that k doesn't exceed the order possible to infer from amount of samples
+		if len(keys) == 0:
+			return np.interp(times, (0,), (0,))
+		elif len(keys) == 1:
+			return np.interp(times, keys, values)
+		else:
+			# using bezier splines
+			k = min(self.smoothing, len(keys)-1)
+			lags_s = interpolate.InterpolatedUnivariateSpline(keys, values, k=k)
+			return lags_s(times)
+
+	def get_times(self):
+		dur = self.vispy_canvas.duration
+		num = int(dur * self.marker_sr)
+		# get the times at which the average should be sampled
+		return np.linspace(0, dur, num=num)
+
+	def sample_at(self, times):
+		return np.zeros(len(times)), np.zeros(len(times))
 
 	def update(self):
 		logging.info(f"Updating sync line")

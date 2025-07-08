@@ -1,7 +1,11 @@
+import logging
+
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QBuffer, QIODevice, Qt
 from PyQt5.QtWidgets import QApplication, QHBoxLayout, QPushButton, QSlider, QWidget
 from PyQt5.QtMultimedia import QAudio, QAudioFormat, QAudioOutput
+
+from util import io_ops
 
 
 class AudioWidget(QWidget):
@@ -40,20 +44,21 @@ class AudioWidget(QWidget):
 			if self.output.state() != QAudio.StoppedState:
 				self.output.stop()
 
-	def set_data(self, mono_sig, sr):
-		print(mono_sig.shape, sr)
+	def set_data(self, mono_sig, sr, channels):
+		# print(mono_sig.shape, sr, channels)
+		mono_sig = mono_sig[:, channels]
 		# if not self.format:
 		self.format = QAudioFormat()
-		self.format.setChannelCount(1)
+		self.format.setChannelCount(len(channels))
 		self.format.setSampleRate(sr)
-		#numpy is in bites, qt in bits
+		# numpy is in bytes, qt in bits
 		self.format.setSampleSize(mono_sig.dtype.itemsize*8)
 		self.format.setCodec("audio/pcm")
 		self.format.setByteOrder(QAudioFormat.LittleEndian)
 		self.format.setSampleType(QAudioFormat.Float)
 		self.output = QAudioOutput(self.format, self)
 		self.output.stateChanged.connect(self.audio_state_changed)
-		#change the content without stopping playback
+		# change the content without stopping playback
 		p = self.buffer.pos()
 		if self.buffer.isOpen():
 			self.buffer.close()
@@ -70,17 +75,26 @@ class AudioWidget(QWidget):
 		else:
 			self.playButton.setIcon(QIcon("icons/pause.png"))
 		
-	def cursor(self, t):
-		#seek towards the time t
-		#todo: handle EOF case
-		try:
-			if self.format:
-				t = max(0, t)
-				b = self.format.bytesForDuration(t*1000000)
-				self.buffer.seek(b)
-		except:
-			print("cursor error")
-		
+	def set_cursor(self, t):
+		"""seek towards time t in playback buffer"""
+		if self.format:
+			t = max(0, t)
+			pos = self.format.bytesForDuration(int(t*1000000))
+			if pos < self.buffer.size():
+				self.buffer.seek(pos)
+
+	@property
+	def cursor(self):
+		"""Get current cursor position in seconds"""
+		if self.output:
+			return self.format.durationForBytes(self.buffer.pos())/1000000  # microseconds
+		return 0.0
+
+	def load_audio(self, fp):
+		logging.info(f"Reading audio for playback")
+		signal, sr, num_channels = io_ops.read_file(fp)
+		self.set_data(signal, sr, list(range(num_channels)))
+
 	def play_pause(self):
 		if self.output:
 			#(un)pause the audio output, keeps the buffer intact
@@ -91,19 +105,18 @@ class AudioWidget(QWidget):
 			else:
 				self.buffer.seek(0)
 				self.output.start(self.buffer)
+			logging.info(f"Seek is at {self.cursor} seconds")
 			
 	def change_volume(self, value):
 		if self.output:
-			#need to wrap this because slider gives not float output
+			# need to wrap this because slider gives not float output
 			self.output.setVolume(value/10)
 	
 
 if __name__ == "__main__":
-	import io_ops
-	filename = "C:/Users/arnfi/Music/CSNY/CSNY WoodenNickel/02 Guinevere.flac"
-	signal, sr, channels = io_ops.read_file(filename)
+	fp = "C:/Users/arnfi/Music/CSNY/CSNY WoodenNickel/02 Guinevere.flac"
 	app = QApplication([])
 	window = AudioWidget()
-	window.set_data(signal[:,0], sr)
+	window.load_audio(fp)
 	window.show()
 	app.exec_()

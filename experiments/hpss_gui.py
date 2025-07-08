@@ -116,7 +116,7 @@ class MainWindow(QtWidgets.QMainWindow):
 	def process_hpss(self, fft_size, hop):
 		for file_name in self.file_names:
 			file_path = self.names_to_full_paths[file_name]
-			signal, sr, channels = io_ops.read_file(file_path)
+			signal, sr, num_channels = io_ops.read_file(file_path)
 
 			kernel = (self.hpss_widget.h_kernel, self.hpss_widget.p_kernel)
 			power = self.hpss_widget.power
@@ -130,7 +130,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			if margin != 1.0:
 				print("has residue", margin)
 				r_out = np.empty(signal.shape, signal.dtype)
-			for channel in range(channels):
+			for channel in range(num_channels):
 				print("channel",channel)
 				# take FFT for each channel
 				spectrum = fourier.stft(y_pad[:, channel], n_fft=fft_size, step=hop)
@@ -143,10 +143,10 @@ class MainWindow(QtWidgets.QMainWindow):
 				# implement residue: R = D - (H + P)
 				if margin != 1.0:
 					r_out[:, channel] = signal[:, channel] - (h_out[:, channel] + p_out[:, channel])
-			io_ops.write_file(file_path, h_out, sr, channels, suffix="_H")
-			io_ops.write_file(file_path, p_out, sr, channels, suffix="_P")
+			io_ops.write_file(file_path, h_out, sr, num_channels, suffix="_H")
+			io_ops.write_file(file_path, p_out, sr, num_channels, suffix="_P")
 			if margin != 1.0:
-				io_ops.write_file(file_path, r_out, sr, channels, suffix="_R")
+				io_ops.write_file(file_path, r_out, sr, num_channels, suffix="_R")
 
 
 if __name__ == '__main__':

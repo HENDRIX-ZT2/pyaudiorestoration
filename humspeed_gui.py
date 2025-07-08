@@ -192,10 +192,10 @@ class MainWindow(PlotMainWindow):
 			ratio = self.ratios[-1]
 			percentage = (ratio - 1) * 100
 
-			signal, sr, channels = io_ops.read_file(self.file_src)
+			signal, sr, num_channels = io_ops.read_file(self.file_src)
 			# resample, first axis is time!
 			res = resampy.resample(signal, sr * ratio, sr, axis=0, filter='sinc_window', num_zeros=8)
-			io_ops.write_file(self.file_src, res, sr, channels, "_resampled_%.3f" % percentage)
+			io_ops.write_file(self.file_src, res, sr, num_channels, "_resampled_%.3f" % percentage)
 
 	def plot(self):
 		with self.update_plot('Frequency (Hz)', 'Volume (dB)'):

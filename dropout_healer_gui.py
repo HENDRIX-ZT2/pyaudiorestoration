@@ -13,11 +13,11 @@ logging_setup()
 
 
 class MainWindow(widgets.MainWindow):
-	EXT = ".spd"
+	EXT = ".drp"
 	STORE = {"lines": markers.TraceLine, "regs": markers.RegLine}
 
 	def __init__(self):
-		widgets.MainWindow.__init__(self, "pyrespeeder", widgets.ParamWidget, Canvas, 1)
+		widgets.MainWindow.__init__(self, "Dropout Healer", widgets.ParamWidget, Canvas, 1)
 		main_menu = self.menuBar()
 		file_menu = main_menu.addMenu('File')
 		edit_menu = main_menu.addMenu('Edit')
@@ -36,7 +36,7 @@ class MainWindow(widgets.MainWindow):
 			(edit_menu, "Merge Selected", self.canvas.merge_selected_traces, "CTRL+M"),
 			(edit_menu, "Merge Overlapping", self.canvas.group_traces, "CTRL+G"),
 			(edit_menu, "Delete Selected", self.canvas.delete_traces, "DEL", "x"),
-			(edit_menu, "Play/Pause", self.props.audio_widget.play_pause, "SPACE"),
+			# (edit_menu, "Play/Pause", self.canvas.audio_widget.play_pause, "SPACE"),
 			)
 		self.add_to_menu(button_data)
 
@@ -158,12 +158,11 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.master_reg_speed.update()
 
 	def on_mouse_press(self, event):
-		if event.button == 1:
-			# audio cursor
-			b = self.px_to_spectrum(event.pos)
-			# are they in spec_view?
-			if b is not None:
-				self.props.audio_widget.set_cursor(b[0])
+		# #audio cursor
+		# b = self.px_to_spectrum(event.pos)
+		# #are they in spec_view?
+		# if b is not None:
+		# self.props.audio_widget.cursor(b[0])
 		# selection, single or multi
 		if event.button == 2:
 			closest_marker = self.get_closest(self.markers, event.pos)

@@ -17,6 +17,7 @@ def interp_nans(y):
 	nans, x = nan_helper(y)
 	y[nans] = np.interp(x(nans), x(~nans), y[~nans])
 
+# https://forge-2.ircam.fr/colas/fast-partial-tracking
 
 # https://github.com/librosa/librosa/blob/86275a8949fb4aef3fb16aa88b0e24862c24998f/librosa/core/pitch.py#L165
 # librosa piptrack

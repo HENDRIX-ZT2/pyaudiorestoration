@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from util import units, config, qt_theme, colormaps, io_ops
+from util import units, config, qt_theme, colormaps, io_ops, snd
 from util.config import save_json, load_json
 from util.undo import UndoStack, AddAction
 from util.units import pitch
@@ -613,7 +613,7 @@ class DropoutWidget(QtWidgets.QGroupBox):
         super().__init__("Alignment")
         mode_l = QtWidgets.QLabel("Mode")
         self.mode_c = QtWidgets.QComboBox(self)
-        self.mode_c.addItems(("Heuristic", "MaxMono"))
+        self.mode_c.addItems(("Heuristic", "Heuristic New", "MaxMono"))
         self.mode_c.currentIndexChanged.connect(self.toggle_mode)
 
         self.num_bands_l = QtWidgets.QLabel("Bands")
@@ -670,7 +670,7 @@ class DropoutWidget(QtWidgets.QGroupBox):
         vbox(self, grid(buttons))
 
     def toggle_mode(self):
-        b = (self.mode_c.currentText() == "Heuristic")
+        b = ("Heuristic" in self.mode_c.currentText())
         self.num_bands_l.setVisible(b)
         self.num_bands_s.setVisible(b)
         self.f_lower_l.setVisible(b)
@@ -972,13 +972,16 @@ class ParamWidget(QtWidgets.QWidget):
         self.progress_bar = QtWidgets.QProgressBar(self)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setAlignment(QtCore.Qt.AlignCenter)
-        # self.audio_widget = snd.AudioWidget()
+        self.audio_widget = snd.AudioWidget()
+        # only connect 1st file to playback
+        for file in self.files_widget.files[:1]:
+            file.file_changed.connect(self.audio_widget.load_audio)
         self.inspector_widget = InspectorWidget()
         self.alignment_widget = AlignmentWidget()
         self.undo_stack = UndoStack(self)
         self.stack_widget = StackWidget(self.undo_stack)
         self.buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget,
-                        self.filters_widget, self.resampling_widget, self.stack_widget, self.progress_bar,  # self.audio_widget,
+                        self.filters_widget, self.resampling_widget, self.stack_widget, self.progress_bar, self.audio_widget,
                         self.inspector_widget]
         vbox2(self, self.buttons)
 
@@ -1007,6 +1010,7 @@ class ParamWidget(QtWidgets.QWidget):
 
     def load(self):
         """Load project with all required settings"""
+        print("load")
         file_path = \
         QtWidgets.QFileDialog.getOpenFileName(self, 'Open Project', self.parent.cfg.get("dir_in", "C:/"), self.sel_str)[0]
         if not os.path.isfile(file_path):
@@ -1020,7 +1024,6 @@ class ParamWidget(QtWidgets.QWidget):
                     w.from_cfg(sync)
             _markers = []
             for marker_name, marker_class in self.parent.STORE.items():
-                # for marker_name in marker_names:
                 if marker_name in sync:
                     _markers.extend([marker_class.from_cfg(self.parent.canvas, *item) for item in sync[marker_name]])
         else:
@@ -1032,6 +1035,7 @@ class ParamWidget(QtWidgets.QWidget):
         self.undo_stack.push(AddAction(_markers))
         self.parent.update_title(filename)
         self.display_widget.update_fft_settings()
+
 
 
 class PlotMainWindow(QtWidgets.QMainWindow):

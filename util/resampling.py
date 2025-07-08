@@ -174,7 +174,7 @@ def run(filenames, signal_data=None, speed_curve=None, resampling_mode="Linear",
 				signal, sr = sig_data
 			else:
 				from util import io_ops
-				signal, sr, channels = io_ops.read_file(filename)
+				signal, sr, num_channels = io_ops.read_file(filename)
 			if resampling_mode == "Linear":
 				samples_in = np.arange(len(signal))
 			lowpass = 0

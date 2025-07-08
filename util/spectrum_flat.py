@@ -8,7 +8,7 @@ channel_map = {"L": (0,), "R": (1,), "L+R": (0, 1), "Mean": (0, 1)}
 
 
 def spectra_from_audio(filename, fft_size=4096, hop=256, channel_mode="L", temporal_mean=True):
-	signal, sr, channels = io_ops.read_file(filename)
+	signal, sr, num_channels = io_ops.read_file(filename)
 	spectra = []
 	for channel in channel_map[channel_mode]:
 		logging.debug(f"channel {channel}")

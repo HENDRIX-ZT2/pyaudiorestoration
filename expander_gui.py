@@ -158,8 +158,8 @@ class MainWindow(PlotMainWindow):
 			# get input
 			clip_lower = self.s_clip_lower.value()
 			clip_upper = self.s_clip_upper.value()
-			signal, sr, channels = io_ops.read_file(self.file_src)
-			for channel_i in range(channels):
+			signal, sr, num_channels = io_ops.read_file(self.file_src)
+			for channel_i in range(num_channels):
 				# map curve to channel output
 				if channel_i < len(self.vol_curves):
 					dBs = self.vol_curves[channel_i]
@@ -176,7 +176,7 @@ class MainWindow(PlotMainWindow):
 				signal[:, channel_i] *= final_fac
 
 			signal = units.normalize(signal)
-			io_ops.write_file(self.file_src, signal, sr, channels, "_decompressed")
+			io_ops.write_file(self.file_src, signal, sr, num_channels, "_decompressed")
 
 	def plot(self):
 		with self.update_plot('Time [s]', 'Input [dB]'):

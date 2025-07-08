@@ -11,7 +11,7 @@ def zero_crossings(a):
 
 
 def test(file_path):
-	signal, sr, channels = io_ops.read_file(file_path)
+	signal, sr, num_channels = io_ops.read_file(file_path)
 	crossings = zero_crossings(signal[:, 0])
 	deltas = np.diff(crossings)
 	smoothing = 1001

@@ -1,13 +1,17 @@
 import logging
+from statistics import correlation
 
+import matplotlib.pyplot as plt
 import numpy as np
 import os
 import scipy.signal
 # import librosa
 
 from PyQt5 import QtWidgets, QtCore
+from scipy.signal import savgol_filter
 
 from util import fourier, widgets, config, filters, io_ops, units
+from util.correlation import xcorr
 
 
 def pairwise(iterable):
@@ -120,6 +124,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		try:
 			if self.dropout_widget.mode == "Heuristic":
 				self.process_heuristic(fft_size, hop)
+			elif self.dropout_widget.mode == "Heuristic New":
+				self.process_heuristic_new(fft_size, hop)
 			else:
 				self.process_max_mono(fft_size, hop)
 		except:
@@ -130,8 +136,8 @@ class MainWindow(QtWidgets.QMainWindow):
 		for file_name in self.file_names:
 			try:
 				file_path = self.names_to_full_paths[file_name]
-				signal, sr, channels = io_ops.read_file(file_path)
-				if channels != 2:
+				signal, sr, num_channels = io_ops.read_file(file_path)
+				if num_channels != 2:
 					print("expects stereo input")
 					continue
 
@@ -154,6 +160,80 @@ class MainWindow(QtWidgets.QMainWindow):
 			except:
 				logging.exception(f"Failed for {file_name}")
 
+
+	def process_heuristic_new(self, fft_size, hop):
+		# todo
+		# detect dropout events
+		# try: https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.find_peaks_cwt.html#scipy.signal.find_peaks_cwt
+		# each dropout event candidate samples before and after
+		# pre-filter hull with blurred version
+		# events can be filtered by certain criteria
+		# - correlation before / after
+		# - volume slope
+		# - width
+		# - freq. depth
+		# - intensity
+		# - relative distance between transients
+
+		width = 0.01  # s
+		# get params from gui
+		max_width = self.dropout_widget.max_width
+		max_slope = self.dropout_widget.max_slope
+		num_bands = self.dropout_widget.num_bands
+		bottom_freedom = self.dropout_widget.bottom_freedom
+		f_upper = self.dropout_widget.f_upper
+		f_lower = self.dropout_widget.f_lower
+		for file_name in self.file_names:
+			file_path = self.names_to_full_paths[file_name]
+			signal, sr, num_channels = io_ops.read_file(file_path)
+
+			# distance to look around current fft
+			# divide by two because we are looking around the center
+			d = int(max_width / 2 * sr / hop)
+			print(f"lookaround ffts: {d}")
+			for channel in range(num_channels):
+				print("Processing channel", channel)
+				# which range should dropouts be detected in?
+				imdata = fourier.get_mag(signal[:, channel], fft_size, hop, "hann")
+				imdata = units.to_dB(imdata)
+				# cast to np incase torch was used
+				imdata = np.array(imdata)
+
+				bin_lower = int(f_lower * fft_size / sr)
+				bin_upper = int(f_upper * fft_size / sr)
+				# take the mean volume across this band
+				vol = np.mean(imdata[bin_lower:bin_upper], axis=0)
+
+				# detect valleys in the volume curve
+				peaks, properties = scipy.signal.find_peaks(-vol, height=None, threshold=None, distance=None,
+															prominence=5, wlen=None, rel_height=0.5,
+															plateau_size=None)
+				plt.vlines(peaks, -100, 1, colors=(0, 1.0, 0, 0.2), linestyles='--', label='peaks',)
+				plt.plot(vol, label='raw vol',)
+				filtered_vol = savgol_filter(vol, d*12, 3)
+				plt.plot(savgol_filter(vol, d*2, 3), label='filtered 1',)
+				plt.plot(filtered_vol, label='filtered vol',)
+
+				# cwt_peaks = scipy.signal.find_peaks_cwt(-vol, widths=np.arange(max(1, int(1/4*d)), 2*d))
+				# plt.vlines(cwt_peaks, -100, 1, colors=(1.0, 0, 0, 0.2), linestyles='-.', label='peaks',)
+				correlations = np.zeros(len(peaks))
+				for i, peak_i in enumerate(peaks):
+					try:
+						fft_before = imdata[bin_lower:bin_upper, peak_i-d]
+						fft_after = imdata[bin_lower:bin_upper, peak_i+d]
+						correlations[i] = xcorr(fft_before, fft_after, mode='valid')[0]
+
+						# plt.plot(fft_before, label=f'fft_before {i}',)
+						# plt.plot(fft_after, label=f'fft_after {i}',)
+						# if i > 2:
+						# 	break
+					except:
+						logging.exception(f"Failed for {file_name}")
+				correlations -= 1.0
+				correlations *= 1000
+				plt.plot(peaks, correlations, )
+		plt.show()
+
 	def process_heuristic(self, fft_size, hop):
 		# get params from gui
 		max_width = self.dropout_widget.max_width
@@ -168,13 +248,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
 		for file_name in self.file_names:
 			file_path = self.names_to_full_paths[file_name]
-			signal, sr, channels = io_ops.read_file(file_path)
+			signal, sr, num_channels = io_ops.read_file(file_path)
 
 			# distance to look around current fft
 			# divide by two because we are looking around the center
 			d = int(max_width / 1.5 * sr / hop)
 
-			for channel in range(channels):
+			for channel in range(num_channels):
 				print("Processing channel", channel)
 				# which range should dropouts be detected in?
 				imdata = fourier.get_mag(signal[:, channel], fft_size, hop, "hann")
@@ -218,15 +298,12 @@ class MainWindow(QtWidgets.QMainWindow):
 							right = np.mean(vol[peak_i + d:peak_i + 2 * d])
 							m = (left - right) / (2 * d)
 							# only use it if slant is desirable
-							# actually better make this abs() to avoid adding reverb
-							# if not m < -.5:
+							# use abs() to avoid adding reverb
 							if abs(m) < max_slope:
 								# now interpolate a new patch and get gain from difference to original volume curve
 								gain_curve[peak_i - d:peak_i + d + 1] = np.interp(range(2 * d + 1), (0, 2 * d),
 																				  (left, right)) - vol[
 																								   peak_i - d:peak_i + d + 1]
-					# gain_curve = gain_curve.clip(0)
-
 					# we don't want to make pops more quiet, so clip at 1
 					# clip the upper boundary according to band above (was processed before)
 					# -> clip the factor to be between 1 and the factor of the band above (with some tolerance)
@@ -239,7 +316,7 @@ class MainWindow(QtWidgets.QMainWindow):
 					signal[:, channel] += filters.butter_bandpass_filter(vol_corr, f_lower_band, f_upper_band, sr,
 																		 order=3)
 
-			io_ops.write_file(file_path, signal, sr, channels)
+			io_ops.write_file(file_path, signal, sr, num_channels)
 
 
 if __name__ == '__main__':

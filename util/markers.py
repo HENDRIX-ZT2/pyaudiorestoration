@@ -336,6 +336,7 @@ class DropoutSample(BaseMarker):
 		self.height = abs(a[1] - b[1])
 		self.speed_center = np.array((self.t, self.d))
 		self.spec_center = np.array((self.t, self.f))
+		self.surrounding = self.vispy_canvas.props.dropout_widget.surrounding
 		# create & store speed visual
 		r = 0.1
 		rect = scene.Rectangle(center=self.speed_center, width=r, height=r, radius=0)
@@ -348,6 +349,11 @@ class DropoutSample(BaseMarker):
 		rect.transform = vispy_canvas.spectra[-1].mel_transform
 		rect.set_gl_state('additive')
 		self.visuals.append(rect)
+
+	def toggle(self):
+		"""Toggle this line's selection state"""
+		super().toggle()
+		self.vispy_canvas.props.dropout_widget.surrounding = self.surrounding
 
 	def set_offset(self, d):
 		self.d += d

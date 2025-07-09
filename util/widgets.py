@@ -608,6 +608,79 @@ class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.ignore_phase_b.setChecked(is_checked)
 
 
+class DropsWidget(QtWidgets.QGroupBox, ConfigStorer):
+    vars_for_saving = ("smoothing", "ignore_phase",)
+
+    def __init__(self, ):
+        super().__init__("Dropouts")
+        self.ignore_phase_b = QtWidgets.QCheckBox("Ignore phase")
+        self.ignore_phase_b.setChecked(False)
+        self.ignore_phase_b.setToolTip(
+            "Turn on if phase of sources does not match and you want the strongest relationship.\n"
+            "Consistent negative values indicate you should invert one source.")
+
+        corr_l = QtWidgets.QLabel("Correlation")
+        self.corr_l = QtWidgets.QLabel("None")
+
+        self.before_after_l = QtWidgets.QLabel("Before / After")
+        self.before_after_s = QtWidgets.QDoubleSpinBox()
+        self.before_after_s.setRange(-1.0, 1.0)
+        self.before_after_s.setSingleStep(0.1)
+        self.before_after_s.setValue(0.0)
+        self.before_after_s.setToolTip("Where to balance the surrounding window from")
+
+        self.surrounding_l = QtWidgets.QLabel("Surrounding Region")
+        self.surrounding_s = QtWidgets.QDoubleSpinBox()
+        self.surrounding_s.setRange(0.001, 1)
+        self.surrounding_s.setSingleStep(.05)
+        self.surrounding_s.setValue(0.5)
+        self.surrounding_s.setSuffix(" %")
+        self.surrounding_s.setToolTip("Length of window outside of marker used to detect intended signal levels")
+
+        self.overlap_l = QtWidgets.QLabel("Overlap")
+        self.overlap_s = QtWidgets.QSpinBox()
+        self.overlap_s.setRange(1, 100)
+        self.overlap_s.setSingleStep(1)
+        self.overlap_s.setValue(32)
+        self.overlap_s.setToolTip("Amount of overlap between azimuth detection windows")
+
+        self.reject_l = QtWidgets.QLabel("Reject")
+        self.reject_s = QtWidgets.QDoubleSpinBox()
+        self.reject_s.setRange(0.0, 1.0)
+        self.reject_s.setSingleStep(.05)
+        self.reject_s.setValue(0.1)
+        self.reject_s.setToolTip("Reject alignment value if correlation goes lower than this value")
+
+        buttons = (
+            (self.ignore_phase_b,), (corr_l, self.corr_l), (self.before_after_l, self.before_after_s),
+            (self.surrounding_l, self.surrounding_s), (self.overlap_l, self.overlap_s), (self.reject_l, self.reject_s)
+        )
+        vbox(self, grid(buttons))
+
+    @property
+    def before_after(self):
+        return self.before_after_s.value()
+
+    @before_after.setter
+    def before_after(self, v):
+        self.before_after_s.setValue(v)
+
+    @property
+    def surrounding(self):
+        return self.surrounding_s.value()
+
+    @surrounding.setter
+    def surrounding(self, v):
+        self.surrounding_s.setValue(v)
+
+    @property
+    def ignore_phase(self): return self.ignore_phase_b.isChecked()
+
+    @ignore_phase.setter
+    def ignore_phase(self, is_checked):
+        self.ignore_phase_b.setChecked(is_checked)
+
+
 class DropoutWidget(QtWidgets.QGroupBox):
     def __init__(self, ):
         super().__init__("Alignment")
@@ -978,9 +1051,10 @@ class ParamWidget(QtWidgets.QWidget):
             file.file_changed.connect(self.audio_widget.load_audio)
         self.inspector_widget = InspectorWidget()
         self.alignment_widget = AlignmentWidget()
+        self.dropout_widget = DropsWidget()
         self.undo_stack = UndoStack(self)
         self.stack_widget = StackWidget(self.undo_stack)
-        self.buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget,
+        self.buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget, self.dropout_widget,
                         self.filters_widget, self.resampling_widget, self.stack_widget, self.progress_bar, self.audio_widget,
                         self.inspector_widget]
         vbox2(self, self.buttons)

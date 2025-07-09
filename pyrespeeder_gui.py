@@ -64,6 +64,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.tracing_widget.canvas = self
 		self.parent.props.filters_widget.bands_changed.connect(self.master_speed.update_bands)
 		self.parent.props.alignment_widget.setVisible(False)
+		self.parent.props.dropout_widget.setVisible(False)
 		self.freeze()
 
 	@property

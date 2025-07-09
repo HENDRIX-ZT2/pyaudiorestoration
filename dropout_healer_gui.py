@@ -52,7 +52,7 @@ class MainWindow(widgets.MainWindow):
 class Canvas(spectrum.SpectrumCanvas):
 
 	def __init__(self, parent):
-		spectrum.SpectrumCanvas.__init__(self, bgcolor="black")
+		spectrum.SpectrumCanvas.__init__(self, bgcolor="black", y_axis='Intensity')
 		self.create_native()
 		self.native.setParent(parent)
 
@@ -67,8 +67,10 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.display_widget.canvas = self
 		self.parent.props.filters_widget.bands_changed.connect(self.lag_line.update_bands)
 		self.parent.props.tracing_widget.setVisible(False)
+		self.parent.props.alignment_widget.setVisible(False)
+		self.parent.props.filters_widget.setVisible(False)
 		self.freeze()
-		self.parent.props.alignment_widget.smoothing_s.valueChanged.connect(self.update_smoothing)
+		self.parent.props.dropout_widget.surrounding_s.editingFinished.connect(self.update_surrounding)
 
 	@property
 	def dropouts(self):
@@ -77,10 +79,11 @@ class Canvas(spectrum.SpectrumCanvas):
 	def update_lines(self):
 		self.lag_line.update()
 
-	def update_smoothing(self, k):
-		logging.info(f"setting k={k}")
-		self.lag_line.smoothing = k
-		self.lag_line.update()
+	def update_surrounding(self):
+		f = self.parent.props.dropout_widget.surrounding
+		for reg in self.dropouts:
+			if reg.selected:
+				reg.surrounding = f
 
 	def load_visuals(self, ):
 		"""legacy code path"""
@@ -135,26 +138,19 @@ class Canvas(spectrum.SpectrumCanvas):
 				boost_mask = np.zeros(D_L.shape, dtype=float)
 				# peaks =
 				for drop in self.markers:
-					frame_c = self.time_2_frame(drop.t)
 					frame_l = self.time_2_frame(drop.t - (drop.width / 2))
 					frame_r = self.time_2_frame(drop.t + (drop.width / 2))
-					# todo - parametrize frame_hw as percentage, set from UI for selected or as preset
-					frame_hw = frame_c - frame_l
+					# parametrize frame_surrounding as percentage, set from UI for selected or as preset
+					frame_surrounding = self.time_2_frame(drop.width * drop.surrounding)
 					bin_l = self.freq_2_bin(drop.f - (drop.height / 2))
 					bin_u = self.freq_2_bin(drop.f + (drop.height / 2))
 
-					region_mag = DL_mag[bin_l:bin_u, frame_l:frame_r]
-					# print(drop.t, frame_l, frame_c, frame_r, bin_l, bin_u)
-
 					# take mean of left and right frames
-					# lerp or regress desired spectrum for each bin
-					mag_left = np.mean(DL_mag[bin_l:bin_u, frame_l-frame_hw:frame_l], axis=1)
-					mag_right = np.mean(DL_mag[bin_l:bin_u, frame_r:frame_r+frame_hw], axis=1)
+					mag_left = np.mean(DL_mag[bin_l:bin_u, frame_l-frame_surrounding:frame_l], axis=1)
+					mag_right = np.mean(DL_mag[bin_l:bin_u, frame_r:frame_r+frame_surrounding], axis=1)
 
-					# plt.plot(mag_left)
-					# plt.plot(mag_right)
-					# plt.show()
-
+					# interpolate the desired spectrum for each bin in the selected region
+					region_mag = DL_mag[bin_l:bin_u, frame_l:frame_r]
 					fp_frames = np.linspace(frame_l, frame_r, num=frame_r-frame_l)
 					fp_bins = np.linspace(bin_l, bin_u, num=bin_u-bin_l)
 
@@ -164,7 +160,7 @@ class Canvas(spectrum.SpectrumCanvas):
 					fp_dB = np.swapaxes(fp_dB, 0, 1)
 					# plt.pcolormesh(fp_dB, shading='auto')
 					# calculate boost to bring dropout up to desired volume
-					diff = fp_dB-region_mag
+					diff = fp_dB - region_mag
 					np.clip(diff, 0, 255, out=diff)
 					# print(diff)
 					# plt.pcolormesh(diff, shading='auto')

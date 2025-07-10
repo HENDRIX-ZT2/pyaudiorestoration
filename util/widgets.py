@@ -609,19 +609,10 @@ class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
 
 
 class DropsWidget(QtWidgets.QGroupBox, ConfigStorer):
-    vars_for_saving = ("smoothing", "ignore_phase",)
+    vars_for_saving = ("before_after", "surrounding",)
 
     def __init__(self, ):
         super().__init__("Dropouts")
-        self.ignore_phase_b = QtWidgets.QCheckBox("Ignore phase")
-        self.ignore_phase_b.setChecked(False)
-        self.ignore_phase_b.setToolTip(
-            "Turn on if phase of sources does not match and you want the strongest relationship.\n"
-            "Consistent negative values indicate you should invert one source.")
-
-        corr_l = QtWidgets.QLabel("Correlation")
-        self.corr_l = QtWidgets.QLabel("None")
-
         self.before_after_l = QtWidgets.QLabel("Before / After")
         self.before_after_s = QtWidgets.QDoubleSpinBox()
         self.before_after_s.setRange(-1.0, 1.0)
@@ -637,23 +628,25 @@ class DropsWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.surrounding_s.setSuffix(" %")
         self.surrounding_s.setToolTip("Length of window outside of marker used to detect intended signal levels")
 
-        self.overlap_l = QtWidgets.QLabel("Overlap")
-        self.overlap_s = QtWidgets.QSpinBox()
-        self.overlap_s.setRange(1, 100)
-        self.overlap_s.setSingleStep(1)
-        self.overlap_s.setValue(32)
-        self.overlap_s.setToolTip("Amount of overlap between azimuth detection windows")
+        self.gain_l = QtWidgets.QLabel("Gain")
+        self.gain_s = QtWidgets.QSpinBox()
+        self.gain_s.setRange(-15, 15)
+        self.gain_s.setSingleStep(1)
+        self.gain_s.setValue(0)
+        self.gain_s.setSuffix(" dB")
+        self.gain_s.setToolTip("Additional gain applied to selected dropouts")
 
-        self.reject_l = QtWidgets.QLabel("Reject")
-        self.reject_s = QtWidgets.QDoubleSpinBox()
-        self.reject_s.setRange(0.0, 1.0)
-        self.reject_s.setSingleStep(.05)
-        self.reject_s.setValue(0.1)
-        self.reject_s.setToolTip("Reject alignment value if correlation goes lower than this value")
+        self.width_l = QtWidgets.QLabel("Width")
+        self.width_s = QtWidgets.QSpinBox()
+        self.width_s.setRange(1, 200)
+        self.width_s.setSingleStep(1)
+        self.width_s.setValue(20)
+        self.width_s.setSuffix(" ms")
+        self.width_s.setToolTip("Baseline width for automatically detected dropouts")
 
         buttons = (
-            (self.ignore_phase_b,), (corr_l, self.corr_l), (self.before_after_l, self.before_after_s),
-            (self.surrounding_l, self.surrounding_s), (self.overlap_l, self.overlap_s), (self.reject_l, self.reject_s)
+            (self.before_after_l, self.before_after_s),
+            (self.surrounding_l, self.surrounding_s), (self.gain_l, self.gain_s), (self.width_l, self.width_s)
         )
         vbox(self, grid(buttons))
 
@@ -672,13 +665,6 @@ class DropsWidget(QtWidgets.QGroupBox, ConfigStorer):
     @surrounding.setter
     def surrounding(self, v):
         self.surrounding_s.setValue(v)
-
-    @property
-    def ignore_phase(self): return self.ignore_phase_b.isChecked()
-
-    @ignore_phase.setter
-    def ignore_phase(self, is_checked):
-        self.ignore_phase_b.setChecked(is_checked)
 
 
 class DropoutWidget(QtWidgets.QGroupBox):
@@ -835,12 +821,12 @@ class StackWidget(QtWidgets.QGroupBox):
         vbox(self, grid(buttons))
 
 
-class ResamplingWidget(QtWidgets.QGroupBox, ConfigStorer):
+class OutputWidget(QtWidgets.QGroupBox, ConfigStorer):
     vars_for_saving = ("suffix", "sinc_quality", "resampling_mode")
 
     def __init__(self, ):
-        super().__init__("Resampling")
-        mode_l = QtWidgets.QLabel("Mode")
+        super().__init__("Output")
+        self.mode_l = QtWidgets.QLabel("Mode")
         self.mode_c = QtWidgets.QComboBox(self)
         self.mode_c.addItems(("Linear", "Sinc"))
         self.mode_c.currentIndexChanged.connect(self.toggle_resampling_quality)
@@ -858,10 +844,10 @@ class ResamplingWidget(QtWidgets.QGroupBox, ConfigStorer):
 
         self.incremental_b = QtWidgets.QCheckBox("Keep takes")
         self.incremental_b.setChecked(False)
-        self.incremental_b.setToolTip("If checked, adds an incrementing suffix (_0, _1, ...) for each resampling run.")
+        self.incremental_b.setToolTip("If checked, adds an incrementing suffix (_0, _1, ...) for each time you export the audio.")
         self.suffix_index = 0
 
-        buttons = ((mode_l, self.mode_c,), (self.sinc_quality_l, self.sinc_quality_s), (self.incremental_b,))
+        buttons = ((self.mode_l, self.mode_c,), (self.sinc_quality_l, self.sinc_quality_s), (self.incremental_b,))
         vbox(self, grid(buttons))
 
     def toggle_resampling_quality(self):
@@ -1041,7 +1027,7 @@ class ParamWidget(QtWidgets.QWidget):
         self.display_widget = SpectrumSettingsWidget()
         self.tracing_widget = TracingWidget()
         self.filters_widget = FiltersWidget()
-        self.resampling_widget = ResamplingWidget()
+        self.output_widget = OutputWidget()
         self.progress_bar = QtWidgets.QProgressBar(self)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setAlignment(QtCore.Qt.AlignCenter)
@@ -1055,7 +1041,7 @@ class ParamWidget(QtWidgets.QWidget):
         self.undo_stack = UndoStack(self)
         self.stack_widget = StackWidget(self.undo_stack)
         self.buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget, self.dropout_widget,
-                        self.filters_widget, self.resampling_widget, self.stack_widget, self.progress_bar, self.audio_widget,
+                        self.filters_widget, self.output_widget, self.stack_widget, self.progress_bar, self.audio_widget,
                         self.inspector_widget]
         vbox2(self, self.buttons)
 

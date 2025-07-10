@@ -69,6 +69,8 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.tracing_widget.setVisible(False)
 		self.parent.props.alignment_widget.setVisible(False)
 		self.parent.props.filters_widget.setVisible(False)
+		self.parent.props.output_widget.mode_l.setVisible(False)
+		self.parent.props.output_widget.mode_c.setVisible(False)
 		self.freeze()
 		self.parent.props.dropout_widget.surrounding_s.editingFinished.connect(self.update_surrounding)
 
@@ -116,8 +118,8 @@ class Canvas(spectrum.SpectrumCanvas):
 			# 	"filenames"			: files,
 			# 	"lag_curve"			: lag_curve,
 			# 	"use_channels"		: channels}
-			# self.props.resampling_widget.bump_index()
-			# self.props.resampling_widget.to_cfg(self.resampling_thread.settings)
+			self.props.output_widget.bump_index()
+			# self.props.output_widget.to_cfg(self.resampling_thread.settings)
 			# self.resampling_thread.start()
 			fft_size = self.fft_size
 			hop = self.hop
@@ -161,7 +163,8 @@ class Canvas(spectrum.SpectrumCanvas):
 					# plt.pcolormesh(fp_dB, shading='auto')
 					# calculate boost to bring dropout up to desired volume
 					diff = fp_dB - region_mag
-					np.clip(diff, 0, 255, out=diff)
+					# take at least as much as the previous gain for each bin
+					np.clip(diff, boost_mask[bin_l:bin_u, frame_l:frame_r], 255, out=diff)
 					# print(diff)
 					# plt.pcolormesh(diff, shading='auto')
 					# plt.show()
@@ -172,7 +175,7 @@ class Canvas(spectrum.SpectrumCanvas):
 				# take iFFT
 				y_out = fourier.istft(D_out, length=n, hop_length=hop)
 
-				io_ops.write_file(file_path, y_out, sr, 1, suffix="_drops")
+				io_ops.write_file(file_path, y_out, sr, 1, suffix=f"_drops{self.props.output_widget.suffix}")
 		
 	def on_mouse_press(self, event):
 		# selection

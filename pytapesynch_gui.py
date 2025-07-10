@@ -162,8 +162,8 @@ class Canvas(spectrum.SpectrumCanvas):
 				"filenames"			: files,
 				"lag_curve"			: lag_curve,
 				"use_channels"		: channels}
-			self.props.resampling_widget.bump_index()
-			self.props.resampling_widget.to_cfg(self.resampling_thread.settings)
+			self.props.output_widget.bump_index()
+			self.props.output_widget.to_cfg(self.resampling_thread.settings)
 			self.resampling_thread.start()
 		
 	def on_mouse_press(self, event):

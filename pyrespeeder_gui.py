@@ -75,7 +75,8 @@ class Canvas(spectrum.SpectrumCanvas):
 	def regs(self):
 		return [m for m in self.markers if isinstance(m, markers.RegLine)]
 
-	def load_visuals(self, ):
+	def load_visuals_legacy(self, ):
+		"""legacy code path"""
 		# read any saved traces or regressions
 		for offset, times, freqs in io_ops.read_trace(self.filenames[0]):
 			yield markers.TraceLine(self, times, freqs, offset=offset)
@@ -157,20 +158,6 @@ class Canvas(spectrum.SpectrumCanvas):
 	def update_lines(self):
 		self.master_speed.update()
 		self.master_reg_speed.update()
-
-	def on_mouse_press(self, event):
-		if event.button == 1:
-			# audio cursor
-			b = self.px_to_spectrum(event.pos)
-			# are they in spec_view?
-			if b is not None:
-				self.props.audio_widget.set_cursor(b[0])
-		# selection, single or multi
-		if event.button == 2:
-			closest_marker = self.get_closest(self.markers, event.pos)
-			if closest_marker:
-				closest_marker.select_handle("Shift" in event.modifiers)
-				event.handled = True
 
 	def on_mouse_release(self, event):
 		if self.filenames[0] and (event.trail() is not None) and event.button == 1 and "Control" in event.modifiers:

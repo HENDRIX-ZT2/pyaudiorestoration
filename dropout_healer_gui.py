@@ -2,21 +2,18 @@ import logging
 
 import matplotlib.pyplot as plt
 import numpy as np
-import resampy
 import scipy
 from PyQt5 import QtWidgets
-from scipy.interpolate import LinearNDInterpolator, RegularGridInterpolator
+from scipy.interpolate import RegularGridInterpolator
+from scipy.signal import savgol_filter
 
 # custom modules
-from util.correlation import find_delay
-from util.filters import make_odd
 from util.fourier import to_mag
-from util.undo import AddAction, DeltaAction
-from util import spectrum, qt_threads, widgets, filters, io_ops, markers, fourier
+from util.undo import AddAction
+from util import spectrum, qt_threads, widgets, io_ops, markers, fourier
 
 from util.config import logging_setup
 from util.units import to_fac, to_dB
-from util.wow_detection import interp_nans
 
 # np.warnings.filterwarnings('error', category=np.VisibleDeprecationWarning)
 logging_setup()
@@ -87,11 +84,6 @@ class Canvas(spectrum.SpectrumCanvas):
 			if reg.selected:
 				reg.surrounding = f
 
-	def load_visuals(self, ):
-		"""legacy code path"""
-		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):
-			yield markers.LagSample(self, (a0, a1), (b0, b1), d)
-
 	def run_resample(self):
 		self.resample_files((self.filenames[1],))
 
@@ -105,6 +97,10 @@ class Canvas(spectrum.SpectrumCanvas):
 	def time_2_frame(self, t):
 		# todo unify on spectrum class
 		return int(t * self.sr / self.hop)
+
+	def frame_2_time(self, f):
+		# todo unify on spectrum class
+		return f / self.sr * self.hop
 
 	def freq_2_bin(self, f):
 		# todo unify on spectrum class
@@ -166,44 +162,6 @@ class Canvas(spectrum.SpectrumCanvas):
 					output[:, channel] = fourier.istft(spectrum_complex, length=n, hop_length=hop)
 
 				io_ops.write_file(file_path, output, sr, 1, suffix=f"_drops{self.props.output_widget.suffix}")
-		
-	def on_mouse_press(self, event):
-		# selection
-		if event.button == 1:
-			# audio cursor
-			b = self.px_to_spectrum(event.pos)
-			# are they in spec_view?
-			if b is not None:
-				self.props.audio_widget.set_cursor(b[0])
-		if event.button == 2:
-			closest_marker = self.get_closest(self.markers, event.pos)
-			if closest_marker:
-				closest_marker.select_handle("Shift" in event.modifiers)
-				self.update_corr_view(closest_marker)
-				event.handled = True
-
-	def update_corr_view(self, closest_marker):
-		v = "None" if closest_marker.corr is None else f"{closest_marker.corr:.3f}"
-		self.parent.props.alignment_widget.corr_l.setText(v)
-
-	def get_speed_at(self, t):
-		width = 0.05
-		# calc speed across range
-		data = self.lag_line.data
-		# smooth / lowpass lag curve to get a better derivative
-		filtered = data[:, 1]
-		filtered = filters.butter_bandpass_filter(filtered, 0, 15, self.lag_line.marker_sr, order=3)
-		# for input in t, sample lag at t+-range (0.5 s?)
-		before = np.interp(t-width, data[:, 0], filtered)
-		after = np.interp(t+width, data[:, 0], filtered)
-		speed = (after - before) / (2 * width) + 1.0
-		logging.info(f"Source runs {(speed-1)*100:0.2f}% wrong")
-		return speed
-		# from matplotlib import pyplot as plt
-		# plt.plot(filtered, label=f"filtered")
-		# plt.plot(data[:, 1], label=f"raw")
-		# plt.legend(frameon=True, framealpha=0.75)
-		# plt.show()
 
 	def on_mouse_release(self, event):
 		# coords of the click on the vispy canvas
@@ -215,21 +173,72 @@ class Canvas(spectrum.SpectrumCanvas):
 				b = self.px_to_spectrum(click)
 				# are they in spec_view?
 				if a is not None and b is not None:
+					spec = self.spectra[0]
+					t_0, t_1, f_lower, f_upper = spec.get_times_freqs(a, b)
 					# direct mode
 					if "Shift" in event.modifiers:
 						marker = markers.DropoutSample(self, a, b)
 						self.props.undo_stack.push(AddAction((marker,)))
 					# batch detection
 					elif "Alt" in event.modifiers:
-						pass
-						# self.props.undo_stack.push(AddAction((markers,)))
+						imdata = spec.fft_storage[spec.key]
+						imdata = np.array(imdata)
+						imdata = to_dB(imdata)
+						# which range should dropouts be detected in?
+						frame_b = self.time_2_frame(t_0)
+						frame_a = self.time_2_frame(t_1)
+						bin_l = self.freq_2_bin(f_lower)
+						bin_u = self.freq_2_bin(f_upper)
+						# take the mean volume across this band
+						vol = np.mean(imdata[bin_l:bin_u, frame_b:frame_a], axis=0)
+						half_width = self.props.dropout_widget.width / 1000 / 2
+						frames_half_width = self.time_2_frame(half_width)
+						vol_lt = savgol_filter(vol, frames_half_width*12, 5)
+						vol_st = savgol_filter(vol, frames_half_width, 5)
 
-	def get_times_freqs(self, a, b, sr):
-		ref_t0, ref_t1 = sorted((a[0], b[0]))
-		freqs = sorted((a[1], b[1]))
-		lower = max(freqs[0], 1)
-		upper = min(freqs[1], sr // 2 - 1)
-		return ref_t0, ref_t1, lower, upper
+						# detect valleys in the volume curve
+						peaks, properties = scipy.signal.find_peaks(-vol, height=None, threshold=None, distance=None,
+																	prominence=5, wlen=None, rel_height=0.5,
+																	plateau_size=None)
+						# plt.vlines(peaks, -100, 1, colors=(0, 1.0, 0, 0.2), linestyles='--', label='peaks',)
+						# plt.plot(vol, label='raw vol',)
+						# plt.plot(vol_lt, label='vol_lt',)
+						# plt.plot(vol_st, label='vol_st',)
+						# plt.show()
+						_markers = []
+						for f_peak in peaks:
+							# get intersection of variously interpolated curves
+							t_center = self.frame_2_time(frame_b + f_peak)
+							try:
+								# optimize hw by measuring the width of a parabola fit through the dropout and the low-passed signal
+								# get frames for fitting the parabola
+								f_qw = self.time_2_frame(half_width / 4)
+								f_before = f_peak - f_qw
+								f_after = f_peak + f_qw
+								xp = np.arange(f_before, f_after)
+								# fit the parabola
+								parabola_coeff = np.polyfit(xp, vol_st[f_before:f_after], 2)
+								parabola = np.poly1d(parabola_coeff, r=False, variable=None)
+								# get frames for sampling the parabola
+								f_hw = self.time_2_frame(half_width)
+								f_before = f_peak - f_hw
+								f_after = f_peak + f_hw
+								xp = np.arange(f_before, f_after)
+								fp = parabola(xp)
+								# get intersection and calculate width from peaks
+								f_intersection = scipy.signal.argrelmin(np.abs(fp-vol_lt[f_before:f_after]))[0]
+								assert len(f_intersection)==2
+								# plt.plot(xp, fp, label='parab')
+								# plt.plot(f_intersection+f_before, fp[f_intersection], 'ro', label='x',)
+								half_width = self.frame_2_time(f_intersection[1]-f_intersection[0])
+							except:
+								logging.exception(f"Could not refine width at peak {f_peak}")
+							t_before = t_center-half_width
+							t_after = t_center+half_width
+							marker = markers.DropoutSample(self, (t_before, f_lower), (t_after, f_upper))
+							_markers.append(marker)
+						self.props.undo_stack.push(AddAction(_markers))
+
 
 
 if __name__ == '__main__':

@@ -168,6 +168,13 @@ class Spectrum:
 		sig = self.signal[ref_sample0:ref_sample1, self.selected_channel]
 		return np.pad(sig, (ref_pad_l, ref_pad_r), "constant", constant_values=0)
 
+	def get_times_freqs(self, a, b):
+		t_0, t_1 = sorted((a[0], b[0]))
+		freqs = sorted((a[1], b[1]))
+		f_lower = max(freqs[0], 1)
+		f_upper = min(freqs[1], self.sr // 2 - 1)
+		return t_0, t_1, f_lower, f_upper
+
 
 class SpectrumPiece(scene.Image):
 	"""The visualization of one part of the whole spectrogram."""
@@ -297,6 +304,10 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 		self.freeze()
 
+	def load_visuals_legacy(self, ):
+		"""legacy code path"""
+		pass
+	
 	@property
 	def sr(self):
 		"""Use the maximum to avoid downsampling when sr differs per source"""
@@ -386,9 +397,6 @@ class SpectrumCanvas(scene.SceneCanvas):
 		spec.set_clims(self.vmin, self.vmax)
 		spec.set_cmap(self.cmap)
 
-	# don't bother with audio until it is fixed
-	# self.props.audio_widget.set_data(signal[:,channel], spec.sr)
-
 	def reset_view(self):
 		# (re)set the spec_view
 		self.speed_view.camera.rect = (0, -1, self.duration, 2)
@@ -408,6 +416,20 @@ class SpectrumCanvas(scene.SceneCanvas):
 		for spe in self.spectra:
 			spe.set_clims(vmin, vmax)
 		self.colorbar_display.clim = (vmin, vmax)
+
+	def on_mouse_press(self, event):
+		# audio cursor
+		if event.button == 1:
+			b = self.px_to_spectrum(event.pos)
+			# are they in spec_view?
+			if b is not None:
+				self.props.audio_widget.set_cursor(b[0])
+		# selection, single or multi
+		if event.button == 2:
+			closest_marker = self.get_closest(self.markers, event.pos)
+			if closest_marker:
+				closest_marker.select_handle("Shift" in event.modifiers)
+				event.handled = True
 
 	def on_mouse_wheel(self, event):
 		# coords of the click on the vispy canvas

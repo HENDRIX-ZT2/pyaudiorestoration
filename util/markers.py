@@ -321,22 +321,22 @@ class DropoutSample(BaseMarker):
 	color_def = (1, 1, 1, .5)
 	color_sel = (0, 0, 1, 1)
 
-	def __init__(self, vispy_canvas, a, b, d=None, corr=0):
+	def __init__(self, vispy_canvas, a, b, surrounding=None):
 		BaseMarker.__init__(self, vispy_canvas, self.color_def, self.color_sel)
 		self.a = a
 		self.b = b
-		self.corr = corr
-		if d is None:
-			self.d = vispy_canvas.spectra[-1].offset
-		else:
-			self.d = d
+		self.corr = 0
+		self.d = 0
 		self.width = abs(a[0] - b[0])
 		self.t = (a[0] + b[0]) / 2
 		self.f = (a[1] + b[1]) / 2
 		self.height = abs(a[1] - b[1])
 		self.speed_center = np.array((self.t, self.d))
 		self.spec_center = np.array((self.t, self.f))
-		self.surrounding = self.vispy_canvas.props.dropout_widget.surrounding
+		if surrounding is None:
+			self.surrounding = self.vispy_canvas.props.dropout_widget.surrounding
+		else:
+			self.surrounding = surrounding
 		# create & store speed visual
 		r = 0.1
 		rect = scene.Rectangle(center=self.speed_center, width=r, height=r, radius=0)
@@ -371,11 +371,11 @@ class DropoutSample(BaseMarker):
 		self.set_color(self.color_sel)
 
 	def to_cfg(self):
-		return self.a[0], self.a[1], self.b[0], self.b[1], self.d, self.corr
+		return self.a[0], self.a[1], self.b[0], self.b[1], self.surrounding
 
 	@classmethod
-	def from_cfg(cls, canvas, a0, a1, b0, b1, d, corr):
-		return cls(canvas, (a0, a1), (b0, b1), d, corr)
+	def from_cfg(cls, canvas, a0, a1, b0, b1, surrounding):
+		return cls(canvas, (a0, a1), (b0, b1), surrounding)
 
 
 class LagSample(BaseMarker):

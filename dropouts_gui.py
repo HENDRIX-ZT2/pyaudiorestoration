@@ -1,6 +1,7 @@
 import logging
 from statistics import correlation
 
+import librosa
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -200,6 +201,8 @@ class MainWindow(QtWidgets.QMainWindow):
 				# cast to np incase torch was used
 				imdata = np.array(imdata)
 
+				onsets = librosa.onset.onset_detect(y=signal[:, channel], sr=sr, units='time', sparse=True)
+				plt.vlines(onsets * sr / hop, -100, 1, colors=(1, 0, 0, 0.3), linestyles='--', label='onsets',)
 				bin_lower = int(f_lower * fft_size / sr)
 				bin_upper = int(f_upper * fft_size / sr)
 				# take the mean volume across this band

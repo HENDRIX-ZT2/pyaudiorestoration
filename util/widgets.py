@@ -666,6 +666,14 @@ class DropsWidget(QtWidgets.QGroupBox, ConfigStorer):
     def surrounding(self, v):
         self.surrounding_s.setValue(v)
 
+    @property
+    def width(self):
+        return self.width_s.value()
+
+    @width.setter
+    def width(self, v):
+        self.width_s.setValue(v)
+
 
 class DropoutWidget(QtWidgets.QGroupBox):
     def __init__(self, ):
@@ -1089,7 +1097,7 @@ class ParamWidget(QtWidgets.QWidget):
         else:
             # old style project file or audio file
             self.files_widget.files[0].accept_file(file_path)
-            _markers = list(self.parent.canvas.load_visuals())
+            _markers = list(self.parent.canvas.load_visuals_legacy())
         # Cleanup of old data
         self.parent.canvas.delete_traces(delete_all=True)
         self.undo_stack.push(AddAction(_markers))

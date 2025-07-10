@@ -80,7 +80,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.lag_line.smoothing = k
 		self.lag_line.update()
 
-	def load_visuals(self, ):
+	def load_visuals_legacy(self, ):
 		"""legacy code path"""
 		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):
 			yield markers.LagSample(self, (a0, a1), (b0, b1), d)
@@ -91,7 +91,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		for lag in selected:
 			try:
 				# prepare some values
-				t0, t1, lower, upper = self.get_times_freqs(lag.a, lag.b, self.sr)
+				t0, t1, lower, upper = self.spectra[0].get_times_freqs(lag.a, lag.b)
 				time_delay, lag.corr = self.correlate_sources(t0, t1, lag.d, lower, upper)
 				deltas.append(time_delay)
 			except:
@@ -221,12 +221,11 @@ class Canvas(spectrum.SpectrumCanvas):
 						self.props.undo_stack.push(AddAction((marker,)))
 					elif "Alt" in event.modifiers:
 						logging.info("Azimuth mode")
-						sr = self.sr
 						dur = self.parent.props.alignment_widget.win_s.value()
 						overlap = self.parent.props.alignment_widget.overlap_s.value()
 						reject = self.parent.props.alignment_widget.reject_s.value()
 						# first get the time range for selection
-						ref_t0, ref_t1, lower, upper = self.get_times_freqs(a, b, sr)
+						ref_t0, ref_t1, lower, upper = self.spectra[0].get_times_freqs(a, b)
 
 						sample_times = np.arange(ref_t0, ref_t1, dur/overlap)
 						if not len(sample_times):
@@ -256,12 +255,6 @@ class Canvas(spectrum.SpectrumCanvas):
 						marker = markers.AzimuthLine(self, out[:, 0], out[:, 1], corrs, lower, upper)
 						self.props.undo_stack.push(AddAction((marker,)))
 
-	def get_times_freqs(self, a, b, sr):
-		ref_t0, ref_t1 = sorted((a[0], b[0]))
-		freqs = sorted((a[1], b[1]))
-		lower = max(freqs[0], 1)
-		upper = min(freqs[1], sr // 2 - 1)
-		return ref_t0, ref_t1, lower, upper
 
 
 if __name__ == '__main__':

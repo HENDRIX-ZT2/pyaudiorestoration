@@ -44,7 +44,8 @@ class Canvas(spectrum.SpectrumCanvas):
 	def update_lines(self):
 		self.pan_line.update()
 
-	def load_visuals(self, ):
+	def load_visuals_legacy(self, ):
+		"""legacy code path"""
 		for a0, a1, b0, b1, d in io_ops.read_lag(self.filenames[0]):
 			yield markers.PanSample(self, (a0, a1), (b0, b1), d)
 

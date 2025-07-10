@@ -12,7 +12,7 @@ def spectra_from_audio(filename, fft_size=4096, hop=256, channel_mode="L", tempo
 	spectra = []
 	for channel in channel_map[channel_mode]:
 		logging.debug(f"channel {channel}")
-		if channel == channels:
+		if channel == num_channels:
 			logging.warning("not enough channels for L/R comparison  - fallback to mono")
 			break
 		# get the magnitude spectrum

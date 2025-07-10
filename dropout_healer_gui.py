@@ -123,59 +123,49 @@ class Canvas(spectrum.SpectrumCanvas):
 			# self.resampling_thread.start()
 			fft_size = self.fft_size
 			hop = self.hop
-
 			for file_path in files:
 				signal, sr, num_channels = io_ops.read_file(file_path)
-				# if num_channels != 2:
-				# 	print("expects stereo input")
-				# 	continue
+				output = np.empty(signal.shape, dtype=signal.dtype)
 				n = len(signal)
 				# pad input stereo signal
 				y_pad = fourier.fix_length(signal, n + fft_size // 2, axis=0)
-				# take FFT for each channel
-				D_L = np.array(fourier.stft(y_pad[:, 0], n_fft=fft_size, step=hop))
-				# print(D_L.shape, fft_size)
-				# D_R = np.array(fourier.stft(y_pad[:, 1], n_fft=fft_size, step=hop))
-				DL_mag = to_dB(to_mag(D_L))
-				boost_mask = np.zeros(D_L.shape, dtype=float)
-				# peaks =
-				for drop in self.markers:
-					frame_l = self.time_2_frame(drop.t - (drop.width / 2))
-					frame_r = self.time_2_frame(drop.t + (drop.width / 2))
-					# parametrize frame_surrounding as percentage, set from UI for selected or as preset
-					frame_surrounding = self.time_2_frame(drop.width * drop.surrounding)
-					bin_l = self.freq_2_bin(drop.f - (drop.height / 2))
-					bin_u = self.freq_2_bin(drop.f + (drop.height / 2))
+				for channel in channels:
+					# take FFT for each channel
+					spectrum_complex = np.array(fourier.stft(y_pad[:, channel], n_fft=fft_size, step=hop))
+					spectrum_db = to_dB(to_mag(spectrum_complex))
+					gain_db_whole = np.zeros(spectrum_complex.shape, dtype=float)
+					for drop in self.markers:
+						frame_b = self.time_2_frame(drop.t - (drop.width / 2))
+						frame_a = self.time_2_frame(drop.t + (drop.width / 2))
+						# parametrize frame_surrounding as percentage, set from UI for selected or as preset, at least 1
+						frame_surrounding = max(1, self.time_2_frame(drop.width * drop.surrounding))
+						bin_l = self.freq_2_bin(drop.f - (drop.height / 2))
+						bin_u = self.freq_2_bin(drop.f + (drop.height / 2))
+	
+						# take mean of left and right frames
+						mag_before = np.mean(spectrum_db[bin_l:bin_u, frame_b-frame_surrounding:frame_b], axis=1)
+						mag_after = np.mean(spectrum_db[bin_l:bin_u, frame_a:frame_a+frame_surrounding], axis=1)
+	
+						# interpolate the desired spectrum for each bin in the selected region
+						fp_frames = np.linspace(frame_b, frame_a, num=frame_a-frame_b)
+						fp_bins = np.linspace(bin_l, bin_u, num=bin_u-bin_l)
+	
+						interp = RegularGridInterpolator(((frame_b, frame_a), fp_bins), (mag_before, mag_after))
+						mp_bins, mp_frames = np.meshgrid(fp_bins, fp_frames)  # 2D grid for interpolation
+						fp_db = interp((mp_frames, mp_bins))
+						fp_db = np.swapaxes(fp_db, 0, 1)
+						# calculate boost to bring dropout up to desired volume
+						gain_db = fp_db - spectrum_db[bin_l:bin_u, frame_b:frame_a]
+						# take at least as much as the previous gain for each bin
+						np.clip(gain_db, gain_db_whole[bin_l:bin_u, frame_b:frame_a], 255, out=gain_db)
+						# store boost in mask
+						gain_db_whole[bin_l:bin_u, frame_b:frame_a] = gain_db
+					# correct fft data with boost
+					spectrum_complex *= to_fac(gain_db_whole)
+					# take iFFT
+					output[:, channel] = fourier.istft(spectrum_complex, length=n, hop_length=hop)
 
-					# take mean of left and right frames
-					mag_left = np.mean(DL_mag[bin_l:bin_u, frame_l-frame_surrounding:frame_l], axis=1)
-					mag_right = np.mean(DL_mag[bin_l:bin_u, frame_r:frame_r+frame_surrounding], axis=1)
-
-					# interpolate the desired spectrum for each bin in the selected region
-					region_mag = DL_mag[bin_l:bin_u, frame_l:frame_r]
-					fp_frames = np.linspace(frame_l, frame_r, num=frame_r-frame_l)
-					fp_bins = np.linspace(bin_l, bin_u, num=bin_u-bin_l)
-
-					interp = RegularGridInterpolator(((frame_l, frame_r), fp_bins), (mag_left, mag_right))
-					mp_bins, mp_frames = np.meshgrid(fp_bins, fp_frames)  # 2D grid for interpolation
-					fp_dB = interp((mp_frames, mp_bins))
-					fp_dB = np.swapaxes(fp_dB, 0, 1)
-					# plt.pcolormesh(fp_dB, shading='auto')
-					# calculate boost to bring dropout up to desired volume
-					diff = fp_dB - region_mag
-					# take at least as much as the previous gain for each bin
-					np.clip(diff, boost_mask[bin_l:bin_u, frame_l:frame_r], 255, out=diff)
-					# print(diff)
-					# plt.pcolormesh(diff, shading='auto')
-					# plt.show()
-					# store boost in mask
-					boost_mask[bin_l:bin_u, frame_l:frame_r] = diff
-				# correct fft data with boost
-				D_out = D_L * to_fac(boost_mask)
-				# take iFFT
-				y_out = fourier.istft(D_out, length=n, hop_length=hop)
-
-				io_ops.write_file(file_path, y_out, sr, 1, suffix=f"_drops{self.props.output_widget.suffix}")
+				io_ops.write_file(file_path, output, sr, 1, suffix=f"_drops{self.props.output_widget.suffix}")
 		
 	def on_mouse_press(self, event):
 		# selection

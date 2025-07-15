@@ -643,10 +643,17 @@ class DropsWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.width_s.setValue(20)
         self.width_s.setSuffix(" ms")
         self.width_s.setToolTip("Baseline width for automatically detected dropouts")
+        
+        self.sensitivity_l = QtWidgets.QLabel("Sensitivity")
+        self.sensitivity_s = QtWidgets.QSpinBox()
+        self.sensitivity_s.setRange(0, 10)
+        self.sensitivity_s.setSingleStep(1)
+        self.sensitivity_s.setValue(5)
+        self.sensitivity_s.setToolTip("Raise to detect more dropouts at the cost of also selecting dips in the signal that are not dropouts")
 
         buttons = (
             (self.before_after_l, self.before_after_s),
-            (self.surrounding_l, self.surrounding_s), (self.gain_l, self.gain_s), (self.width_l, self.width_s)
+            (self.surrounding_l, self.surrounding_s), (self.gain_l, self.gain_s), (self.width_l, self.width_s), (self.sensitivity_l, self.sensitivity_s)
         )
         vbox(self, grid(buttons))
 
@@ -673,6 +680,14 @@ class DropsWidget(QtWidgets.QGroupBox, ConfigStorer):
     @width.setter
     def width(self, v):
         self.width_s.setValue(v)
+
+    @property
+    def sensitivity(self):
+        return self.sensitivity_s.value()
+
+    @sensitivity.setter
+    def sensitivity(self, v):
+        self.sensitivity_s.setValue(v)
 
 
 class DropoutWidget(QtWidgets.QGroupBox):

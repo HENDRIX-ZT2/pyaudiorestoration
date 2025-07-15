@@ -161,7 +161,7 @@ class Canvas(spectrum.SpectrumCanvas):
 					# take iFFT
 					output[:, channel] = fourier.istft(spectrum_complex, length=n, hop_length=hop)
 
-				io_ops.write_file(file_path, output, sr, 1, suffix=f"_drops{self.props.output_widget.suffix}")
+				io_ops.write_file(file_path, output, sr, len(channels), suffix=f"_drops{self.props.output_widget.suffix}")
 
 	def on_mouse_release(self, event):
 		# coords of the click on the vispy canvas
@@ -198,7 +198,7 @@ class Canvas(spectrum.SpectrumCanvas):
 
 						# detect valleys in the volume curve
 						peaks, properties = scipy.signal.find_peaks(-vol, height=None, threshold=None, distance=None,
-																	prominence=5, wlen=None, rel_height=0.5,
+																	prominence=10.0-self.props.dropout_widget.sensitivity, wlen=None, rel_height=0.5,
 																	plateau_size=None)
 						# plt.vlines(peaks, -100, 1, colors=(0, 1.0, 0, 0.2), linestyles='--', label='peaks',)
 						# plt.plot(vol, label='raw vol',)

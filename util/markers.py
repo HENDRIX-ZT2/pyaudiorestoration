@@ -219,7 +219,6 @@ class TraceLine(BaseMarker):
 		# create the spectral visualization
 		# could also do a stack here; note the z coordinate!
 		spec_data = np.stack((self.times, self.freqs, np.ones(len(self.times), dtype=np.float32) * -2), axis=-1)
-		print(spec_data)
 		self.visuals.append(scene.Line(pos=spec_data, color=color_def, **line_settings))
 		# the data is in Hz, so to visualize correctly, it has to be mel'ed
 		self.visuals[1].transform = vispy_canvas.spectra[0].mel_transform
@@ -302,6 +301,24 @@ class Cursor(BaseMarker):
 		self.visuals[0].set_data(pos=self.time)
 		self.visuals[1].set_data(pos=self.data)
 
+
+class SelectionBox(BaseMarker):
+	"""Visualizes the mouse actions"""
+
+	def __init__(self, vispy_canvas):
+
+		color_def = (1, 1, 1, 0.5)
+		BaseMarker.__init__(self, vispy_canvas, color_def, color_def)
+
+		self.parents = (self.vispy_canvas.spec_view.scene, )
+		self.time = 0.0
+		self.width = 1.0
+		self.height = 1.0
+		self.default_pos = np.array(((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
+		poly = scene.Polygon(pos=self.default_pos, color=None, border_color=color_def, triangulate=False)
+		self.visuals.append(poly)
+		# the data is in Hz, so to visualize correctly, it has to be mel'ed
+		self.visuals[0].transform = vispy_canvas.spectra[0].mel_transform
 
 class PanSample(BaseMarker):
 	"""Stores a single sinc regression's data and displays it"""

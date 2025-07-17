@@ -7,7 +7,7 @@ from vispy.color import BaseColormap
 from vispy.geometry import Rect
 
 from util import vispy_ext, qt_threads, units, colormaps
-from util.markers import Cursor
+from util.markers import Cursor, SelectionBox
 
 from util.undo import DeleteAction
 
@@ -302,6 +302,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.markers = []
 		self.cursor = Cursor(self)
 		self.cursor.show()
+		self.selection_box = SelectionBox(self)
+		self.selection_box.show()
 		# nb. this is a vispy.util.event.EventEmitter object
 		# can this be linked somewhere to the camera? base_camera connects a few events, too
 		for spe in self.spectra:
@@ -429,7 +431,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 	def on_mouse_press(self, event):
 		# audio cursor
-		if event.button == 1:
+		if event.button == 1 and not "Control" in event.modifiers:
 			b = self.px_to_spectrum(event.pos)
 			# are they in spec_view?
 			if b is not None:
@@ -489,6 +491,40 @@ class SpectrumCanvas(scene.SceneCanvas):
 		# update the inspector label
 		click = self.px_to_spectrum(event.pos)
 		self.props.inspector_widget.update_text(click, self.spectra[0].sr)
+		# selection box
+		if event.button == 1 and "Control" in event.modifiers:
+			trail = event.trail()
+			if trail is not None:
+				verts = []
+				# bounding box widget
+				if self.props.tracing_widget.mode in ("Partials", "Correlation"):
+					a = self.px_to_spectrum(trail[0])
+					b = self.px_to_spectrum(trail[-1])
+					l, r = sorted((a[0], b[0]))
+					b, t = sorted((a[1], b[1]))
+					verts.append((l, b, -2.0))
+					verts.append((l, t, -2.0))
+					verts.append((r, t, -2.0))
+					verts.append((r, b, -2.0))
+					verts.append((l, b, -2.0))
+				# brush widget
+				else:
+					tolerance = self.props.tracing_widget.tolerance / 12
+					for v in trail:
+						p = self.px_to_spectrum(v)
+						if p is not None:
+							logfreq = np.log2(p[1])
+							fL = np.power(2, (logfreq - tolerance))
+							verts.append((p[0], fL, -2.0))
+					for v in reversed(trail):
+						p = self.px_to_spectrum(v)
+						if p is not None:
+							logfreq = np.log2(p[1])
+							fL = np.power(2, (logfreq + tolerance))
+							verts.append((p[0], fL, -2.0))
+				self.selection_box.visuals[0].pos = np.array(verts)
+		else:
+			self.selection_box.visuals[0].pos = self.selection_box.default_pos
 
 	def _get_closest(self, items, a, b):
 		assert len(items) == len(a)

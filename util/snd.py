@@ -43,6 +43,8 @@ class AudioWidget(QWidget):
 		self.volume_label.setPixmap(QIcon("icons/volume.svg").pixmap(16))
 
 		self.scrub_button = QCheckBox("Scroll")
+		self.preview_button = QCheckBox("Preview")
+		self.preview_button.stateChanged.connect(self.change_source)
 
 		layout = QHBoxLayout(self)
 		layout.addWidget(self.playButton)
@@ -50,6 +52,7 @@ class AudioWidget(QWidget):
 		layout.addWidget(self.volume_label)
 		layout.addWidget(self.volumeSlider)
 		layout.addWidget(self.scrub_button)
+		layout.addWidget(self.preview_button)
 		layout.addStretch()
 	
 	def stop(self):
@@ -59,15 +62,15 @@ class AudioWidget(QWidget):
 				self.output.stop()
 				self.set_cursor(0.0)
 
-	def set_data(self, mono_sig, sr, channels):
+	def set_data(self, sig, sr, channels):
 		# print(mono_sig.shape, sr, channels)
-		mono_sig = mono_sig[:, channels]
-		# if not self.format:
+		sig = sig[:, channels]
+
 		self.format = QAudioFormat()
 		self.format.setChannelCount(len(channels))
 		self.format.setSampleRate(sr)
 		# numpy is in bytes, qt in bits
-		self.format.setSampleSize(mono_sig.dtype.itemsize*8)
+		self.format.setSampleSize(sig.dtype.itemsize*8)
 		self.format.setCodec("audio/pcm")
 		self.format.setByteOrder(QAudioFormat.LittleEndian)
 		self.format.setSampleType(QAudioFormat.Float)
@@ -79,7 +82,7 @@ class AudioWidget(QWidget):
 		if self.buffer.isOpen():
 			self.buffer.close()
 		
-		self.data = mono_sig.tobytes()
+		self.data = sig.tobytes()
 		self.buffer.setData(self.data)
 		self.buffer.open(QIODevice.ReadWrite)
 		self.buffer.seek(p)
@@ -135,6 +138,13 @@ class AudioWidget(QWidget):
 		if self.output:
 			linearVolume = QAudio.convertVolume(value / self.volumeSlider.maximum(), QAudio.LogarithmicVolumeScale, QAudio.LinearVolumeScale)
 			self.output.setVolume(linearVolume)
+
+	def change_source(self, fl):
+		if fl == 2:
+			print(f"Can't preview yet")
+		if fl == 0:
+			# default
+			pass
 	
 
 if __name__ == "__main__":

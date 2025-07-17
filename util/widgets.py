@@ -391,7 +391,16 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
         trace_l = QtWidgets.QLabel("Mode")
         self.trace_c = QtWidgets.QComboBox(self)
         self.trace_c.addItems(
-            ("Center of Gravity", "Peak", "Peak Track", "Partials", "Correlation", "Freehand Draw", "Sine Regression"))
+            (
+                "Center of Gravity",
+                "Peak",
+                "Peak Track",
+                "Zero-Crossing",
+                "Partials",
+                "Correlation",
+                "Freehand Draw",
+                "Sine Regression"
+            ))
         self.trace_c.currentIndexChanged.connect(self.toggle_trace_mode)
 
         self.rpm_l = QtWidgets.QLabel("Source RPM")

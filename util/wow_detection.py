@@ -3,7 +3,9 @@ import logging
 import numpy as np
 import scipy.interpolate
 import scipy.optimize
-from util import fourier
+from scipy.signal import get_window
+
+from util import fourier, filters
 from util.correlation import xcorr, parabolic
 
 
@@ -32,7 +34,7 @@ def interp_nans(y):
 
 class Track:
 
-	def __init__(self, mode, spectrum, trail, fft_size, hop, sr, tolerance_st=1, adaptation_mode="Linear",
+	def __init__(self, mode, spectrum, signal, trail, fft_size, hop, sr, tolerance_st=1, adaptation_mode="Linear",
 				 dB_cutoff=75):
 
 		# parameters of the fourier transform that was used
@@ -40,6 +42,7 @@ class Track:
 		self.hop = hop
 		self.sr = sr
 		self.spectrum = spectrum
+		self.signal = signal
 		self.fft_freqs = fourier.fft_freqs(fft_size, sr)
 
 		# start and stop reading the FFT data here, unless...
@@ -61,6 +64,8 @@ class Track:
 
 		if mode == "Center of Gravity":
 			self.trace_cog()
+		elif mode == "Zero-Crossing":
+			self.trace_zero_crossing()
 		elif mode == "Correlation":
 			self.trace_correlation()
 		elif mode == "Peak":
@@ -70,7 +75,7 @@ class Track:
 		elif mode == "Freehand Draw":
 			pass
 		else:
-			print("Not Implemented")
+			logging.warning("Not implemented")
 
 		# post-pro, remove NANs
 		interp_nans(self.freqs)
@@ -176,6 +181,33 @@ class Track:
 			self.set_bin_limits(fL, fU)
 			# overwrite with new result
 			self.freqs[i] = self.get_peak(i, allow_window=False)
+
+	def trace_zero_crossing(self):
+		smoothing = 0.001  # s
+
+		# bandpass the signal to the range of the selection + tolerance
+		fL, _ = self.freq_plus_tolerance(np.min(self.freqs))
+		_, fU = self.freq_plus_tolerance(np.max(self.freqs))
+		# print(fL, fU)
+		s_0 = int(self.times[0] * self.sr)
+		s_1 = int(self.times[-1] * self.sr)
+		filtered_sig = filters.butter_bandpass_filter(self.signal[s_0:s_1, 0], fL, fU, self.sr, order=3)
+
+		crossings = zero_crossings(filtered_sig)
+		deltas = np.diff(crossings)
+		deltas = deltas.astype(np.float32)
+		size = int(round(smoothing * self.sr))
+
+		padded = np.pad(deltas, size, mode='reflect')
+		win_sq = get_window("hann", size)
+		deltas_conv = np.convolve(padded, win_sq / size * 2, mode="same")[size:-size]
+		# print(len(deltas))
+		# plt.plot(crossings[:len(deltas)] / self.sr, self.sr / 2 / deltas, label="raw", color=(0, 0, 0, 0.3))
+		# plt.plot(crossings[:len(deltas_conv)] / self.sr, self.sr / 2 / deltas_conv, label="deltas_conv")
+		# plt.show()
+
+		# transform to a regularly sampled pitch curve
+		self.freqs[:] = np.interp(self.times, crossings[:len(deltas_conv)] / self.sr + self.times[0], self.sr / 2 / deltas_conv)
 
 	def COG(self, i):
 		# adapted from Czyzewski et al. (2007)
@@ -365,3 +397,6 @@ def trace_sine_reg(speed_curve, t0, t1, rpm=None):
 	return res["amp"], res["omega"], res["phase"], 0
 
 
+def zero_crossings(a):
+	positive = a > 0
+	return np.where(np.bitwise_xor(positive[1:], positive[:-1]))[0]

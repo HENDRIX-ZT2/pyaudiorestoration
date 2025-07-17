@@ -69,6 +69,7 @@ def startup(cls):
     cursor_updater = CursorUpdater()
     cursor_updater.moveToThread(cursor_thread)
     cursor_updater.new_pos.connect(win.canvas.cursor.set_time)
+    cursor_updater.new_pos.connect(win.canvas.scroll_view)
     cursor_thread.started.connect(cursor_updater.update_cursor)
     # if the cursor updater finishes before the window is closed, kill the thread
     cursor_updater.finished.connect(cursor_thread.quit, QtCore.Qt.DirectConnection)
@@ -441,6 +442,7 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.tolerance_s.setRange(.01, 5)
         self.tolerance_s.setSingleStep(.05)
         self.tolerance_s.setValue(.5)
+        self.tolerance_s.setSuffix(" st")
         self.tolerance_s.setToolTip("Intervall to consider in the trace, in semitones.")
 
         adapt_l = QtWidgets.QLabel("Adaptation")
@@ -456,6 +458,7 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.target_s.setRange(0, 30000)
         self.target_s.setSingleStep(.1)
         self.target_s.setValue(0)
+        self.target_s.setSuffix(" Hz")
         self.target_s.setToolTip("The selected traces' mean frequency.")
 
         self.target_b = QtWidgets.QPushButton("Set Freq")

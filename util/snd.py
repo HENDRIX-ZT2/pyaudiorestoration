@@ -1,9 +1,10 @@
 import logging
+import math
 
 from PyQt5 import QtCore
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QBuffer, QIODevice, Qt
-from PyQt5.QtWidgets import QApplication, QHBoxLayout, QPushButton, QSlider, QWidget
+from PyQt5.QtWidgets import QApplication, QHBoxLayout, QPushButton, QSlider, QWidget, QLabel, QCheckBox
 from PyQt5.QtMultimedia import QAudio, QAudioFormat, QAudioOutput
 
 from util import io_ops
@@ -23,24 +24,32 @@ class AudioWidget(QWidget):
 		self.buffer = QBuffer()
 		
 		self.volumeSlider = QSlider(Qt.Horizontal)
-		self.volumeSlider.setMaximum(10)
+		self.volumeSlider.setMinimum(0)
+		self.volumeSlider.setMaximum(100)
 		self.volumeSlider.setPageStep(1)
-		self.volumeSlider.setValue(5)
+		self.volumeSlider.setValue(50)
+		self.volumeSlider.valueChanged.connect(self.change_volume)
 		
 		self.playButton = QPushButton()
 		self.playButton.setIcon(QIcon("icons/play.png"))
 
 		self.stopButton = QPushButton()
 		self.stopButton.setIcon(QIcon("icons/stop.png"))
-		
-		self.volumeSlider.valueChanged.connect(self.change_volume)
+
 		self.playButton.clicked.connect(self.play_pause)
 		self.stopButton.clicked.connect(self.stop)
-		
+
+		self.volume_label = QLabel()
+		self.volume_label.setPixmap(QIcon("icons/volume.svg").pixmap(16))
+
+		self.scrub_button = QCheckBox("Scroll")
+
 		layout = QHBoxLayout(self)
 		layout.addWidget(self.playButton)
 		layout.addWidget(self.stopButton)
+		layout.addWidget(self.volume_label)
 		layout.addWidget(self.volumeSlider)
+		layout.addWidget(self.scrub_button)
 		layout.addStretch()
 	
 	def stop(self):
@@ -64,6 +73,7 @@ class AudioWidget(QWidget):
 		self.format.setSampleType(QAudioFormat.Float)
 		self.output = QAudioOutput(self.format, self)
 		self.output.stateChanged.connect(self.audio_state_changed)
+		self.change_volume(self.volumeSlider.value())
 		# change the content without stopping playback
 		p = self.buffer.pos()
 		if self.buffer.isOpen():
@@ -97,6 +107,10 @@ class AudioWidget(QWidget):
 			return self.format.durationForBytes(self.buffer.pos())/1000000  # microseconds
 		return 0.0
 
+	@property
+	def scroll_view(self):
+		return self.scrub_button.isChecked()
+
 	def load_audio(self, fp):
 		logging.info(f"Reading audio for playback")
 		signal, sr, num_channels = io_ops.read_file(fp)
@@ -119,8 +133,8 @@ class AudioWidget(QWidget):
 			
 	def change_volume(self, value):
 		if self.output:
-			# need to wrap this because slider gives not float output
-			self.output.setVolume(value/10)
+			linearVolume = QAudio.convertVolume(value / self.volumeSlider.maximum(), QAudio.LogarithmicVolumeScale, QAudio.LinearVolumeScale)
+			self.output.setVolume(linearVolume)
 	
 
 if __name__ == "__main__":

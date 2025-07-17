@@ -407,6 +407,11 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.speed_view.camera.rect = (0, -1, self.duration, 2)
 		self.spec_view.camera.rect = (0, 0, self.duration, units.to_mel(self.f_max))
 
+	def scroll_view(self, t):
+		if self.props.audio_widget.scroll_view:
+			c = self.speed_view.camera
+			c.pan((t-c.rect.center[0], 0))
+
 	# fast stuff that does not require rebuilding everything
 	def set_colormap(self, cmap):
 		"""cmap is a string at this point"""

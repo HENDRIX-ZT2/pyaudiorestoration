@@ -300,7 +300,7 @@ class FileWidget(QtWidgets.QWidget):
 
 
 class SpectrumSettingsWidget(QtWidgets.QGroupBox, ConfigStorer):
-    vars_for_saving = ("fft_size", "fft_overlap")
+    vars_for_saving = ("fft_size", "fft_overlap", "fft_zeropad")
 
     def __init__(self, with_canvas=True):
         super().__init__("Spectrum")
@@ -321,6 +321,12 @@ class SpectrumSettingsWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.overlap_c.setToolTip("Increase to improve temporal resolution.")
         self.overlap_c.setCurrentIndex(2)
 
+        zeropad_l = QtWidgets.QLabel("FFT Zero Padding")
+        self.zeropad_c = QtWidgets.QComboBox(self)
+        self.zeropad_c.addItems(("1", "2", "4", "8", "16"))
+        self.zeropad_c.setToolTip("Increase to improve frequency resolution without temporal smearing.")
+        self.zeropad_c.setCurrentIndex(2)
+
         cmap_l = QtWidgets.QLabel("Colors")
         self.cmap_c = QtWidgets.QComboBox(self)
         self.cmap_c.addItems(sorted(colormaps.cmaps.keys()))
@@ -328,13 +334,14 @@ class SpectrumSettingsWidget(QtWidgets.QGroupBox, ConfigStorer):
         cmap_l.setVisible(with_canvas)
         self.cmap_c.setVisible(with_canvas)
 
-        buttons = [(fft_l, self.fft_c), (overlap_l, self.overlap_c), (cmap_l, self.cmap_c), (self.clear_storage,)]
+        buttons = [(fft_l, self.fft_c), (overlap_l, self.overlap_c), (zeropad_l, self.zeropad_c), (cmap_l, self.cmap_c), (self.clear_storage,)]
         vbox(self, grid(buttons))
 
         if with_canvas:
             # these should only be updated by the user; programmatic updates should call update_fft_settings
             self.fft_c.activated.connect(self.update_fft_settings)
             self.overlap_c.activated.connect(self.update_fft_settings)
+            self.zeropad_c.activated.connect(self.update_fft_settings)
             # these can be updated each time
             self.cmap_c.currentIndexChanged.connect(self.update_cmap)
             self.clear_storage.clicked.connect(self.force_clear_storage)
@@ -342,22 +349,31 @@ class SpectrumSettingsWidget(QtWidgets.QGroupBox, ConfigStorer):
     @property
     def fft_size(self):
         return int(self.fft_c.currentText())
+    
+    @fft_size.setter
+    def fft_size(self, v):
+        self.fft_c.setCurrentText(str(v))
 
     @property
     def fft_overlap(self):
         return int(self.overlap_c.currentText())
 
-    @fft_size.setter
-    def fft_size(self, v):
-        self.fft_c.setCurrentText(str(v))
-
     @fft_overlap.setter
     def fft_overlap(self, v):
         self.overlap_c.setCurrentText(str(v))
 
+    @property
+    def fft_zeropad(self):
+        return int(self.zeropad_c.currentText())
+
+    @fft_zeropad.setter
+    def fft_zeropad(self, v):
+        self.zeropad_c.setCurrentText(str(v))
+
     def update_fft_settings(self):
         self.canvas.fft_size = self.fft_size
         self.canvas.hop = self.fft_size // self.fft_overlap
+        self.canvas.zeropad = self.fft_zeropad
         self.canvas.compute_spectra()
 
     def update_cmap(self):

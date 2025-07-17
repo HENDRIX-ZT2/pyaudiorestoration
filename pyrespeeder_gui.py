@@ -195,7 +195,7 @@ class Canvas(spectrum.SpectrumCanvas):
 	def track_wow(self, settings, trail):
 		spec = self.spectra[0]
 		track = wow_detection.Track(
-			settings.mode, spec.fft_storage[spec.key], trail, self.fft_size,
+			settings.mode, spec.fft_storage[spec.key], trail, self.fft_size*self.zeropad,
 			self.hop, spec.sr, settings.tolerance, settings.adapt)
 		marker = markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
 		self.props.undo_stack.push(AddAction((marker,)))

@@ -232,6 +232,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.cmap = "izo"
 		self.fft_size = 1024
 		self.hop = 256
+		self.zeropad = 1
 
 		self.fourier_thread = qt_threads.FourierThread()
 		self.fourier_thread.finished.connect(self.retrieve_fft)
@@ -351,7 +352,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 		for spectrum in self.spectra:
 			if spectrum.audio_path:
-				spectrum.key = (self.fft_size, spectrum.selected_channel, self.hop)
+				spectrum.key = (self.fft_size, spectrum.selected_channel, self.hop, self.zeropad)
 				# first try to get FFT from current storage and continue directly
 				if spectrum.key in spectrum.fft_storage:
 					# this happens when only loading from storage is required
@@ -373,7 +374,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 						logging.info(f"storing new fft {spectrum.audio_path, spectrum.key}")
 						# append to the fourier job list
 						self.fourier_thread.jobs.append((
-							spectrum.signal[:, spectrum.selected_channel], self.fft_size, self.hop, "blackmanharris", spectrum.key, spectrum.audio_path))
+							spectrum.signal[:, spectrum.selected_channel], self.fft_size, self.hop, "blackmanharris", self.zeropad, spectrum.key, spectrum.audio_path))
 		# perform all fourier jobs
 		if self.fourier_thread.jobs:
 			self.fourier_thread.start()

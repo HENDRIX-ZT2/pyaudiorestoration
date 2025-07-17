@@ -29,7 +29,12 @@ def get_mag(*args, **kwargs):
 	return to_mag(stft(*args, **kwargs))
 
 
-def stft(x, n_fft=1024, step=512, window_name='blackmanharris'):
+# spectra ared optimized with zeropadding, cf.
+# https://www.dsprelated.com/freebooks/sasp/Optimal_Peak_Finding_Spectrum.html
+# https://stackoverflow.com/questions/59134753/function-or-algorithm-for-spectral-peak-interpolation
+# https://dsp.stackexchange.com/questions/84594/how-to-interpolate-the-peak-amplitude-of-an-fft-output
+
+def stft(x, n_fft=1024, step=512, window_name='blackmanharris', zeropad=1):
 	"""Compute the STFT
 
 	Parameters
@@ -45,6 +50,8 @@ def stft(x, n_fft=1024, step=512, window_name='blackmanharris'):
 	window_name : str | None
 		Window function to use. Can be ``'hann'`` for Hann window, or None
 		for no windowing.
+	zeropad : int | None
+		Zero-padding factor to use.
 
 	Returns
 	-------
@@ -62,7 +69,7 @@ def stft(x, n_fft=1024, step=512, window_name='blackmanharris'):
 			pyfftw_rfft2,
 			np_rfft_pick,):
 		try:
-			return fft_function(n_fft, step, window, x)
+			return fft_function(n_fft, step, window, x, zeropad)
 		except:
 			logging.exception(f"FFT method {fft_function} failed")
 			continue
@@ -82,7 +89,7 @@ def timed_log(method_name):
 	logging.info(f"{method_name} {time.time() - start:0.2f}s")
 
 
-def torch_rfft2(n_fft, step, window, x):
+def torch_rfft2(n_fft, step, window, x, zeropad):
 	with timed_log("pytorch"):
 		device = "cuda"
 		# device = "cpu"
@@ -92,8 +99,10 @@ def torch_rfft2(n_fft, step, window, x):
 			x = torch.as_tensor(x, dtype=torch.float32, device=device)
 			window = torch.as_tensor(window, dtype=torch.float32, device=device)
 			result = torch.stft(
-				x, n_fft, hop_length=step, window=window, center=True, pad_mode='reflect',
-				normalized=True, onesided=True, return_complex=True)
+				x, n_fft*zeropad, hop_length=step, window=window, win_length=len(window), center=True, pad_mode='reflect',
+				normalized=False, onesided=True, return_complex=True)
+			# zero-padding does not affect the normalization factor
+			result /= np.sqrt(n_fft)
 			# fetch from gpu, which is somewhat costly, but still a bit faster than cpu
 			result = result.cpu()
 		else:
@@ -112,7 +121,7 @@ def torch_rfft2(n_fft, step, window, x):
 	return result
 
 
-def pyfftw_rfft2(n_fft, step, window, x):
+def pyfftw_rfft2(n_fft, step, window, x, zeropad):
 	# this is the input for the FFT object
 	with timed_log("pyfftw"):
 		n_estimates, x = estimate_and_center(n_fft, step, x)
@@ -124,7 +133,7 @@ def pyfftw_rfft2(n_fft, step, window, x):
 	return result
 
 
-def np_rfft_pick(n_fft, step, window, x):
+def np_rfft_pick(n_fft, step, window, x, zeropad):
 	logging.warning("Fallback to numpy fftpack (slower)!")
 	n_estimates, x = estimate_and_center(n_fft, step, x)
 	# non-vectorized appears to be faster for small sizes
@@ -302,6 +311,8 @@ def tiny(x):
 
 
 def istft(stft_matrix, hop_length=None, win_length=None, window_name='blackmanharris', center=True, dtype=None, length=None):
+	# todo  implement zeropad
+	# todo port to torch api
 	"""
 	Inverse short-time Fourier transform (ISTFT).
 	Converts a complex-valued spectrogram ``stft_matrix`` to time-series ``y``
@@ -343,7 +354,7 @@ def istft(stft_matrix, hop_length=None, win_length=None, window_name='blackmanha
 
 	n_fft = 2 * (stft_matrix.shape[0] - 1)
 
-	# librosa doesn't do this - should we? or do it in get_mag() only?
+	# denormalize
 	stft_matrix *= np.sqrt(n_fft)
 	# By default, use the entire frame
 	if win_length is None:

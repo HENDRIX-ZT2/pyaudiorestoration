@@ -1,11 +1,13 @@
 import logging
 import os
 import numpy as np
+from PyQt5 import QtCore
 from vispy import scene, gloo, visuals
 from vispy.color import BaseColormap
 from vispy.geometry import Rect
 
 from util import vispy_ext, qt_threads, units, colormaps
+from util.markers import Cursor
 
 from util.undo import DeleteAction
 
@@ -184,7 +186,7 @@ class SpectrumPiece(scene.Image):
 		# # just set a dummy value
 		self._shape = (10.0, 22500)
 		self.bb = Rect((0, 0, 1, 1))
-		scene.Image.__init__(self, parent=vispy_scene, interpolation="linear", method='subdivide', grid=(1000, 1))
+		scene.Image.__init__(self, parent=vispy_scene, interpolation="linear", method='subdivide', texture_format="auto", grid=(1000, 1))
 		self.cmap = "izo"
 
 	@property
@@ -221,6 +223,7 @@ class SpectrumPiece(scene.Image):
 
 class SpectrumCanvas(scene.SceneCanvas):
 	"""This class wraps the vispy canvas and controls all the visualization, as well as the interaction with it."""
+
 
 	def __init__(self, spectra_colors=("add_r", "add_g"), y_axis='Src. Lag', bgcolor="#353535"):
 		label_color = "grey"
@@ -297,7 +300,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 		self.spectra = [Spectrum(self.spec_view, overlay=color) for color in spectra_colors]
 		self.markers = []
-
+		self.cursor = Cursor(self)
+		self.cursor.show()
 		# nb. this is a vispy.util.event.EventEmitter object
 		# can this be linked somewhere to the camera? base_camera connects a few events, too
 		for spe in self.spectra:

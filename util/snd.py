@@ -1,5 +1,6 @@
 import logging
 
+from PyQt5 import QtCore
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QBuffer, QIODevice, Qt
 from PyQt5.QtWidgets import QApplication, QHBoxLayout, QPushButton, QSlider, QWidget
@@ -9,6 +10,9 @@ from util import io_ops
 
 
 class AudioWidget(QWidget):
+
+	cursor_set = QtCore.pyqtSignal(float)
+	is_playing = QtCore.pyqtSignal(bool)
 
 	def __init__(self, parent = None):
 	
@@ -42,7 +46,9 @@ class AudioWidget(QWidget):
 	def stop(self):
 		if self.output:
 			if self.output.state() != QAudio.StoppedState:
+				self.is_playing.emit(False)
 				self.output.stop()
+				self.set_cursor(0.0)
 
 	def set_data(self, mono_sig, sr, channels):
 		# print(mono_sig.shape, sr, channels)
@@ -78,7 +84,8 @@ class AudioWidget(QWidget):
 	def set_cursor(self, t):
 		"""seek towards time t in playback buffer"""
 		if self.format:
-			t = max(0, t)
+			t = max(0.0, t)
+			self.cursor_set.emit(t)
 			pos = self.format.bytesForDuration(int(t*1000000))
 			if pos < self.buffer.size():
 				self.buffer.seek(pos)
@@ -100,11 +107,14 @@ class AudioWidget(QWidget):
 			#(un)pause the audio output, keeps the buffer intact
 			if self.output.state() == QAudio.ActiveState:
 				self.output.suspend()
+				self.is_playing.emit(False)
 			elif self.output.state() == QAudio.SuspendedState:
 				self.output.resume()
+				self.is_playing.emit(True)
 			else:
-				self.buffer.seek(0)
+				self.is_playing.emit(True)
 				self.output.start(self.buffer)
+			self.cursor_set.emit(self.cursor)
 			logging.info(f"Seek is at {self.cursor} seconds")
 			
 	def change_volume(self, value):

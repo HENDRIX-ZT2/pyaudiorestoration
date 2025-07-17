@@ -219,6 +219,7 @@ class TraceLine(BaseMarker):
 		# create the spectral visualization
 		# could also do a stack here; note the z coordinate!
 		spec_data = np.stack((self.times, self.freqs, np.ones(len(self.times), dtype=np.float32) * -2), axis=-1)
+		print(spec_data)
 		self.visuals.append(scene.Line(pos=spec_data, color=color_def, **line_settings))
 		# the data is in Hz, so to visualize correctly, it has to be mel'ed
 		self.visuals[1].transform = vispy_canvas.spectra[0].mel_transform
@@ -272,6 +273,34 @@ class TraceLine(BaseMarker):
 
 	def to_cfg(self):
 		return list(self.times), list(self.freqs), self.offset
+
+
+class Cursor(BaseMarker):
+	"""Cursor for position of audio playback"""
+
+	def __init__(self, vispy_canvas):
+
+		color_def = (1, 1, 1, 1)
+		BaseMarker.__init__(self, vispy_canvas, color_def, color_def)
+
+		self.time = 0.0
+		self.visuals.append(scene.visuals.InfiniteLine(pos=self.time, color=color_def, **line_settings))
+		self.visuals.append(scene.visuals.Line(pos=self.data, color=color_def, **line_settings))
+		# the data is in Hz, so to visualize correctly, it has to be mel'ed
+		self.visuals[1].transform = vispy_canvas.spectra[0].mel_transform
+
+	@property
+	def data(self):
+		data = np.array([
+			[self.time, self.vispy_canvas.sr/2, -2.0],
+			[self.time, 0.0, -2.0],
+		])
+		return data
+
+	def set_time(self, t):
+		self.time = t
+		self.visuals[0].set_data(pos=self.time)
+		self.visuals[1].set_data(pos=self.data)
 
 
 class PanSample(BaseMarker):

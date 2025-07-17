@@ -3,7 +3,7 @@ import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy
-from PyQt5 import QtWidgets
+from PyQt5 import QtWidgets, QtCore
 from scipy.interpolate import RegularGridInterpolator
 from scipy.signal import savgol_filter
 
@@ -27,6 +27,7 @@ class MainWindow(widgets.MainWindow):
 		widgets.MainWindow.__init__(self, "Dropout Healer", widgets.ParamWidget, Canvas, 1)
 		self.props.display_widget.fft_size = 512
 		self.props.display_widget.fft_overlap = 16
+		self.props.display_widget.fft_zeropad = 1
 		main_menu = self.menuBar()
 		file_menu = main_menu.addMenu('File')
 		edit_menu = main_menu.addMenu('Edit')

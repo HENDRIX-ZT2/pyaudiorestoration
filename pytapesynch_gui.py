@@ -40,6 +40,7 @@ class MainWindow(widgets.MainWindow):
 			(edit_menu, "Redo", self.props.undo_stack.redo, "CTRL+Y", "redo"),
 		)
 		self.add_to_menu(button_data)
+		self.props.display_widget.fft_zeropad = 1
 
 
 class Canvas(spectrum.SpectrumCanvas):
@@ -63,6 +64,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.dropout_widget.setVisible(False)
 		self.freeze()
 		self.parent.props.alignment_widget.smoothing_s.valueChanged.connect(self.update_smoothing)
+		self.props.display_widget.fft_zeropad = 1
 
 	@property
 	def lags(self):

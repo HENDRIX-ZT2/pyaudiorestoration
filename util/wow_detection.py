@@ -3,6 +3,7 @@ import logging
 import numpy as np
 import scipy.interpolate
 import scipy.optimize
+from matplotlib import pyplot as plt
 from scipy.signal import get_window
 
 from util import fourier, filters
@@ -19,10 +20,14 @@ def interp_nans(y):
 	nans, x = nan_helper(y)
 	y[nans] = np.interp(x(nans), x(~nans), y[~nans])
 
+# super slow
 # https://forge-2.ircam.fr/colas/fast-partial-tracking
 
+# librosa piptrack - relatively poor
 # https://github.com/librosa/librosa/blob/86275a8949fb4aef3fb16aa88b0e24862c24998f/librosa/core/pitch.py#L165
-# librosa piptrack
+
+# todo? investigate polyphonic pitch tracking algortithms
+# https://www.jordipons.me/estimating-pitch-in-polyphonic-music/
 
 # todo
 # M. Lagrange, S. Marchand, and J. B. Rault, “Using linear prediction to enhance the tracking of partials,” in IEEE International Conference on Acoustics, Speech, and Signal Processing (ICASSP’04) , May 2004, vol. 4, pp. 241–244.
@@ -72,6 +77,8 @@ class Track:
 			self.trace_peak()
 		elif mode == "Peak Track":
 			self.trace_peak_track()
+		elif mode == "Partials":
+			self.trace_partials()
 		elif mode == "Freehand Draw":
 			pass
 		else:
@@ -208,6 +215,14 @@ class Track:
 
 		# transform to a regularly sampled pitch curve
 		self.freqs[:] = np.interp(self.times, crossings[:len(deltas_conv)] / self.sr + self.times[0], self.sr / 2 / deltas_conv)
+
+	def trace_partials(self):
+		import librosa
+		# pitches, magnitudes = librosa.piptrack(S=np.array(self.spectrum[self.frame_0:self.frame_1]), sr=self.sr, n_fft=self.fft_size, hop_length=self.hop, fmin=150.0, fmax=4000.0, threshold=0.1)
+		pitches, magnitudes = librosa.piptrack(y=self.signal[:, 0], sr=self.sr, n_fft=self.fft_size, hop_length=self.hop, fmin=150.0, fmax=4000.0, threshold=0.1)
+		# plt.plot(pitches, magnitudes)
+		plt.imshow(pitches[:100, :], aspect="auto", interpolation="nearest")
+		plt.show()
 
 	def COG(self, i):
 		# adapted from Czyzewski et al. (2007)

@@ -332,25 +332,26 @@ class ZeroCrossingTracker(Track):
 	tooltip = "Track the distance between zero-crossings of the waveform. Good for flutter detection of clean signals"
 
 	def trace(self):
-		smoothing = 0.001  # s
 
 		# bandpass the signal to the range of the selection + tolerance
+		# todo - instead, create a spectral mask and apply it?
 		fL, _ = self.freq_plus_tolerance(np.min(self.freqs))
 		_, fU = self.freq_plus_tolerance(np.max(self.freqs))
-		# print(fL, fU)
 		s_0 = int(self.times[0] * self.sr)
 		s_1 = int(self.times[-1] * self.sr)
 		filtered_sig = filters.butter_bandpass_filter(self.signal[s_0:s_1, 0], fL, fU, self.sr, order=3)
 
+		# detect zero-crossings
 		crossings = zero_crossings(filtered_sig)
 		deltas = np.diff(crossings)
 		deltas = deltas.astype(np.float32)
-		size = int(round(smoothing * self.sr))
 
+		# filter the phase based on the frequency
+		size = int(200.0 / np.mean(deltas))
 		padded = np.pad(deltas, size, mode='reflect')
 		win_sq = get_window("hann", size)
 		deltas_conv = np.convolve(padded, win_sq / size * 2, mode="same")[size:-size]
-		# print(len(deltas))
+
 		# plt.plot(crossings[:len(deltas)] / self.sr, self.sr / 2 / deltas, label="raw", color=(0, 0, 0, 0.3))
 		# plt.plot(crossings[:len(deltas_conv)] / self.sr, self.sr / 2 / deltas_conv, label="deltas_conv")
 		# plt.show()

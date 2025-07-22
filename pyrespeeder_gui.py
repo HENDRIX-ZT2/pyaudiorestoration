@@ -8,6 +8,7 @@ from util.fourier import timed_log
 
 from util.undo import AddAction, MoveAction, MergeAction
 from util.config import logging_setup
+from util.wow_detection import wow_detectors
 
 logging_setup()
 
@@ -166,11 +167,11 @@ class Canvas(spectrum.SpectrumCanvas):
 			# filter out any clicks outside of spectrum, for which px_to_spectrum returns None
 			trail = [x for x in trail if x is not None]
 			if trail:
-				t0 = trail[0][0]
-				t1 = trail[-1][0]
 				settings = self.props.tracing_widget
 				# maybe query it here from the button instead of the other way
 				if settings.mode == "Sine Regression":
+					t0 = trail[0][0]
+					t1 = trail[-1][0]
 					amplitude, omega, phase, offset = wow_detection.trace_sine_reg(
 						self.master_speed.get_linspace(), t0, t1, settings.rpm)
 					if amplitude == 0:
@@ -178,9 +179,13 @@ class Canvas(spectrum.SpectrumCanvas):
 						amplitude, omega, phase, offset = wow_detection.trace_sine_reg(
 							self.master_reg_speed.get_linspace(), t0, t1, settings.rpm)
 					marker = markers.RegLine(self, t0, t1, amplitude, omega, phase, offset)
-					self.props.undo_stack.push(AddAction((marker,)))
 				else:
-					self.track_wow(settings, trail)
+					spec = self.spectra[0]
+					track = wow_detectors[settings.mode](
+						spec.fft_storage[spec.key], spec.signal, trail, self.fft_size*self.zeropad,
+						self.hop, spec.sr, settings.tolerance, settings.adapt)
+					marker = markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
+				self.props.undo_stack.push(AddAction((marker,)))
 				return
 
 			# or in speed view?
@@ -191,14 +196,6 @@ class Canvas(spectrum.SpectrumCanvas):
 				a = trail[0]
 				b = trail[-1]
 				self.props.undo_stack.push(MoveAction(self.selected_markers, a[1], b[1]))
-
-	def track_wow(self, settings, trail):
-		spec = self.spectra[0]
-		track = wow_detection.Track(
-			settings.mode, spec.fft_storage[spec.key], spec.signal, trail, self.fft_size*self.zeropad,
-			self.hop, spec.sr, settings.tolerance, settings.adapt)
-		marker = markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
-		self.props.undo_stack.push(AddAction((marker,)))
 
 
 if __name__ == '__main__':

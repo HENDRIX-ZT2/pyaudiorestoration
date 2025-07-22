@@ -16,6 +16,7 @@ from util.markers import Cursor
 from util.qt_threads import CursorUpdater
 from util.undo import UndoStack, AddAction
 from util.units import pitch
+from util.wow_detection import wow_detectors
 
 ICON_CACHE = {"no_icon": QtGui.QIcon()}
 
@@ -410,17 +411,7 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
         super().__init__("Tracing")
         trace_l = QtWidgets.QLabel("Mode")
         self.trace_c = QtWidgets.QComboBox(self)
-        self.trace_c.addItems(
-            (
-                "Center of Gravity",
-                "Peak",
-                "Peak Track",
-                "Zero-Crossing",
-                "Partials",
-                "Correlation",
-                "Freehand Draw",
-                "Sine Regression"
-            ))
+        self.trace_c.addItems(wow_detectors)
         self.trace_c.currentIndexChanged.connect(self.toggle_trace_mode)
 
         self.rpm_l = QtWidgets.QLabel("Source RPM")
@@ -509,7 +500,9 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
         return self.rpm_c.currentText()
 
     def toggle_trace_mode(self):
-        b = (self.trace_c.currentText() == "Sine Regression")
+        mode = self.trace_c.currentText()
+        self.trace_c.setToolTip(wow_detectors[mode].tooltip)
+        b = (mode == "Sine Regression")
         self.rpm_l.setVisible(b)
         self.rpm_c.setVisible(b)
         self.phase_l.setVisible(b)

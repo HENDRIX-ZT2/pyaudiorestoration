@@ -1,4 +1,5 @@
 import logging
+from inspect import isclass
 
 import numpy as np
 import scipy.interpolate
@@ -20,26 +21,15 @@ def interp_nans(y):
 	nans, x = nan_helper(y)
 	y[nans] = np.interp(x(nans), x(~nans), y[~nans])
 
-# super slow
-# https://forge-2.ircam.fr/colas/fast-partial-tracking
-
-# librosa piptrack - relatively poor
-# https://github.com/librosa/librosa/blob/86275a8949fb4aef3fb16aa88b0e24862c24998f/librosa/core/pitch.py#L165
-
-# todo? investigate polyphonic pitch tracking algortithms
-# https://www.jordipons.me/estimating-pitch-in-polyphonic-music/
-
-# todo
-# M. Lagrange, S. Marchand, and J. B. Rault, “Using linear prediction to enhance the tracking of partials,” in IEEE International Conference on Acoustics, Speech, and Signal Processing (ICASSP’04) , May 2004, vol. 4, pp. 241–244.
-
-# 2003 enhanced partial tracking - good!
 
 # todo: create a hann window in log space?
 # or just lerp 0, 1, 0 for NL, i, NU
 
 class Track:
 
-	def __init__(self, mode, spectrum, signal, trail, fft_size, hop, sr, tolerance_st=1, adaptation_mode="Linear",
+	tooltip = ""
+
+	def __init__(self, spectrum, signal, trail, fft_size, hop, sr, tolerance_st=1, adaptation_mode="Linear",
 				 dB_cutoff=75):
 
 		# parameters of the fourier transform that was used
@@ -66,26 +56,12 @@ class Track:
 
 		# minimal amount of bins to consider
 		self.min_bins = 4
-
-		if mode == "Center of Gravity":
-			self.trace_cog()
-		elif mode == "Zero-Crossing":
-			self.trace_zero_crossing()
-		elif mode == "Correlation":
-			self.trace_correlation()
-		elif mode == "Peak":
-			self.trace_peak()
-		elif mode == "Peak Track":
-			self.trace_peak_track()
-		elif mode == "Partials":
-			self.trace_partials()
-		elif mode == "Freehand Draw":
-			pass
-		else:
-			logging.warning("Not implemented")
-
+		self.trace()
 		# post-pro, remove NANs
 		interp_nans(self.freqs)
+
+	def trace(self):
+		pass
 
 	def sample_trail(self, trail):
 		# TODO: vectorize this: a[a[:,0].argsort()]
@@ -162,140 +138,6 @@ class Track:
 		"""Returns true if the peak is an actual peak, ie. its amplitude surpasses its neighboring bins"""
 		return fft_frame[peak_i-1] < fft_frame[peak_i] > fft_frame[peak_i+1]
 
-	def trace_peak(self):
-		# possible approaches
-		# start with user tolerance, then decrease down to min_bins and proceed with freq_plus_tolerance(self.freqs[i-1]
-		# or
-		# work as usual from raw_freq, but tag outliers as NaN, then do a second pass to interp them from the surrounding
-		# either lerp or with peak interpolation
-		# this is mostly driven from the user input and never strays from it
-		for i, raw_freq in enumerate(self.freqs):
-			fL, fU = self.freq_plus_tolerance(raw_freq)
-			self.set_bin_limits(fL, fU)
-			# overwrite with new result
-			self.freqs[i] = self.get_peak(i)
-
-	def trace_peak_track(self):
-		"""start with user tolerance, then decrease down to min_bins and proceed with freq_plus_tolerance(self.freqs[i-1]"""
-
-		freq = self.freqs[0]
-		for i, raw_freq in enumerate(self.freqs):
-			if i > 2:
-				tolerance = self.tolerance / 2
-			else:
-				tolerance = self.tolerance
-			fL, fU = self.freq_plus_tolerance(freq, tolerance)
-			self.set_bin_limits(fL, fU)
-			# overwrite with new result
-			self.freqs[i] = self.get_peak(i, allow_window=False)
-
-	def trace_zero_crossing(self):
-		smoothing = 0.001  # s
-
-		# bandpass the signal to the range of the selection + tolerance
-		fL, _ = self.freq_plus_tolerance(np.min(self.freqs))
-		_, fU = self.freq_plus_tolerance(np.max(self.freqs))
-		# print(fL, fU)
-		s_0 = int(self.times[0] * self.sr)
-		s_1 = int(self.times[-1] * self.sr)
-		filtered_sig = filters.butter_bandpass_filter(self.signal[s_0:s_1, 0], fL, fU, self.sr, order=3)
-
-		crossings = zero_crossings(filtered_sig)
-		deltas = np.diff(crossings)
-		deltas = deltas.astype(np.float32)
-		size = int(round(smoothing * self.sr))
-
-		padded = np.pad(deltas, size, mode='reflect')
-		win_sq = get_window("hann", size)
-		deltas_conv = np.convolve(padded, win_sq / size * 2, mode="same")[size:-size]
-		# print(len(deltas))
-		# plt.plot(crossings[:len(deltas)] / self.sr, self.sr / 2 / deltas, label="raw", color=(0, 0, 0, 0.3))
-		# plt.plot(crossings[:len(deltas_conv)] / self.sr, self.sr / 2 / deltas_conv, label="deltas_conv")
-		# plt.show()
-
-		# transform to a regularly sampled pitch curve
-		self.freqs[:] = np.interp(self.times, crossings[:len(deltas_conv)] / self.sr + self.times[0], self.sr / 2 / deltas_conv)
-
-	def trace_partials(self):
-		import librosa
-		# pitches, magnitudes = librosa.piptrack(S=np.array(self.spectrum[self.frame_0:self.frame_1]), sr=self.sr, n_fft=self.fft_size, hop_length=self.hop, fmin=150.0, fmax=4000.0, threshold=0.1)
-		pitches, magnitudes = librosa.piptrack(y=self.signal[:, 0], sr=self.sr, n_fft=self.fft_size, hop_length=self.hop, fmin=150.0, fmax=4000.0, threshold=0.1)
-		# plt.plot(pitches, magnitudes)
-		plt.imshow(pitches[:100, :], aspect="auto", interpolation="nearest")
-		plt.show()
-
-	def COG(self, i):
-		# adapted from Czyzewski et al. (2007)
-		# 18 calculate the COG with hanned frequency importance
-		# error in the printed formula: the divisor also has to contain the hann window
-		weighted_magnitudes = np.hanning(self.NU - self.NL) * self.spectrum[self.NL:self.NU, i]
-		# 19 convert the center of gravity from log2 space back into linear Hz space
-		return 2 ** (np.sum(weighted_magnitudes * np.log2(self.fft_freqs[self.NL:self.NU])) / np.sum(
-			weighted_magnitudes))
-
-	def trace_cog(self):
-		# adapted from Czyzewski et al. (2007)
-
-		# #calculate the first COG
-		# SCoct0  = self.COG( self.frame_0 )
-
-		# #TODO: use uniform tolerance for upper and lower limit?
-		# #16a,b
-		# #the limits for the first time frame
-		# #constant for all time frames
-		# #SCoct[0]: the the first COG
-		# dfL = SCoct0 - np.log2(fL)
-		# dfU = np.log2(fU) - SCoct0
-
-		fL, fU = self.freq_plus_tolerance(self.freqs[0])
-		self.set_bin_limits(fL, fU)
-		for i in range(len(self.freqs)):
-			# 18 calculate the COG with hanned frequency importance
-			self.freqs[i] = self.COG(self.frame_0 + i)
-			# 15a,b
-			# set the limits for the consecutive frame [i+1]
-			# based on those of the first frame
-			fL, fU = self.freq_plus_tolerance(self.freqs[i])
-			self.set_bin_limits(fL, fU)
-
-	def trace_correlation(self):
-		fL = min(self.freqs)
-		fU = max(self.freqs)
-		self.set_bin_limits(fL, fU)
-		num_freq_samples = (self.NU - self.NL) * 4
-
-		log_fft_freqs = np.log2(self.fft_freqs[self.NL:self.NU])
-
-		linspace_fft_freqs = np.linspace(log_fft_freqs[0], log_fft_freqs[-1], num_freq_samples)
-
-		# create a new array to store FFTs resampled on a log2 scale
-		resampled = np.ones((num_freq_samples, len(self.freqs) + 1), )
-		for i in range(len(self.freqs)):
-			interpolator = scipy.interpolate.interp1d(log_fft_freqs, self.spectrum[self.NL:self.NU, i], kind='quadratic')
-			resampled[:, i] = interpolator(linspace_fft_freqs)
-
-		wind = np.hanning(num_freq_samples)
-		# compute the change over each frame
-		changes = np.ones(len(self.freqs))
-		for i in range(len(self.freqs)):
-			# correlation against the next sample, output will be of the same length
-			res = xcorr(resampled[:, i]*wind, resampled[:, i + 1]*wind, mode="same")
-			# this should maybe hanned before argmax to kill obvious outliers
-			i_peak = np.argmax(res)
-			# interpolate the most accurate fit
-			i_interp, corr = parabolic(res, i_peak)
-			changes[i] = (num_freq_samples // 2) - i_interp
-		# sum up the changes to a speed curve
-		speed = np.cumsum(changes)
-		# up to this point, we've been dealing with interpolated "indices"
-		# now, we are on the log scale
-		# on log scale, +1 means double frequency or speed
-		speed = speed / num_freq_samples * (log_fft_freqs[-1] - log_fft_freqs[0])
-
-		log_mean_freq = np.log2((fL + fU) / 2)
-		# convert to scale and from log2 scale
-		np.power(2, (log_mean_freq + speed), self.freqs)
-
 
 def adapt_band(freqs, num_bins, freq_2_bin, tolerance, adaptation_mode, i):
 	"""
@@ -346,7 +188,7 @@ def adapt_band(freqs, num_bins, freq_2_bin, tolerance, adaptation_mode, i):
 
 
 def fit_sin(tt, yy, assumed_freq=None):
-	'''Fit sin to the input time sequence, and return fitting parameters "amp", "omega", "phase", "offset", "freq", "period" and "fitfunc"'''
+	"""Fit sin to the input time sequence, and return fitting parameters "amp", "omega", "phase", "offset", "freq", "period" and "fitfunc\""""
 	# by unsym from https://stackoverflow.com/questions/16716302/how-do-i-fit-a-sine-curve-to-my-data-with-pylab-and-np
 	tt = np.array(tt)
 	yy = np.array(yy)
@@ -408,10 +250,197 @@ def trace_sine_reg(speed_curve, t0, t1, rpm=None):
 
 	res = fit_sin(times[ind_start:ind_stop], speeds[ind_start:ind_stop], assumed_freq=assumed_freq)
 
-	# return res["amp"], res["omega"], res["phase"], res["offset"]
 	return res["amp"], res["omega"], res["phase"], 0
+
+
+class CenterOfGravity(Track):
+	name = 'Center of Gravity'
+
+	def COG(self, i):
+		# adapted from Czyzewski et al. (2007)
+		# 18 calculate the COG with hanned frequency importance
+		# error in the printed formula: the divisor also has to contain the hann window
+		weighted_magnitudes = np.hanning(self.NU - self.NL) * self.spectrum[self.NL:self.NU, i]
+		# 19 convert the center of gravity from log2 space back into linear Hz space
+		return 2 ** (np.sum(weighted_magnitudes * np.log2(self.fft_freqs[self.NL:self.NU])) / np.sum(
+			weighted_magnitudes))
+
+	def trace(self):
+		# adapted from Czyzewski et al. (2007)
+
+		# #calculate the first COG
+		# SCoct0  = self.COG( self.frame_0 )
+
+		# #TODO: use uniform tolerance for upper and lower limit?
+		# #16a,b
+		# #the limits for the first time frame
+		# #constant for all time frames
+		# #SCoct[0]: the the first COG
+		# dfL = SCoct0 - np.log2(fL)
+		# dfU = np.log2(fU) - SCoct0
+
+		fL, fU = self.freq_plus_tolerance(self.freqs[0])
+		self.set_bin_limits(fL, fU)
+		for i in range(len(self.freqs)):
+			# 18 calculate the COG with hanned frequency importance
+			self.freqs[i] = self.COG(self.frame_0 + i)
+			# 15a,b
+			# set the limits for the consecutive frame [i+1]
+			# based on those of the first frame
+			fL, fU = self.freq_plus_tolerance(self.freqs[i])
+			self.set_bin_limits(fL, fU)
+
+
+class PeakTracker(Track):
+	name = 'Peak'
+	tooltip = "Tracks the mouse input to the loudest peak frequency"
+
+	def trace(self):
+		# this is mostly driven from the user input and never strays from it
+		for i, raw_freq in enumerate(self.freqs):
+			fL, fU = self.freq_plus_tolerance(raw_freq)
+			self.set_bin_limits(fL, fU)
+			# overwrite with new result
+			self.freqs[i] = self.get_peak(i)
+
+
+class PeakTrackTracker(Track):
+	name = 'Peak Track'
+	tooltip = "Follows the first peak frequency established"
+
+	def trace(self):
+		"""start with user tolerance, then decrease down to min_bins and proceed with freq_plus_tolerance(self.freqs[i-1]"""
+		# possible approaches
+		# start with user tolerance, then decrease down to min_bins and proceed with freq_plus_tolerance(self.freqs[i-1]
+		# or
+		# work as usual from raw_freq, but tag outliers as NaN, then do a second pass to interp them from the surrounding
+		# either lerp or with peak interpolation
+		freq = self.freqs[0]
+		for i, raw_freq in enumerate(self.freqs):
+			if i > 2:
+				tolerance = self.tolerance / 2
+			else:
+				tolerance = self.tolerance
+			fL, fU = self.freq_plus_tolerance(freq, tolerance)
+			self.set_bin_limits(fL, fU)
+			# overwrite with new result
+			self.freqs[i] = self.get_peak(i, allow_window=False)
+
+
+class ZeroCrossingTracker(Track):
+	name = 'Zero-Crossing'
+	tooltip = "Track the distance between zero-crossings of the waveform. Good for flutter detection of clean signals"
+
+	def trace(self):
+		smoothing = 0.001  # s
+
+		# bandpass the signal to the range of the selection + tolerance
+		fL, _ = self.freq_plus_tolerance(np.min(self.freqs))
+		_, fU = self.freq_plus_tolerance(np.max(self.freqs))
+		# print(fL, fU)
+		s_0 = int(self.times[0] * self.sr)
+		s_1 = int(self.times[-1] * self.sr)
+		filtered_sig = filters.butter_bandpass_filter(self.signal[s_0:s_1, 0], fL, fU, self.sr, order=3)
+
+		crossings = zero_crossings(filtered_sig)
+		deltas = np.diff(crossings)
+		deltas = deltas.astype(np.float32)
+		size = int(round(smoothing * self.sr))
+
+		padded = np.pad(deltas, size, mode='reflect')
+		win_sq = get_window("hann", size)
+		deltas_conv = np.convolve(padded, win_sq / size * 2, mode="same")[size:-size]
+		# print(len(deltas))
+		# plt.plot(crossings[:len(deltas)] / self.sr, self.sr / 2 / deltas, label="raw", color=(0, 0, 0, 0.3))
+		# plt.plot(crossings[:len(deltas_conv)] / self.sr, self.sr / 2 / deltas_conv, label="deltas_conv")
+		# plt.show()
+
+		# transform to a regularly sampled pitch curve
+		self.freqs[:] = np.interp(self.times, crossings[:len(deltas_conv)] / self.sr + self.times[0], self.sr / 2 / deltas_conv)
+
+
+class PartialsTracker(Track):
+	name = 'Partials'
+
+	# super slow
+	# https://forge-2.ircam.fr/colas/fast-partial-tracking
+
+	# librosa piptrack - relatively poor
+	# https://github.com/librosa/librosa/blob/86275a8949fb4aef3fb16aa88b0e24862c24998f/librosa/core/pitch.py#L165
+
+	# todo? investigate polyphonic pitch tracking algortithms
+	# https://www.jordipons.me/estimating-pitch-in-polyphonic-music/
+
+	# todo
+	# M. Lagrange, S. Marchand, and J. B. Rault, “Using linear prediction to enhance the tracking of partials,” in IEEE International Conference on Acoustics, Speech, and Signal Processing (ICASSP’04) , May 2004, vol. 4, pp. 241–244.
+
+	# 2003 enhanced partial tracking - good!
+
+	def trace(self):
+		import librosa
+		# pitches, magnitudes = librosa.piptrack(S=np.array(self.spectrum[self.frame_0:self.frame_1]), sr=self.sr, n_fft=self.fft_size, hop_length=self.hop, fmin=150.0, fmax=4000.0, threshold=0.1)
+		pitches, magnitudes = librosa.piptrack(y=self.signal[:, 0], sr=self.sr, n_fft=self.fft_size, hop_length=self.hop, fmin=150.0, fmax=4000.0, threshold=0.1)
+		# plt.plot(pitches, magnitudes)
+		plt.imshow(pitches[:100, :], aspect="auto", interpolation="nearest")
+		plt.show()
+
+
+class FreehandTracker(Track):
+	name = 'Freehand Draw'
+
+	def trace(self):
+		pass
+
+class CorrelationTracker(Track):
+	name = 'Correlation'
+	tooltip = "Compare the spectra for each segment and track the offsets between"
+
+	def trace(self):
+		fL = min(self.freqs)
+		fU = max(self.freqs)
+		self.set_bin_limits(fL, fU)
+		num_freq_samples = (self.NU - self.NL) * 4
+
+		log_fft_freqs = np.log2(self.fft_freqs[self.NL:self.NU])
+
+		linspace_fft_freqs = np.linspace(log_fft_freqs[0], log_fft_freqs[-1], num_freq_samples)
+
+		# create a new array to store FFTs resampled on a log2 scale
+		resampled = np.ones((num_freq_samples, len(self.freqs) + 1), )
+		for i in range(len(self.freqs)):
+			interpolator = scipy.interpolate.interp1d(log_fft_freqs, self.spectrum[self.NL:self.NU, i], kind='quadratic')
+			resampled[:, i] = interpolator(linspace_fft_freqs)
+
+		wind = np.hanning(num_freq_samples)
+		# compute the change over each frame
+		changes = np.ones(len(self.freqs))
+		for i in range(len(self.freqs)):
+			# correlation against the next sample, output will be of the same length
+			res = xcorr(resampled[:, i]*wind, resampled[:, i + 1]*wind, mode="same")
+			# this should maybe hanned before argmax to kill obvious outliers
+			i_peak = np.argmax(res)
+			# interpolate the most accurate fit
+			i_interp, corr = parabolic(res, i_peak)
+			changes[i] = (num_freq_samples // 2) - i_interp
+		# sum up the changes to a speed curve
+		speed = np.cumsum(changes)
+		# up to this point, we've been dealing with interpolated "indices"
+		# now, we are on the log scale
+		# on log scale, +1 means double frequency or speed
+		speed = speed / num_freq_samples * (log_fft_freqs[-1] - log_fft_freqs[0])
+
+		log_mean_freq = np.log2((fL + fU) / 2)
+		# convert to scale and from log2 scale
+		np.power(2, (log_mean_freq + speed), self.freqs)
+
 
 
 def zero_crossings(a):
 	positive = a > 0
 	return np.where(np.bitwise_xor(positive[1:], positive[:-1]))[0]
+
+
+wow_detectors = {}
+for symbol, value in dict(locals()).items():
+	if isclass(value) and value != Track and issubclass(value, Track):
+		wow_detectors[value.name] = value

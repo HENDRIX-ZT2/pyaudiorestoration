@@ -12,6 +12,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 from util import units, config, qt_theme, colormaps, io_ops, snd
 from util.config import save_json, load_json
+from util.markers import Cursor
 from util.qt_threads import CursorUpdater
 from util.undo import UndoStack, AddAction
 from util.units import pitch
@@ -64,22 +65,23 @@ def startup(cls):
     appQt.setStyleSheet("QToolTip { color: #ffffff; background-color: #353535; border: 1px solid white; }")
 
     win = cls()
-
-    cursor_thread = QtCore.QThread(parent=win)
-    cursor_updater = CursorUpdater()
-    cursor_updater.moveToThread(cursor_thread)
-    cursor_updater.new_pos.connect(win.canvas.cursor.set_time)
-    cursor_updater.new_pos.connect(win.canvas.scroll_view)
-    cursor_thread.started.connect(cursor_updater.update_cursor)
-    # if the cursor updater finishes before the window is closed, kill the thread
-    cursor_updater.finished.connect(cursor_thread.quit, QtCore.Qt.DirectConnection)
-    win.props.audio_widget.cursor_set.connect(cursor_updater.update_time, QtCore.Qt.DirectConnection)
-    win.props.audio_widget.is_playing.connect(cursor_updater.update_playing, QtCore.Qt.DirectConnection)
-    # if the window is closed, tell the cursor updater to stop
-    win.closing.connect(cursor_updater.stop_data, QtCore.Qt.DirectConnection)
-    # when the thread has ended, delete the cursor updater from memory
-    cursor_thread.finished.connect(cursor_updater.deleteLater)
-    cursor_thread.start()
+    # only support audio playback if a valid cursor is available
+    if isinstance(win.canvas.cursor, Cursor):
+        cursor_thread = QtCore.QThread(parent=win)
+        cursor_updater = CursorUpdater()
+        cursor_updater.moveToThread(cursor_thread)
+        cursor_updater.new_pos.connect(win.canvas.cursor.set_time)
+        cursor_updater.new_pos.connect(win.canvas.scroll_view)
+        cursor_thread.started.connect(cursor_updater.update_cursor)
+        # if the cursor updater finishes before the window is closed, kill the thread
+        cursor_updater.finished.connect(cursor_thread.quit, QtCore.Qt.DirectConnection)
+        win.props.audio_widget.cursor_set.connect(cursor_updater.update_time, QtCore.Qt.DirectConnection)
+        win.props.audio_widget.is_playing.connect(cursor_updater.update_playing, QtCore.Qt.DirectConnection)
+        # if the window is closed, tell the cursor updater to stop
+        win.closing.connect(cursor_updater.stop_data, QtCore.Qt.DirectConnection)
+        # when the thread has ended, delete the cursor updater from memory
+        cursor_thread.finished.connect(cursor_updater.deleteLater)
+        cursor_thread.start()
     
     win.show()
     appQt.exec_()

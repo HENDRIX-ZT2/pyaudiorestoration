@@ -1,7 +1,7 @@
 import logging
 
+import matplotlib
 import numpy as np
-import xml.etree.ElementTree as ET
 import os
 from PyQt5 import QtWidgets, QtGui, QtCore
 import matplotlib.pyplot as plt
@@ -11,31 +11,6 @@ from util.spectrum_flat import spectrum_from_audio_stereo
 
 # todo: make global sr set by the first file that is loaded, make all others fit
 from util.widgets import PlotMainWindow
-
-
-def indent(e, level=0):
-	i = "\n" + level * "	"
-	if len(e):
-		if not e.text or not e.text.strip(): e.text = i + "	"
-		if not e.tail or not e.tail.strip(): e.tail = i
-		for e in e: indent(e, level + 1)
-		if not e.tail or not e.tail.strip(): e.tail = i
-	else:
-		if level and (not e.tail or not e.tail.strip()): e.tail = i
-
-
-def write_eq_xml(file_path, freqs, dB):
-	tree = ET.ElementTree()
-	equalizationeffect = ET.Element('equalizationeffect')
-	curve = ET.SubElement(equalizationeffect, 'curve')
-	curve.attrib["name"] = os.path.basename(file_path)[:-4]
-	for f, d in zip(freqs, dB):
-		point = ET.SubElement(curve, 'point')
-		point.attrib["f"] = str(f)
-		point.attrib["d"] = str(d)
-	tree._setroot(equalizationeffect)
-	indent(equalizationeffect)
-	tree.write(file_path)
 
 
 def write_eq_txt(file_path, freqs, dB):
@@ -72,9 +47,6 @@ class MainWindow(PlotMainWindow):
 
 		self.setWindowTitle('Differential EQ')
 		self.names = []
-		self.src_noise = None
-		self.ref_noise = None
-		self.eq_noise = None
 		self.freqs = None
 		self.eqs = []
 		self.av = []
@@ -84,84 +56,101 @@ class MainWindow(PlotMainWindow):
 		# Just some button connected to `plot` method
 		self.files_widget = widgets.FilesWidget(self, 2, self.cfg, ask_user=False)
 		self.files_widget.on_load_file = self.foo
-		self.b_add = QtWidgets.QPushButton('+')
+		self.b_add = QtWidgets.QPushButton('Add EQ')
 		self.b_add.setToolTip("Add a source - reference pair to the list.")
 		self.b_add.clicked.connect(self.open)
-		self.b_delete = QtWidgets.QPushButton('-')
+		self.b_delete = QtWidgets.QPushButton('Delete EQ')
 		self.b_delete.setToolTip("Delete the selected source - reference pair from the list.")
 		self.b_delete.clicked.connect(self.delete)
-		self.b_save = QtWidgets.QPushButton('=')
+		self.b_save = QtWidgets.QPushButton('Export EQ')
 		self.b_save.setToolTip("Write the average EQ curve to an XML file.")
 		self.b_save.clicked.connect(self.write)
+
+		self.l_highpass = QtWidgets.QLabel("Highpass")
 		self.s_highpass = QtWidgets.QSpinBox()
 		self.s_highpass.valueChanged.connect(self.plot)
 		self.s_highpass.setRange(0, 6000)
 		self.s_highpass.setSingleStep(500)
 		self.s_highpass.setValue(0)
 		self.s_highpass.setToolTip("Do not influence under this frequency")
+
+		self.l_rolloff_start = QtWidgets.QLabel("Rolloff Start")
 		self.s_rolloff_start = QtWidgets.QSpinBox()
 		self.s_rolloff_start.valueChanged.connect(self.plot)
 		self.s_rolloff_start.setRange(0, 22000)
 		self.s_rolloff_start.setSingleStep(1000)
 		self.s_rolloff_start.setValue(21000)
 		self.s_rolloff_start.setToolTip("At this frequency, the EQ still has full influence.")
+
+		self.l_rolloff_end = QtWidgets.QLabel("Rolloff Ende")
 		self.s_rolloff_end = QtWidgets.QSpinBox()
 		self.s_rolloff_end.valueChanged.connect(self.plot)
 		self.s_rolloff_end.setRange(0, 22000)
 		self.s_rolloff_end.setSingleStep(1000)
 		self.s_rolloff_end.setValue(22000)
 		self.s_rolloff_end.setToolTip("At this frequency, the effect of the EQ becomes zero.")
+
+		self.l_channels = QtWidgets.QLabel("Channels")
 		self.c_channels = QtWidgets.QComboBox(self)
 		self.c_channels.addItems(list(("L+R", "L", "R")))
 		self.c_channels.setToolTip("Which channels should be analyzed?")
+
+		self.l_output_res = QtWidgets.QLabel("Resolution")
 		self.s_output_res = QtWidgets.QSpinBox()
 		self.s_output_res.valueChanged.connect(self.plot)
 		self.s_output_res.setRange(20, 2000)
 		self.s_output_res.setSingleStep(100)
 		self.s_output_res.setValue(200)
 		self.s_output_res.setToolTip("Resolution of the output curve.")
+
+		self.l_smoothing = QtWidgets.QLabel("Smoothing")
 		self.s_smoothing = QtWidgets.QSpinBox()
 		self.s_smoothing.valueChanged.connect(self.plot)
 		self.s_smoothing.setRange(1, 200)
 		self.s_smoothing.setSingleStep(10)
 		self.s_smoothing.setValue(50)
-		self.s_smoothing.setToolTip("Smoothing factor. Hint: Increase this if your sample size is small.")
+		self.s_smoothing.setToolTip("Increase this if your sample size is small or the speed match between source and reference is not perfect.")
 
+		self.l_strength = QtWidgets.QLabel("Strength")
 		self.s_strength = QtWidgets.QSpinBox()
 		self.s_strength.valueChanged.connect(self.plot)
 		self.s_strength.setRange(10, 150)
 		self.s_strength.setSingleStep(10)
 		self.s_strength.setValue(100)
-		self.s_strength.setToolTip("EQ Gain [%]. Adjust the strength of the output EQ curve.")
+		self.s_strength.setSuffix(" %")
+		self.s_strength.setToolTip("Adjust the strength of the output EQ curve.")
 
 		self.c_gain = QtWidgets.QCheckBox("Keep Gain")
 		self.c_gain.setToolTip("If checked, the original gain remains untouched.")
-
-		# self.b_noise = QtWidgets.QPushButton('Noise Floor')
-		# self.b_noise.setToolTip("Load a source - reference pair of noise floor samples.")
-		# self.b_noise.clicked.connect(self.add_noise)
 
 		self.listWidget = QtWidgets.QListWidget()
 
 		self.qgrid = QtWidgets.QGridLayout()
 		self.qgrid.setHorizontalSpacing(0)
 		self.qgrid.setVerticalSpacing(0)
-		self.qgrid.addWidget(self.toolbar, 0, 0, 1, 2)
-		self.qgrid.addWidget(self.canvas, 1, 0, 1, 2)
+		self.qgrid.addWidget(self.toolbar, 0, 0, 1, 3)
+		self.qgrid.addWidget(self.canvas, 1, 0, 1, 3)
 		self.qgrid.addWidget(self.listWidget, 2, 0, 9, 1)
-		self.qgrid.addWidget(self.files_widget, 2, 1)
-		self.qgrid.addWidget(self.b_add, 3, 1)
-		self.qgrid.addWidget(self.b_delete, 4, 1)
-		self.qgrid.addWidget(self.b_save, 5, 1)
-		self.qgrid.addWidget(self.s_highpass, 6, 1)
-		self.qgrid.addWidget(self.s_rolloff_start, 7, 1)
-		self.qgrid.addWidget(self.s_rolloff_end, 8, 1)
-		self.qgrid.addWidget(self.c_channels, 9, 1)
-		self.qgrid.addWidget(self.s_output_res, 10, 1)
-		self.qgrid.addWidget(self.s_smoothing, 11, 1)
-		self.qgrid.addWidget(self.s_strength, 12, 1)
+		self.qgrid.addWidget(self.files_widget, 2, 1, 1, 2)
+		self.qgrid.addWidget(self.b_add, 3, 1, 1, 2)
+		self.qgrid.addWidget(self.b_delete, 4, 1, 1, 2)
+		self.qgrid.addWidget(self.b_save, 5, 1, 1, 2)
+
+		self.qgrid.addWidget(self.l_highpass, 6, 1)
+		self.qgrid.addWidget(self.s_highpass, 6, 2)
+		self.qgrid.addWidget(self.l_rolloff_start, 7, 1)
+		self.qgrid.addWidget(self.s_rolloff_start, 7, 2)
+		self.qgrid.addWidget(self.l_rolloff_end, 8, 1)
+		self.qgrid.addWidget(self.s_rolloff_end, 8, 2)
+		self.qgrid.addWidget(self.l_channels, 9, 1)
+		self.qgrid.addWidget(self.c_channels, 9, 2)
+		self.qgrid.addWidget(self.l_output_res, 10, 1)
+		self.qgrid.addWidget(self.s_output_res, 10, 2)
+		self.qgrid.addWidget(self.l_smoothing, 11, 1)
+		self.qgrid.addWidget(self.s_smoothing, 11, 2)
+		self.qgrid.addWidget(self.l_strength, 12, 1)
+		self.qgrid.addWidget(self.s_strength, 12, 2)
 		self.qgrid.addWidget(self.c_gain, 13, 1)
-		# self.qgrid.addWidget(self.b_noise, 11, 1)
 
 		self.colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 		self.central_widget.setLayout(self.qgrid)
@@ -172,33 +161,21 @@ class MainWindow(PlotMainWindow):
 	def open(self, ):
 		filepaths = self.files_widget.filepaths
 		if filepaths and len(filepaths) == 2:
-			file_src = filepaths[1]
-			file_ref = filepaths[0]
-			src_name = os.path.basename(file_src)
-			ref_name = os.path.basename(file_ref)
-			channel_mode = self.c_channels.currentText()
-			eq_name = src_name + " (" + channel_mode + ") -> " + ref_name + " (" + channel_mode + ")"
-			self.freqs, eq = get_eq(file_src, file_ref, channel_mode)
-			self.listWidget.addItem(eq_name)
-			self.names.append(eq_name)
-			self.eqs.append(eq)
-			self.update_color(eq_name)
-			self.plot()
-
-	# def add_noise(self):
-	# 	file_src = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Source', self.cfg.get("dir_in", "C:/"),
-	# 													 "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
-	# 	if file_src:
-	# 		file_ref = QtWidgets.QFileDialog.getOpenFileName(self, 'Open Reference', self.cfg.get("dir_in", "C:/"),
-	# 														 "Audio files (*.flac *.wav *.ogg *.aiff)")[0]
-	# 		if file_ref:
-	# 			channel_mode = self.c_channels.currentText()
-	# 			self.freqs, self.eq_noise = get_eq(file_src, file_ref, channel_mode)
-	# 			# self.listWidget.addItem(eq_name)
-	# 			# self.names.append(eq_name)
-	# 			# self.eqs.append( eq )
-	# 			# self.update_color(eq_name)
-	# 			self.plot()
+			try:
+				file_src = filepaths[1]
+				file_ref = filepaths[0]
+				src_name = os.path.basename(file_src)
+				ref_name = os.path.basename(file_ref)
+				channel_mode = self.c_channels.currentText()
+				eq_name = f"{src_name} ({channel_mode}) -> {ref_name} ({channel_mode})"
+				self.freqs, eq = get_eq(file_src, file_ref, channel_mode)
+				self.listWidget.addItem(eq_name)
+				self.names.append(eq_name)
+				self.eqs.append(eq)
+				self.update_color(eq_name)
+				self.plot()
+			except:
+				logging.exception(f"Loading EQ curve failed")
 
 	def update_color(self, eq_name):
 		item = self.listWidget.findItems(eq_name, QtCore.Qt.MatchFixedString)[-1]
@@ -224,10 +201,9 @@ class MainWindow(PlotMainWindow):
 			if file_out:
 				try:
 					self.cfg["dir_out"], eq_name = os.path.split(file_out)
-					# write_eq_xml(file_base+"_AV.xml", self.freqs_av, np.mean(self.av, axis=0))
-					# write_eq_xml(file_base+"_L.xml", self.freqs_av, self.av[0])
-					# write_eq_xml(file_base+"_R.xml", self.freqs_av, self.av[1])
-					write_eq_txt(file_base + ".txt", self.freqs_av, np.mean(self.av, axis=0))
+					write_eq_txt(f"{file_base}.txt", self.freqs_av, np.mean(self.av, axis=0))
+					write_eq_txt(f"{file_base}_L.txt", self.freqs_av, self.av[0])
+					write_eq_txt(f"{file_base}_R.txt", self.freqs_av, self.av[1])
 				except PermissionError:
 					widgets.showdialog("Could not write files - do you have writing permissions there?")
 		except:
@@ -279,16 +255,19 @@ class MainWindow(PlotMainWindow):
 					self.av[channel] *= np.interp(self.freqs_av, (rolloff_start, rolloff_end), (1, 0))
 					self.av[channel] *= np.interp(self.freqs_av, (0, highpass), (0, 1))
 
+				if tuple(int(x) for x in matplotlib.__version__.split(".")) >= (3, 5, 0):
+					kwargs = {"base": 2}
+				else:
+					kwargs = {"basex": 2}
 				# plot the contributing raw curves
 				for name, eq in zip(self.names, np.mean(np.asarray(self.eqs), axis=1)):
-					self.ax.semilogx(self.freqs[from20Hz:], eq[from20Hz:], basex=2, linestyle="--", linewidth=.5, alpha=.5,
-									 color=self.colors[self.names.index(name) + 1])
+					self.ax.semilogx(self.freqs[from20Hz:], eq[from20Hz:], linestyle="--", linewidth=.5, alpha=.5,
+									 color=self.colors[self.names.index(name) + 1], **kwargs)
 				# take the average
-				self.ax.semilogx(self.freqs_av, np.mean(self.av, axis=0), basex=2, linewidth=2.5, alpha=1,
-								 color=self.colors[0])
-			if self.eq_noise is not None:
-				self.ax.semilogx(self.freqs[from20Hz:], np.mean(self.eq_noise, axis=0)[from20Hz:], basex=2, linestyle="-.",
-								 linewidth=.5, alpha=.5, color="white")
+				self.ax.semilogx(self.freqs_av, np.mean(self.av, axis=0), linewidth=2.5, alpha=1,
+								 color=self.colors[0], **kwargs)
+				# ticks = np.arange(0, 22000, step=1000)
+				# self.ax.set_xticks(ticks, labels=ticks)
 
 
 if __name__ == '__main__':

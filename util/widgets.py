@@ -67,7 +67,7 @@ def startup(cls):
 
     win = cls()
     # only support audio playback if a valid cursor is available
-    if isinstance(win.canvas.cursor, Cursor):
+    if hasattr(win, "canvas") and isinstance(win.canvas.cursor, Cursor):
         cursor_thread = QtCore.QThread(parent=win)
         cursor_updater = CursorUpdater()
         cursor_updater.moveToThread(cursor_thread)

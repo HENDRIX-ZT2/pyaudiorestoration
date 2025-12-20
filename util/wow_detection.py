@@ -435,6 +435,14 @@ class CorrelationTracker(Track):
 		np.power(2, (log_mean_freq + speed), self.freqs)
 
 
+class SineRegression(Track):
+	name = 'Sine Regression'
+	tooltip = "Perform a regression on an area of the master speed curve to yield a sine fit"
+
+	def trace(self):
+		pass
+
+
 
 def zero_crossings(a):
 	positive = a > 0

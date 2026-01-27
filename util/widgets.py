@@ -563,6 +563,7 @@ class FiltersWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.band0_s.setRange(0, 10000)
         self.band0_s.setSingleStep(.1)
         self.band0_s.setValue(0)
+        self.band0_s.setSuffix(" Hz")
         self.band0_s.setToolTip("Cull wow below this frequency from the final speed curve.")
         self.band0_s.valueChanged.connect(self.update_bands)
 
@@ -571,6 +572,7 @@ class FiltersWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.band1_s.setRange(.01, 10000)
         self.band1_s.setSingleStep(.1)
         self.band1_s.setValue(20)
+        self.band1_s.setSuffix(" Hz")
         self.band1_s.setToolTip("Cull flutter above this frequency from the final speed curve.")
         self.band1_s.valueChanged.connect(self.update_bands)
         buttons = (

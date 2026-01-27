@@ -346,15 +346,13 @@ class ZeroCrossingTracker(Track):
 		deltas = np.diff(crossings)
 		deltas = deltas.astype(np.float32)
 
+		# the zero crossings are pulse density modulated
+		# low pass to get to pulse code modulated pitch signal
 		# filter the phase based on the frequency
-		size = int(200.0 / np.mean(deltas))
+		size = int(self.sr / 100 / np.mean(deltas))
 		padded = np.pad(deltas, size, mode='reflect')
 		win_sq = get_window("hann", size)
 		deltas_conv = np.convolve(padded, win_sq / size * 2, mode="same")[size:-size]
-
-		# plt.plot(crossings[:len(deltas)] / self.sr, self.sr / 2 / deltas, label="raw", color=(0, 0, 0, 0.3))
-		# plt.plot(crossings[:len(deltas_conv)] / self.sr, self.sr / 2 / deltas_conv, label="deltas_conv")
-		# plt.show()
 
 		# transform to a regularly sampled pitch curve
 		self.freqs[:] = np.interp(self.times, crossings[:len(deltas_conv)] / self.sr + self.times[0], self.sr / 2 / deltas_conv)
@@ -379,10 +377,13 @@ class PartialsTracker(Track):
 
 	def trace(self):
 		import librosa
+		fl = np.min(self.freqs)
+		fu = np.max(self.freqs)
 		# pitches, magnitudes = librosa.piptrack(S=np.array(self.spectrum[self.frame_0:self.frame_1]), sr=self.sr, n_fft=self.fft_size, hop_length=self.hop, fmin=150.0, fmax=4000.0, threshold=0.1)
-		pitches, magnitudes = librosa.piptrack(y=self.signal[:, 0], sr=self.sr, n_fft=self.fft_size, hop_length=self.hop, fmin=150.0, fmax=4000.0, threshold=0.1)
-		# plt.plot(pitches, magnitudes)
-		plt.imshow(pitches[:100, :], aspect="auto", interpolation="nearest")
+		pitches, magnitudes = librosa.piptrack(y=self.signal[:, 0], sr=self.sr, n_fft=self.fft_size, hop_length=self.hop, fmin=fl, fmax=fu, threshold=0.15)
+		# plt.imshow(pitches[:, :], aspect="auto", interpolation="nearest", origin='lower')
+		plt.yscale('symlog')
+		plt.pcolormesh(pitches)
 		plt.show()
 
 

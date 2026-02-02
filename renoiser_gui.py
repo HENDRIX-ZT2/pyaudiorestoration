@@ -7,7 +7,6 @@ import logging
 import resampy
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import pyqtSignal, QTimer
-from anyio import sleep
 from matplotlib import pyplot as plt, patches
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas

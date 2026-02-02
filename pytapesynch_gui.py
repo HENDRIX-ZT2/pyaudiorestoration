@@ -62,6 +62,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.filters_widget.bands_changed.connect(self.lag_line.update_bands)
 		self.parent.props.tracing_widget.setVisible(False)
 		self.parent.props.dropout_widget.setVisible(False)
+		self.parent.props.noise_widget.setVisible(False)
 		self.parent.props.alignment_widget.smoothing_s.valueChanged.connect(self.update_smoothing)
 		self.parent.props.display_widget.fft_zeropad = 1
 		self.freeze()

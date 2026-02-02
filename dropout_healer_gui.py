@@ -67,6 +67,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.tracing_widget.setVisible(False)
 		self.parent.props.alignment_widget.setVisible(False)
 		self.parent.props.filters_widget.setVisible(False)
+		self.parent.props.noise_widget.setVisible(False)
 		self.parent.props.output_widget.mode_l.setVisible(False)
 		self.parent.props.output_widget.mode_c.setVisible(False)
 		self.freeze()

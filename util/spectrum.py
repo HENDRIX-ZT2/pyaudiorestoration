@@ -236,6 +236,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.fft_size = 1024
 		self.hop = 256
 		self.zeropad = 1
+		font_size = 6
 
 		self.fourier_thread = qt_threads.FourierThread()
 		self.fourier_thread.finished.connect(self.retrieve_fft)
@@ -244,59 +245,34 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 		self.unfreeze()
 
-		grid = self.central_widget.add_grid(margin=10)
-		grid.spacing = 0
 
 		# speed chart
 		self.speed_yaxis = scene.AxisWidget(
-			orientation='left', axis_label=y_axis, axis_font_size=8,
+			orientation='left', axis_label=y_axis, font_size=font_size,
 			axis_label_margin=35, tick_label_margin=5, axis_color=label_color)
 		self.speed_yaxis.width_max = 55
 
 		# spectrum
 		self.spec_yaxis = vispy_ext.ExtAxisWidget(
-			orientation='left', axis_label='Hz', axis_font_size=8,
+			orientation='left', axis_label='Hz', font_size=font_size,
 			axis_label_margin=35, tick_label_margin=5, scale_type="logarithmic", axis_color=label_color)
 		self.spec_yaxis.width_max = 55
 
 		self.spec_xaxis = vispy_ext.ExtAxisWidget(
-			orientation='bottom', axis_label='m:s:ms', axis_font_size=8,
+			orientation='bottom', axis_label='m:s:ms', font_size=font_size,
 			axis_label_margin=30, tick_label_margin=20, axis_color=label_color)
 		self.spec_xaxis.height_max = 55
-
-		top_padding = grid.add_widget(row=0)
-		top_padding.height_max = 10
-
-		right_padding = grid.add_widget(row=1, col=2, row_span=1)
-		right_padding.width_max = 55
 
 		# create the color bar display
 		self.colorbar_display = vispy_ext.ColorBarWidgetExt(label="dB", clim=(self.vmin, self.vmax),
 															cmap="viridis", orientation="right", border_width=1,
 															label_color="white", axis_ratio=0.01, padding=(0, 0))
-		self.colorbar_display.label.font_size = 8
-		self.colorbar_display.ticks[0].font_size = 8
-		self.colorbar_display.ticks[1].font_size = 8
+		self.colorbar_display.label.font_size = font_size
+		self.colorbar_display.ticks[0].font_size = font_size
+		self.colorbar_display.ticks[1].font_size = font_size
 		self.colorbar_display.cmap = "izo"
 
-		grid.add_widget(self.speed_yaxis, row=1, col=0)
-		grid.add_widget(self.spec_yaxis, row=2, col=0)
-		grid.add_widget(self.spec_xaxis, row=3, col=1)
-		grid.add_widget(self.colorbar_display, row=2, col=2)
-
-		self.speed_view = grid.add_view(row=1, col=1, border_color=label_color)
-		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, -5, 10, 10), )
-		self.speed_view.height_min = 150
-		# self.speed_view.stretch = (1, 1)
-		self.spec_view = grid.add_view(row=2, col=1, border_color=label_color)
-		self.spec_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0, 10, 10), )
-		self.spec_view.height_min = 550
-		self.spec_view.stretch = (2, 2)
-		# link them, but use custom logic to only link the x view
-		self.spec_view.camera.link(self.speed_view.camera)
-		self.speed_yaxis.link_view(self.speed_view)
-		self.spec_xaxis.link_view(self.spec_view)
-		self.spec_yaxis.link_view(self.spec_view)
+		self.setup_grid(label_color)
 
 		self.spectra = [Spectrum(self.spec_view, overlay=color) for color in spectra_colors]
 		self.markers = []
@@ -311,9 +287,35 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 		self.freeze()
 
+	def setup_grid(self, label_color):
+		grid = self.central_widget.add_grid(margin=10)
+		grid.spacing = 0
+		top_padding = grid.add_widget(row=0)
+		top_padding.height_max = 10
+		right_padding = grid.add_widget(row=1, col=2, row_span=1)
+		right_padding.width_max = 55
+		grid.add_widget(self.speed_yaxis, row=1, col=0)
+		grid.add_widget(self.spec_yaxis, row=2, col=0)
+		grid.add_widget(self.spec_xaxis, row=3, col=1)
+		grid.add_widget(self.colorbar_display, row=2, col=2)
+		self.speed_view = grid.add_view(row=1, col=1, border_color=label_color)
+		self.speed_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, -5, 10, 10), )
+		self.speed_view.height_min = 150
+		# self.speed_view.stretch = (1, 1)
+		self.spec_view = grid.add_view(row=2, col=1, border_color=label_color)
+		self.spec_view.camera = vispy_ext.PanZoomCameraExt(rect=(0, 0, 10, 10), )
+		self.spec_view.height_min = 550
+		self.spec_view.stretch = (2, 2)
+		# link them, but use custom logic to only link the x view
+		self.spec_view.camera.link(self.speed_view.camera)
+		self.speed_yaxis.link_view(self.speed_view)
+		self.spec_xaxis.link_view(self.spec_view)
+		self.spec_yaxis.link_view(self.spec_view)
+		self.views = [self.speed_view, self.spec_view]
+
 	def load_visuals_legacy(self, ):
 		"""legacy code path"""
-		pass
+		return []
 	
 	@property
 	def sr(self):
@@ -406,7 +408,8 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 	def reset_view(self):
 		# (re)set the spec_view
-		self.speed_view.camera.rect = (0, -1, self.duration, 2)
+		if hasattr(self, "speed_view"):
+			self.speed_view.camera.rect = (0, -1, self.duration, 2)
 		self.spec_view.camera.rect = (0, 0, self.duration, units.to_mel(self.f_max))
 
 	def scroll_view(self, t):

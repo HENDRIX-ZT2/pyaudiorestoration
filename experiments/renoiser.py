@@ -45,10 +45,12 @@ for fft_size in fft_sizes:
 	for sr_trg in srs:
 		if sr == sr_trg:
 			signal_res = signal
-			noise_res = noise
 		else:
 			signal_res = resampy.resample(signal, sr, sr_trg, axis=0, filter='sinc_window', num_zeros=8)
-			noise_res = resampy.resample(noise, sr, sr_trg, axis=0, filter='sinc_window', num_zeros=8)
+		if noise_sr == sr_trg:
+			noise_res = noise
+		else:
+			noise_res = resampy.resample(noise, noise_sr, sr_trg, axis=0, filter='sinc_window', num_zeros=8)
 		n = len(signal_res)
 		for gain, overhead in gains:
 			y_out = np.empty(signal_res.shape, dtype=signal_res.dtype)

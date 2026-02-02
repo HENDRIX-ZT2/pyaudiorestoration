@@ -33,7 +33,7 @@ class BaseMarker:
 		self.speed_center = (0, 0)
 		self.offset = None
 		self.container = vispy_canvas.markers
-		self.parents = (self.vispy_canvas.speed_view.scene, self.vispy_canvas.spec_view.scene)
+		self.parents = [view.scene for view in self.vispy_canvas.views]
 
 	def initialize(self):
 		"""Called when first created, or revived via undo."""

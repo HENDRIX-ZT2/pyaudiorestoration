@@ -34,7 +34,7 @@ class ConfigStorer:
                 try:
                     setattr(self, varname, cfg[varname])
                 except:
-                    logging.warning(f"Could not set {varname}")
+                    logging.exception(f"Could not set {varname}")
 
 
 def get_icon(name):
@@ -126,11 +126,12 @@ def vbox(parent, grid_layout):
 # box.setContentsMargins(0, 0, 0, 0)
 
 
-def vbox2(parent, buttons):
+def vbox2(parent, buttons, stretch=True):
     box = QtWidgets.QVBoxLayout(parent)
     for w in buttons:
         box.addWidget(w)
-    box.addStretch(1)
+    if stretch:
+        box.addStretch(1)
 
 
 class ChannelWidget(QtWidgets.QScrollArea):
@@ -732,6 +733,69 @@ class DropsWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.sensitivity_s.setValue(v)
 
 
+class RenoiseWidget(QtWidgets.QGroupBox, ConfigStorer):
+    vars_for_saving = ("gain", "overhead", "control", "noise_profile")
+
+    def __init__(self, ):
+        super().__init__("Renoising")
+
+        self.gain_l = QtWidgets.QLabel("Gain")
+        self.gain_s = QtWidgets.QDoubleSpinBox()
+        self.gain_s.setRange(-100.0, 100.0)
+        self.gain_s.setSingleStep(1.0)
+        self.gain_s.setValue(12.0)
+        self.gain_s.setSuffix(" dB")
+        self.gain_s.setToolTip("Gain applied to noise floor")
+
+        self.overhead_l = QtWidgets.QLabel("Overhead")
+        self.overhead_s = QtWidgets.QDoubleSpinBox()
+        self.overhead_s.setRange(-100.0, 100.0)
+        self.overhead_s.setSingleStep(1.0)
+        self.overhead_s.setValue(3.0)
+        self.overhead_s.setSuffix(" dB")
+        self.overhead_s.setToolTip("Additional tolerance over noise floor for detecting signal")
+
+        buttons = (
+            (self.gain_l, self.gain_s),
+            (self.overhead_l, self.overhead_s)
+        )
+        vbox(self, grid(buttons))
+
+    @property
+    def gain(self):
+        return self.gain_s.value()
+
+    @gain.setter
+    def gain(self, v):
+        self.gain_s.setValue(v)
+
+    @property
+    def overhead(self):
+        return self.overhead_s.value()
+
+    @overhead.setter
+    def overhead(self, v):
+        self.overhead_s.setValue(v)
+
+    @property
+    def control(self):
+        return self.canvas.parent.curve
+
+    @control.setter
+    def control(self, v):
+        self.canvas.parent.curve[:] = v
+        self.canvas.redraw_plot()
+
+    @property
+    def noise_profile(self):
+        return [float(x) for x in self.canvas.noise_profile]
+
+    @noise_profile.setter
+    def noise_profile(self, v):
+        self.canvas.noise_profile[:] = v
+        self.canvas.redraw_plot()
+
+
 class DropoutWidget(QtWidgets.QGroupBox):
     def __init__(self, ):
         super().__init__("Alignment")
@@ -940,6 +1004,10 @@ class OutputWidget(QtWidgets.QGroupBox, ConfigStorer):
     def sinc_quality(self, ):
         return self.sinc_quality_s.value()
 
+    @sinc_quality.setter
+    def sinc_quality(self, t):
+        self.sinc_quality_s.setValue(t)
+
     @property
     def resampling_mode(self, ):
         return self.mode_c.currentText()
@@ -999,6 +1067,9 @@ class MainWindow(QtWidgets.QMainWindow):
             w = self.props.files_widget.files[i]
             w.spectra.append(spectrum)
 
+        self.setup_splitter()
+
+    def setup_splitter(self):
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         splitter.addWidget(self.canvas.native)
         splitter.addWidget(self.props)
@@ -1093,10 +1164,10 @@ class ParamWidget(QtWidgets.QWidget):
     """
 
     def __init__(self, parent=None, count=1):
-        super(ParamWidget, self).__init__(parent)
+        super().__init__(parent)
         self.parent = parent
         self.files_widget = FilesWidget(self, count, self.parent.cfg)
-        self.display_widget = SpectrumSettingsWidget()
+        self.display_widget = SpectrumSettingsWidget(with_canvas=bool(count))
         self.tracing_widget = TracingWidget()
         self.filters_widget = FiltersWidget()
         self.output_widget = OutputWidget()
@@ -1110,9 +1181,10 @@ class ParamWidget(QtWidgets.QWidget):
         self.inspector_widget = InspectorWidget()
         self.alignment_widget = AlignmentWidget()
         self.dropout_widget = DropsWidget()
+        self.noise_widget = RenoiseWidget()
         self.undo_stack = UndoStack(self)
         self.stack_widget = StackWidget(self.undo_stack)
-        self.buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget, self.dropout_widget,
+        self.buttons = [self.files_widget, self.display_widget, self.tracing_widget, self.alignment_widget, self.dropout_widget, self.noise_widget,
                         self.filters_widget, self.output_widget, self.stack_widget, self.progress_bar, self.audio_widget,
                         self.inspector_widget]
         vbox2(self, self.buttons)
@@ -1142,7 +1214,6 @@ class ParamWidget(QtWidgets.QWidget):
 
     def load(self):
         """Load project with all required settings"""
-        print("load")
         file_path = \
         QtWidgets.QFileDialog.getOpenFileName(self, 'Open Project', self.parent.cfg.get("dir_in", "C:/"), self.sel_str)[0]
         if not os.path.isfile(file_path):

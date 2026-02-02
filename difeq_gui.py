@@ -7,7 +7,7 @@ from PyQt5 import QtWidgets, QtGui, QtCore
 import matplotlib.pyplot as plt
 from util import fourier, filters, widgets, config
 from util.spectrum_flat import spectrum_from_audio_stereo
-
+from util.units import to_mel, to_Hz
 
 # todo: make global sr set by the first file that is loaded, make all others fit
 from util.widgets import PlotMainWindow
@@ -211,6 +211,7 @@ class MainWindow(PlotMainWindow):
 
 	def plot(self):
 		with self.update_plot('Frequency (Hz)', 'Volume Change (dB)'):
+			self.ax.set_xscale("function", functions=(to_mel, to_Hz))
 			if self.freqs is not None:
 				# todo: just calculate it from SR and bin count
 				# again, just show from 20Hz
@@ -254,18 +255,13 @@ class MainWindow(PlotMainWindow):
 					# todo make rolloff_end a band parameter in octaves?
 					self.av[channel] *= np.interp(self.freqs_av, (rolloff_start, rolloff_end), (1, 0))
 					self.av[channel] *= np.interp(self.freqs_av, (0, highpass), (0, 1))
-
-				if tuple(int(x) for x in matplotlib.__version__.split(".")) >= (3, 5, 0):
-					kwargs = {"base": 2}
-				else:
-					kwargs = {"basex": 2}
 				# plot the contributing raw curves
 				for name, eq in zip(self.names, np.mean(np.asarray(self.eqs), axis=1)):
-					self.ax.semilogx(self.freqs[from20Hz:], eq[from20Hz:], linestyle="--", linewidth=.5, alpha=.5,
-									 color=self.colors[self.names.index(name) + 1], **kwargs)
+					self.ax.plot(self.freqs[from20Hz:], eq[from20Hz:], linestyle="--", linewidth=.5, alpha=.5,
+									 color=self.colors[self.names.index(name) + 1])
 				# take the average
-				self.ax.semilogx(self.freqs_av, np.mean(self.av, axis=0), linewidth=2.5, alpha=1,
-								 color=self.colors[0], **kwargs)
+				self.ax.plot(self.freqs_av, np.mean(self.av, axis=0), linewidth=2.5, alpha=1,
+								 color=self.colors[0])
 				# ticks = np.arange(0, 22000, step=1000)
 				# self.ax.set_xticks(ticks, labels=ticks)
 

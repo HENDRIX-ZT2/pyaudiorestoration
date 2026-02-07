@@ -8,6 +8,7 @@ import resampy
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import pyqtSignal, QTimer
 from matplotlib import pyplot as plt, patches
+from matplotlib.backend_bases import MouseEvent
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
@@ -151,7 +152,7 @@ class MainWindow(widgets.MainWindow):
 					self.curve.pop(self.current_index)
 					self.canvas.redraw_plot()
 
-	def on_motion(self, event):
+	def on_motion(self, event: MouseEvent):
 		if not self.currently_dragging:
 			return
 		if self.current_index is None:
@@ -159,7 +160,8 @@ class MainWindow(widgets.MainWindow):
 		if event.xdata is None:
 			return
 		if self.current_index is not None:
-			if self.current_index == 0 or self.current_index == len(self.curve) - 1:
+			# up-down only for end positions, or ALT mode
+			if self.current_index == 0 or self.current_index == len(self.curve) - 1 or "alt" in event.modifiers:
 				self.curve[self.current_index][1] = event.ydata
 			else:
 				self.curve[self.current_index] = [event.xdata, event.ydata]

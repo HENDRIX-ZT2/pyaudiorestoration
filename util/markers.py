@@ -734,6 +734,8 @@ class LagLine(BaseLine):
 		lag, corr = self.sample_at((dur,))
 		# print(lag)
 		dur += lag[0]
+		# avoid crashing
+		dur = abs(dur)
 		num = int(dur * self.marker_sr)
 		# get the times at which the average should be sampled
 		return np.linspace(0, dur, num=num)

@@ -132,6 +132,9 @@ class MainWindow(PlotMainWindow):
 			try:
 				self.spectra, self.sr = spectrum_from_audio_stereo(self.file_src, self.fft_size, self.fft_hop,
 																   self.c_channels.currentText(), temporal_mean=False)
+
+				self.s_band_lower.setRange(0, self.sr // 2)
+				self.s_band_upper.setRange(1000, self.sr // 2)
 				# get the time stamp at which each fft is taken
 				self.t = np.arange(0, self.fft_hop * len(self.spectra[0][0]), self.fft_hop) / self.sr
 				self.on_param_changed()

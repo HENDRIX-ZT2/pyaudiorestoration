@@ -208,7 +208,8 @@ def run(filenames, signal_data=None, speed_curve=None, resampling_mode="Linear",
 			# speeds = np.diff(lag_curve[:,1])/np.diff(lag_curve[:,0])+1
 			# sampletimes = (lag_curve[:-1,0]+np.diff(lag_curve[:,0])/2)*sr
 			# sample_at = speed_to_pos(sampletimes, speeds)
-
+		# filter channels to avoid crash
+		use_channels = [channel for channel in use_channels if channel < signal.shape[1]]
 		with log_duration("Resampling"):
 			length = len(sample_at)
 			# create multichannel output array

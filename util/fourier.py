@@ -126,7 +126,7 @@ def pyfftw_rfft2(n_fft, step, window, x, zeropad):
 	with timed_log("pyfftw"):
 		n_estimates, x = estimate_and_center(n_fft, step, x)
 		# raise AttributeError
-		fft_in = pyfftw.empty_aligned((n_fft, n_estimates), dtype='float32')
+		fft_in = pyfftw.empty_aligned((n_fft*zeropad, n_estimates), dtype='float32')
 		segment_array(fft_in, n_estimates, n_fft, step, window, x)
 		fft_ob = pyfftw.builders.rfft(fft_in, axis=0, threads=os.cpu_count(), planner_effort="FFTW_ESTIMATE")
 		result = fft_ob(ortho=True, normalise_idft=False)
@@ -143,14 +143,14 @@ def np_rfft_pick(n_fft, step, window, x, zeropad):
 		with timed_log("fftpack (non-vectorized)"):
 			complex_dtype = dtype_r2c(x.dtype)
 			# Pre-allocate the STFT matrix
-			n_freqs = n_fft // 2 + 1
+			n_freqs = (n_fft * zeropad) // 2 + 1
 			result = np.empty((n_freqs, n_estimates), dtype=complex_dtype, order='F')
 			for i in range(n_estimates):
-				result[:, i] = np.fft.rfft(segment())
+				result[:, i] = np.fft.rfft(segment(), n=n_fft * zeropad)
 	else:
 		with timed_log("fftpack (vectorized)"):
 			# Pre-allocate the STFT matrix
-			fft_in = np.empty((n_fft, n_estimates), dtype='float32')
+			fft_in = np.empty((n_fft * zeropad, n_estimates), dtype='float32')
 			segment_array(fft_in, n_estimates, n_fft, step, window, x)
 			result = np.fft.rfft(fft_in, axis=0)
 	# normalize for constant volume across different FFT sizes
@@ -161,7 +161,9 @@ def np_rfft_pick(n_fft, step, window, x, zeropad):
 def segment_array(fft_in, n_estimates, n_fft, step, window, x):
 	for i in range(n_estimates):
 		# set the data on the FFT input
-		fft_in[:, i] = window * x[i * step: i * step + n_fft]
+		fft_in[:n_fft, i] = window * x[i * step: i * step + n_fft]
+		# support for zeropadding
+		fft_in[n_fft:, i] = 0
 
 
 def dtype_r2c(d, default=np.complex64):
@@ -185,8 +187,7 @@ def dtype_r2c(d, default=np.complex64):
 		The complex dtype
 	"""
 	mapping = {np.dtype(np.float32): np.complex64,
-			   np.dtype(np.float64): np.complex128,
-			   np.dtype(np.float): np.complex}
+			   np.dtype(np.float64): np.complex128}
 
 	# If we're given a complex type already, return it
 	dt = np.dtype(d)

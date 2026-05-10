@@ -104,7 +104,7 @@ class Canvas(spectrum.SpectrumCanvas):
 			self.spectra[-1].set_offset(trace.d)
 			self.update_corr_view(trace)
 
-	def correlate_sources(self, t0, t1, delay, lower, upper, window_name=None, match_speed=True):
+	def correlate_sources(self, t0, t1, delay, lower, upper, window_name=None):
 		# todo - this isn't dealing with different sample rates
 		sr = self.sr
 		t_center = (t0 + t1) / 2
@@ -112,40 +112,24 @@ class Canvas(spectrum.SpectrumCanvas):
 		ref, src = self.spectra
 		ref_sig = ref.get_signal_around(t_center, t_width)
 		# print(f"speed {speed}")
+		match_speed = self.parent.props.alignment_widget.match_speed
 		if match_speed:
 			# get rough speed difference for src
 			speed = self.get_speed_at(t_center)
-			# get respeeded duration around center
 			src_sig = src.get_signal_around(t_center - delay, t_width / speed)
 			# resample to match expected speed of ref
-			src_sig_res = resampy.resample(src_sig, sr / speed, sr, axis=0, filter='sinc_window', num_zeros=8)
-			sample_delay_res, corr_res = find_delay(
-				filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
-				filters.butter_bandpass_filter(src_sig_res, lower, upper, sr, order=3),
-				ignore_phase=self.parent.props.alignment_widget.ignore_phase, window_name=window_name)
-
-			# from matplotlib import pyplot as plt
-			# # '-', '--', '-.', ':', 'None', ' ', '', 'solid', 'dashed', 'dashdot', 'dotted'
-			# plt.plot(np.arange(0, len(ref_sig), 1), ref_sig, label=f"ref_sig", linestyle='-.')
-			# # plt.plot(src_sig, label=f"src_sig", linestyle='--')
-			# plt.plot(np.arange(0, len(src_sig_res), 1), src_sig_res, label=f"src_sig_res", linestyle='-.')
-			# plt.plot(np.arange(0, len(src_sig_res), 1)+sample_delay_res, src_sig_res, label=f"src_sig_res_al", linestyle='-.')
-			# plt.vlines(len(ref_sig)/2, -0.1, 0.1, linestyles='--')
-			# plt.legend(frameon=True, framealpha=0.75)
-			# plt.show()
-			# correct delay for speed change
-			return sample_delay_res / sr * speed, corr_res
+			src_sig = resampy.resample(src_sig, sr / speed, sr, axis=0, filter='sinc_window', num_zeros=8)
 		else:
+			speed = 1.0
 			src_sig = src.get_signal_around(t_center - delay, t_width)
-			# print(f"len(ref_sig) {len(ref_sig)} len(src_sig) {len(src_sig)} len(src_sig_res) {len(src_sig_res)}")
-			sample_delay, corr = find_delay(
-				filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
-				filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3),
-				ignore_phase=self.parent.props.alignment_widget.ignore_phase, window_name=window_name)
-			return sample_delay / sr, corr
-		# logging.info(f"corr: raw {corr} vs res {corr_res}")
-		# logging.info(f"delay: raw {sample_delay} vs res {sample_delay_res}")
-		# logging.info(f"Moved by {sample_delay} samples")
+		# print(f"len(ref_sig) {len(ref_sig)} len(src_sig) {len(src_sig)} len(src_sig_res) {len(src_sig_res)}")
+		sample_delay, corr = find_delay(
+			filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
+			filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3),
+			ignore_phase=self.parent.props.alignment_widget.ignore_phase, window_name=window_name)
+		print(f"sample_delay: {sample_delay}")
+		# correct delay for speed change
+		return sample_delay / sr * speed, corr
 
 	def run_resample(self):
 		self.resample_files((self.filenames[1],))

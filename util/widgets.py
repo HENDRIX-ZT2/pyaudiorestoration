@@ -587,7 +587,7 @@ class FiltersWidget(QtWidgets.QGroupBox, ConfigStorer):
 
 
 class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
-    vars_for_saving = ("smoothing", "ignore_phase",)
+    vars_for_saving = ("smoothing", "ignore_phase", "match_speed")
 
     def __init__(self, ):
         super().__init__("Alignment")
@@ -596,6 +596,11 @@ class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.ignore_phase_b.setToolTip(
             "Turn on if phase of sources does not match and you want the strongest relationship.\n"
             "Consistent negative values indicate you should invert one source.")
+
+        self.match_speed_b = QtWidgets.QCheckBox("Match speed")
+        self.match_speed_b.setChecked(False)
+        self.match_speed_b.setToolTip(
+            "Turn on if both sources are not very similar in speed already for more reliable syncing at the cost of temporal accuracy.")
 
         corr_l = QtWidgets.QLabel("Correlation")
         self.corr_l = QtWidgets.QLabel("None")
@@ -630,7 +635,7 @@ class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.reject_s.setToolTip("Reject alignment value if correlation goes lower than this value")
 
         buttons = (
-            (self.ignore_phase_b,), (corr_l, self.corr_l), (self.smoothing_l, self.smoothing_s),
+            (self.ignore_phase_b,), (self.match_speed_b,), (corr_l, self.corr_l), (self.smoothing_l, self.smoothing_s),
             (self.win_l, self.win_s), (self.overlap_l, self.overlap_s), (self.reject_l, self.reject_s)
         )
         vbox(self, grid(buttons))
@@ -649,6 +654,13 @@ class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
     @ignore_phase.setter
     def ignore_phase(self, is_checked):
         self.ignore_phase_b.setChecked(is_checked)
+
+    @property
+    def match_speed(self): return self.match_speed_b.isChecked()
+
+    @match_speed.setter
+    def match_speed(self, is_checked):
+        self.match_speed_b.setChecked(is_checked)
 
 
 class DropsWidget(QtWidgets.QGroupBox, ConfigStorer):

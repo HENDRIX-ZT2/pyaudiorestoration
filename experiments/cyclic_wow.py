@@ -7,8 +7,8 @@ from util.wow_detection import PeakTracker
 
 
 def get_avg(logfreq, frames_per_rotation):
-	print(f"Testing cycle length: {frames_per_rotation} frames")
 	num_views = len(logfreq) // frames_per_rotation
+	print(f"Testing cycle length: {frames_per_rotation} frames as {num_views} slices")
 	l = num_views * frames_per_rotation
 	padding = len(track.freqs) - l
 	# print(l, len(track.freqs), padding, logfreq.shape)

@@ -4,7 +4,7 @@ import numpy as np
 from scipy.ndimage.filters import uniform_filter1d
 
 from PyQt5 import QtWidgets
-from util import io_ops, units, widgets, config
+from util import io_ops, units, widgets, config, filters
 from util.filters import make_odd
 from util.spectrum_flat import spectrum_from_audio_stereo
 from util.widgets import PlotMainWindow
@@ -38,6 +38,7 @@ class MainWindow(PlotMainWindow):
 		self.s_band_lower.setRange(0, 22000)
 		self.s_band_lower.setSingleStep(1000)
 		self.s_band_lower.setValue(13000)
+		self.s_band_lower.setSuffix(" Hz")
 		self.s_band_lower.setToolTip("Lower frequency boundary of noise floor")
 
 		self.s_band_upper = QtWidgets.QSpinBox()
@@ -45,6 +46,7 @@ class MainWindow(PlotMainWindow):
 		self.s_band_upper.setRange(1000, 22000)
 		self.s_band_upper.setSingleStep(1000)
 		self.s_band_upper.setValue(17000)
+		self.s_band_upper.setSuffix(" Hz")
 		self.s_band_upper.setToolTip("Upper frequency boundary of noise floor")
 
 		self.s_clip_lower = QtWidgets.QSpinBox()
@@ -52,6 +54,7 @@ class MainWindow(PlotMainWindow):
 		self.s_clip_lower.setRange(-200, 0)
 		self.s_clip_lower.setSingleStep(1)
 		self.s_clip_lower.setValue(-120)
+		self.s_clip_lower.setSuffix(" dB")
 		self.s_clip_lower.setToolTip("Lower gain boundary of noise floor")
 
 		self.s_clip_upper = QtWidgets.QSpinBox()
@@ -59,6 +62,7 @@ class MainWindow(PlotMainWindow):
 		self.s_clip_upper.setRange(-200, 0)
 		self.s_clip_upper.setSingleStep(1)
 		self.s_clip_upper.setValue(-85)
+		self.s_clip_upper.setSuffix(" dB")
 		self.s_clip_upper.setToolTip("Upper gain boundary of noise floor")
 
 		self.c_channels = QtWidgets.QComboBox(self)
@@ -69,7 +73,21 @@ class MainWindow(PlotMainWindow):
 		self.s_smoothing.setRange(.001, 5)
 		self.s_smoothing.setSingleStep(.01)
 		self.s_smoothing.setValue(.11)
-		self.s_smoothing.setToolTip("Smoothing in s.")
+		self.s_smoothing.setSuffix(" s")
+		self.s_smoothing.setToolTip("Smoothing window")
+
+		self.s_transition = QtWidgets.QSpinBox()
+		self.s_transition.setRange(0, 22000)
+		self.s_transition.setSingleStep(1000)
+		self.s_transition.setValue(0)
+		self.s_transition.setSuffix(" Hz")
+		self.s_transition.setToolTip("Highpass transition of effect - turn up to only stabilize high frequencies")
+
+		self.s_transition_order = QtWidgets.QSpinBox()
+		self.s_transition_order.setRange(1, 10)
+		self.s_transition_order.setSingleStep(1)
+		self.s_transition_order.setValue(1)
+		self.s_transition_order.setToolTip("Increase to make transition sharper")
 
 		self.l_result = QtWidgets.QLabel("Result: ")
 
@@ -86,6 +104,8 @@ class MainWindow(PlotMainWindow):
 		self.qgrid.addWidget(self.s_clip_lower, 2, 5)
 		self.qgrid.addWidget(self.s_clip_upper, 2, 6)
 		self.qgrid.addWidget(self.s_smoothing, 2, 7)
+		self.qgrid.addWidget(self.s_transition, 2, 8)
+		self.qgrid.addWidget(self.s_transition_order, 2, 9)
 
 		self.central_widget.setLayout(self.qgrid)
 
@@ -161,6 +181,8 @@ class MainWindow(PlotMainWindow):
 			# get input
 			clip_lower = self.s_clip_lower.value()
 			clip_upper = self.s_clip_upper.value()
+			transition = self.s_transition.value()
+			order = self.s_transition_order.value()
 			signal, sr, num_channels = io_ops.read_file(self.file_src)
 			for channel_i in range(num_channels):
 				# map curve to channel output
@@ -176,7 +198,13 @@ class MainWindow(PlotMainWindow):
 
 				# create factor for each sample
 				final_fac = np.interp(np.arange(len(signal)), self.t * sr, fac)
-				signal[:, channel_i] *= final_fac
+				boosted = signal[:, channel_i] * final_fac
+				if transition:
+					lp = filters.butter_bandpass_filter(signal[:, channel_i], 0, transition, sr, order=order)
+					hp = filters.butter_bandpass_filter(boosted, transition, sr//2, sr, order=order)
+					signal[:, channel_i] = lp + hp
+				else:
+					signal[:, channel_i] = boosted
 
 			signal = units.normalize(signal)
 			io_ops.write_file(self.file_src, signal, sr, num_channels, "_decompressed")

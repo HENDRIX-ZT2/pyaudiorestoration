@@ -56,23 +56,36 @@ for fft_size in fft_sizes:
 			y_out = np.empty(signal_res.shape, dtype=signal_res.dtype)
 			# take FFT for each channel
 			for channel_i in range(num_channels):
-				signal_res_pad = fourier.fix_length(signal_res, n + fft_size // 2, axis=0)
-				# take FFT for each channel
-				fft_signal = np.array(fourier.stft(signal_res_pad[:, channel_i], n_fft=fft_size, step=hop))
-				# todo - always take noise from left channel?
-				fft_noise = fourier.get_mag(noise_res[:, 0], fft_size, hop, "blackmanharris", zeropad=1)
+				std = []
+				for i in range(hop):
+					lengths = [(0, 0)] * signal_res.ndim
+					lengths[0] = (i, 0)
+					signal_res_pad = np.pad(signal_res, lengths)
 
-				db_signal = np.array(to_dB(to_mag(fft_signal)))
-				db_noise = to_dB(fft_noise)
-				noise_profile = np.average(db_noise, axis=1, keepdims=True)
-				# spectrum = np.where(db_signal > (noise_profile + gain), db_signal, db_signal + gain)
-				gain_mask = np.where(db_signal > (noise_profile + gain + overhead), 0, gain)
-				# plt.imshow(db_signal, aspect='auto', origin='lower', cmap='magma')
-				# # plt.plot(noise_profile)
-				# plt.title(f"fft: {fft_size} hop: {hop} sr: {sr_trg}")
-				fac = to_fac(gain_mask)
-
-				y_out[:, channel_i] = fourier.istft(fft_signal * fac, length=n, hop_length=hop)
-
-			# plt.show()
-			io_ops.write_file(signal_path, y_out, sr_trg, num_channels, suffix=f" fft={fft_size}, gain={gain}, overhead={overhead}")
+					signal_res_pad = fourier.fix_length(signal_res_pad, n+i + fft_size // 2, axis=0)
+					# take FFT for each channel
+					fft_signal = np.array(fourier.stft(signal_res_pad[:, channel_i], n_fft=fft_size, step=hop))
+					time_gain = np.average(fft_signal[200:,:], axis=0)
+					# plt.plot(time_gain, label=f"{i}")
+					std.append(time_gain.std())
+				optimal_pad = np.argmax(std)
+				print(optimal_pad)
+				plt.plot(list(range(hop)), std, label=f"std")
+				# 	# todo - always take noise from left channel?
+				# 	fft_noise = fourier.get_mag(noise_res[:, 0], fft_size, hop, "blackmanharris", zeropad=1)
+				#
+				# 	db_signal = np.array(to_dB(to_mag(fft_signal)))
+				# 	db_noise = to_dB(fft_noise)
+				# 	noise_profile = np.average(db_noise, axis=1, keepdims=True)
+				# 	# spectrum = np.where(db_signal > (noise_profile + gain), db_signal, db_signal + gain)
+				# 	gain_mask = np.where(db_signal > (noise_profile + gain + overhead), 0, gain)
+				# 	# plt.imshow(db_signal, aspect='auto', origin='lower', cmap='magma')
+				# 	# # plt.plot(noise_profile)
+				# 	# plt.title(f"fft: {fft_size} hop: {hop} sr: {sr_trg}")
+				# 	fac = to_fac(gain_mask)
+				#
+				# 	y_out[:, channel_i] = fourier.istft(fft_signal * fac, length=n, hop_length=hop)
+				#
+				# io_ops.write_file(signal_path, y_out, sr_trg, num_channels, suffix=f" fft={fft_size}, gain={gain}, overhead={overhead}")
+			plt.legend()
+			plt.show()

@@ -42,6 +42,7 @@ class MainWindow(widgets.MainWindow):
 			(file_menu, "Exit", self.close, "", "exit"),
 			(edit_menu, "Play/Pause", self.props.audio_widget.play_pause, "SPACE"),
 			(edit_menu, "Load Noise Profile", self.canvas.load_noise_profile, "CTRL+N"),
+			(edit_menu, "Gauge offset", self.canvas.sniff_offset, "CTRL+G"),
 		)
 		self.add_to_menu(button_data)
 
@@ -343,7 +344,30 @@ class Canvas(spectrum.SpectrumCanvas):
 					self.noise_profile = to_dB(np.average(spec_data[:, f0:f1], axis=1))
 					self.redraw_plot()
 
+	def sniff_offset(self):
+		stds = np.empty(self.hop, dtype=float)
+		offsets = np.arange(self.hop)
+		signal = self.spectra[0].signal[:, 0]
+		# 3000 - 12000 Hz
+		l = int(round(3000 * self.fft_size / self.sr))
+		u = int(round(12000 * self.fft_size / self.sr))
+		for i in offsets:
+			print(f"Testing offset: {i}")
+			# pre-pad
+			# lengths = [(0, 0)] * signal_res.ndim
+			# lengths[0] = (i, 0)
+			signal_res_pad = np.pad(signal, (i, 0))
 
+			signal_res_pad = fourier.fix_length(signal_res_pad, len(signal) + i + self.fft_size // 2, axis=0)
+			# take FFT for each channel
+			fft_signal = np.array(fourier.stft(signal_res_pad, n_fft=self.fft_size, step=self.hop))
+			time_gain = np.average(fft_signal[l:u, :], axis=0)
+			# plt.plot(time_gain, label=f"{i}")
+			stds[i] = time_gain.std()
+		optimal_pad = np.argmax(stds)
+		print(optimal_pad)
+		self.parent.ax.plot(offsets, stds, label=f"std")
+		# plt.show()
 
 if __name__ == '__main__':
 	widgets.startup(MainWindow)

@@ -159,7 +159,7 @@ def lag_to_pos(sampletimes, lags, num_imput_samples):
 	print(speeds[i])
 
 
-def run(filenames, signal_data=None, speed_curve=None, resampling_mode="Linear", sinc_quality=50, use_channels=(0, ),
+def run(filenames, signal_data=None, speed_curve=None, resampling_mode="Linear", sinc_quality=50, use_channels=(),
 		prog_sig=None, lag_curve=None, suffix=""):
 	if prog_sig:
 		prog_sig.notifyProgress.emit(0)
@@ -208,8 +208,12 @@ def run(filenames, signal_data=None, speed_curve=None, resampling_mode="Linear",
 			# speeds = np.diff(lag_curve[:,1])/np.diff(lag_curve[:,0])+1
 			# sampletimes = (lag_curve[:-1,0]+np.diff(lag_curve[:,0])/2)*sr
 			# sample_at = speed_to_pos(sampletimes, speeds)
-		# filter channels to avoid crash
-		use_channels = [channel for channel in use_channels if channel < signal.shape[1]]
+		if use_channels:
+			# filter channels to avoid crash if channels are requested that don't exist
+			use_channels = [channel for channel in use_channels if channel < signal.shape[1]]
+		else:
+			# if no channels are requested, just resample all
+			use_channels = tuple(range(num_channels))
 		with log_duration("Resampling"):
 			length = len(sample_at)
 			# create multichannel output array

@@ -140,19 +140,20 @@ class Canvas(spectrum.SpectrumCanvas):
 		return speed_curve
 
 	def run_resample_batch(self):
-		filenames = QtWidgets.QFileDialog.getOpenFileNames(
+		file_paths = QtWidgets.QFileDialog.getOpenFileNames(
 			self.parent, 'Open Files for Batch Resampling',
 			self.parent.cfg["dir_in"], "Audio files (*.flac *.wav)")[0]
-		if filenames:
-			self.resample_files(filenames)
+		if file_paths:
+			self.resample_files(file_paths, batch=True)
 
-	def resample_files(self, files):
-		channels = self.props.files_widget.files[0].channel_widget.channels
-		if self.markers and channels:
+	def resample_files(self, file_paths, batch=False):
+		if self.markers:
 			self.resampling_thread.settings = {
-				"filenames"			: files,
-				"speed_curve"		: self.get_speed_curve(),
-				"use_channels"		: channels}
+				"filenames"			: file_paths,
+				"speed_curve"		: self.get_speed_curve()
+			}
+			if not batch:
+				self.resampling_thread.settings["use_channels"] = self.props.files_widget.files[0].channel_widget.channels
 			self.props.output_widget.bump_index()
 			self.props.output_widget.to_cfg(self.resampling_thread.settings)
 			self.resampling_thread.start()

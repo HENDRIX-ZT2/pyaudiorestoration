@@ -31,10 +31,11 @@ class ConfigStorer:
         if self.isVisible():
             # logging.info(f"Loading {self.__class__.__name__}")
             for varname in self.vars_for_saving:
-                try:
-                    setattr(self, varname, cfg[varname])
-                except:
-                    logging.exception(f"Could not set {varname}")
+                if varname in cfg:
+                    try:
+                        setattr(self, varname, cfg[varname])
+                    except:
+                        logging.exception(f"Could not set {varname}")
 
 
 def get_icon(name):
@@ -488,6 +489,10 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
     def tolerance(self):
         return self.tolerance_s.value()
 
+    @tolerance.setter
+    def tolerance(self, t):
+        self.tolerance_s.setValue(float(t))
+
     @property
     def adapt(self):
         return self.adapt_c.currentText()
@@ -553,7 +558,7 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
 
 
 class FiltersWidget(QtWidgets.QGroupBox, ConfigStorer):
-    vars_for_saving = ()
+    vars_for_saving = ("highpass", "lowpass")
 
     bands_changed = QtCore.pyqtSignal(tuple)
 
@@ -585,6 +590,21 @@ class FiltersWidget(QtWidgets.QGroupBox, ConfigStorer):
     def update_bands(self):
         self.bands_changed.emit((self.band0_s.value(), self.band1_s.value()))
 
+    @property
+    def highpass(self):
+        return self.band0_s.value()
+
+    @highpass.setter
+    def highpass(self, t):
+        self.band0_s.setValue(float(t))
+
+    @property
+    def lowpass(self):
+        return self.band1_s.value()
+
+    @lowpass.setter
+    def lowpass(self, t):
+        self.band1_s.setValue(float(t))
 
 class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
     vars_for_saving = ("smoothing", "ignore_phase", "match_speed")

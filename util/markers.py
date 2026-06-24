@@ -1,12 +1,14 @@
 import logging
 
 import numpy as np
+import scipy
 from vispy import scene
 from scipy import interpolate
 
 # custom modules
 from util import wow_detection, filters
-from util.wow_detection import nan_helper
+from util.filters import make_odd
+from util.wow_detection import nan_helper, interp_nans
 
 line_settings = {"method": 'gl', "antialias": False, "width": 2.0}
 wide_line_settings = {"method": 'gl', "antialias": False, "width": 5.0}
@@ -490,6 +492,7 @@ class AzimuthLine(BaseMarker):
 		BaseMarker.__init__(self, vispy_canvas, color_def, color_sel)
 		self.times = np.asarray(times)
 		self.lags = np.asarray(lags)
+		self.lags_raw = np.asarray(lags)
 		self.corrs = np.asarray(corrs)
 		self.lower = lower
 		self.upper = upper
@@ -535,6 +538,20 @@ class AzimuthLine(BaseMarker):
 		# api inconsistency
 		# self.visuals[0].set_data(color=c)
 		self.visuals[1].color = c
+
+	def update_reject(self, overlap, reject):
+		# copy untouched data
+		self.lags[:] = self.lags_raw
+		# reject if correlation is too weak
+		self.lags[np.abs(self.corrs) < reject] = np.NaN
+		# lerp rejected lags
+		interp_nans(self.lags)
+		# filter outliers
+		self.lags = scipy.ndimage.median_filter(self.lags, size=make_odd(overlap), footprint=None, output=None,
+												mode='nearest', cval=0.0, origin=0, )
+		self.d = np.mean(self.lags)
+		self.lags_data = np.stack((self.times, self.lags), axis=-1)
+		self.visuals[0].set_data(pos=self.lags_data)
 
 	def toggle(self):
 		"""Toggle this line's selection state"""

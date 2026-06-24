@@ -64,6 +64,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.dropout_widget.setVisible(False)
 		self.parent.props.noise_widget.setVisible(False)
 		self.parent.props.alignment_widget.smoothing_s.valueChanged.connect(self.update_smoothing)
+		self.parent.props.alignment_widget.reject_s.valueChanged.connect(self.update_reject)
 		self.parent.props.display_widget.fft_zeropad = 1
 		self.freeze()
 
@@ -230,17 +231,22 @@ class Canvas(spectrum.SpectrumCanvas):
 						for i, (x, d) in enumerate(zip(sample_times, sample_lags)):
 							time_delay, corr = self.correlate_sources(x-dur, x+dur, d, lower, upper, "hann")
 							corrs[i] = corr
-							# reject if correlation is too weak
-							if abs(corr) < reject:
-								out[i, 1] = np.NaN
-							else:
-								out[i, 1] = d+time_delay
-						# lerp rejected lags
-						interp_nans(out[:, 1])
-						# filter outliers
-						out[:, 1] = scipy.ndimage.median_filter(out[:, 1], size=make_odd(overlap), footprint=None, output=None, mode='nearest', cval=0.0, origin=0,)
+							out[i, 1] = d + time_delay
+
 						marker = markers.AzimuthLine(self, out[:, 0], out[:, 1], corrs, lower, upper)
+						marker.update_reject(overlap, reject)
 						self.props.undo_stack.push(AddAction((marker,)))
+
+	def update_reject(self, reject):
+
+		selected = self.selected_markers
+		overlap = self.parent.props.alignment_widget.overlap_s.value()
+		for lag in selected:
+			try:
+				lag.update_reject(overlap, reject)
+			except:
+				logging.exception(f"rejecting failed")
+		self.lag_line.update()
 
 
 

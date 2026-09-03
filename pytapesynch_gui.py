@@ -127,7 +127,7 @@ class Canvas(spectrum.SpectrumCanvas):
 		sample_delay, corr = find_delay(
 			filters.butter_bandpass_filter(ref_sig, lower, upper, sr, order=3),
 			filters.butter_bandpass_filter(src_sig, lower, upper, sr, order=3),
-			ignore_phase=self.parent.props.alignment_widget.ignore_phase, window_name=window_name)
+			invert_phase=self.parent.props.alignment_widget.invert_phase, window_name=window_name)
 		print(f"sample_delay: {sample_delay}")
 		# correct delay for speed change
 		return sample_delay / sr * speed, corr

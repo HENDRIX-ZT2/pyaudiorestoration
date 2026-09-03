@@ -607,13 +607,13 @@ class FiltersWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.band1_s.setValue(float(t))
 
 class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
-    vars_for_saving = ("smoothing", "ignore_phase", "match_speed")
+    vars_for_saving = ("smoothing", "invert_phase", "match_speed")
 
     def __init__(self, ):
         super().__init__("Alignment")
-        self.ignore_phase_b = QtWidgets.QCheckBox("Ignore phase")
-        self.ignore_phase_b.setChecked(False)
-        self.ignore_phase_b.setToolTip(
+        self.invert_phase_b = QtWidgets.QCheckBox("Invert Phase")
+        self.invert_phase_b.setChecked(False)
+        self.invert_phase_b.setToolTip(
             "Turn on if phase of sources does not match and you want the strongest relationship.\n"
             "Consistent negative values indicate you should invert one source.")
 
@@ -655,7 +655,7 @@ class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.reject_s.setToolTip("Reject alignment value if correlation goes lower than this value")
 
         buttons = (
-            (self.ignore_phase_b,), (self.match_speed_b,), (corr_l, self.corr_l), (self.smoothing_l, self.smoothing_s),
+            (self.invert_phase_b,), (self.match_speed_b,), (corr_l, self.corr_l), (self.smoothing_l, self.smoothing_s),
             (self.win_l, self.win_s), (self.overlap_l, self.overlap_s), (self.reject_l, self.reject_s)
         )
         vbox(self, grid(buttons))
@@ -669,11 +669,11 @@ class AlignmentWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.smoothing_s.setValue(v)
 
     @property
-    def ignore_phase(self): return self.ignore_phase_b.isChecked()
+    def invert_phase(self): return self.invert_phase_b.isChecked()
 
-    @ignore_phase.setter
-    def ignore_phase(self, is_checked):
-        self.ignore_phase_b.setChecked(is_checked)
+    @invert_phase.setter
+    def invert_phase(self, is_checked):
+        self.invert_phase_b.setChecked(is_checked)
 
     @property
     def match_speed(self): return self.match_speed_b.isChecked()

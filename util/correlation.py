@@ -13,7 +13,7 @@ def xcorr(a, b, mode='full'):
 	return scipy.signal.correlate(a, b, mode=mode, method='auto')
 
 
-def find_delay(a, b, ignore_phase=False, window_name=None):
+def find_delay(a, b, invert_phase=False, window_name=None):
 	"""Calculate the delay between 1D signals a and b"""
 	if window_name:
 		a *= scipy.signal.get_window(window_name, len(a))
@@ -23,8 +23,8 @@ def find_delay(a, b, ignore_phase=False, window_name=None):
 	res = xcorr(a, b, mode="same")
 	# logging.debug(f"len(a) {len(a)}, len(b) {len(b)}, len(res) {len(res)}")
 	# we are not necessarily interested in the largest positive value if the correlation is negative
-	if ignore_phase:
-		logging.warning("Ignoring phase")
+	if invert_phase:
+		logging.warning("Inverting phase")
 		max_index = np.argmax(np.abs(res))
 	else:
 		# get the index of the strongest correlation

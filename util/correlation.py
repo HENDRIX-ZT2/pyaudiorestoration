@@ -13,22 +13,20 @@ def xcorr(a, b, mode='full'):
 	return scipy.signal.correlate(a, b, mode=mode, method='auto')
 
 
-def find_delay(a, b, ignore_phase=False, window_name=None):
+def find_delay(a, b, invert_phase=False, window_name=None):
 	"""Calculate the delay between 1D signals a and b"""
 	if window_name:
 		a *= scipy.signal.get_window(window_name, len(a))
 		b *= scipy.signal.get_window(window_name, len(b))
+	# we are not necessarily interested in the largest positive value if the correlation is negative
+	if invert_phase:
+		b = -b
 	# correlate both sources
 	# scipy differs from numpy: The output is the same size as in1, centered with respect to the ‘full’ output.
 	res = xcorr(a, b, mode="same")
 	# logging.debug(f"len(a) {len(a)}, len(b) {len(b)}, len(res) {len(res)}")
-	# we are not necessarily interested in the largest positive value if the correlation is negative
-	if ignore_phase:
-		logging.warning("Ignoring phase")
-		max_index = np.argmax(np.abs(res))
-	else:
-		# get the index of the strongest correlation
-		max_index = np.argmax(res)
+	# get the index of the strongest correlation
+	max_index = np.argmax(res)
 	# logging.debug(f"max_index {max_index}")
 	# refine the index with interpolation to get the most accurate fit
 	i_peak, corr = parabolic(res, max_index)

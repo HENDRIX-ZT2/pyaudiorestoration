@@ -413,9 +413,14 @@ class SpectrumCanvas(scene.SceneCanvas):
 		self.spec_view.camera.rect = (0, 0, self.duration, units.to_mel(self.f_max))
 
 	def scroll_view(self, t):
+		c = self.speed_view.camera
+		# continuous scroll
+		# if self.props.audio_widget.scroll_view:
+		# 	c.pan((t-c.rect.center[0], 0))
+		# scrub when cursor leaves FOV
 		if self.props.audio_widget.scroll_view:
-			c = self.speed_view.camera
-			c.pan((t-c.rect.center[0], 0))
+			if t > c.rect.right:
+				c.pan((t - c.rect.left, 0))
 
 	# fast stuff that does not require rebuilding everything
 	def set_colormap(self, cmap):
@@ -434,7 +439,7 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 	def on_mouse_press(self, event):
 		# audio cursor
-		if event.button == 1 and not "Control" in event.modifiers:
+		if event.button == 1 and not event.modifiers:
 			b = self.px_to_spectrum(event.pos)
 			# are they in spec_view?
 			if b is not None:

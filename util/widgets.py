@@ -733,6 +733,14 @@ class DropsWidget(QtWidgets.QGroupBox, ConfigStorer):
         vbox(self, grid(buttons))
 
     @property
+    def gain(self):
+        return self.gain_s.value()
+
+    @gain.setter
+    def gain(self, v):
+        self.gain_s.setValue(v)
+
+    @property
     def before_after(self):
         return self.before_after_s.value()
 

@@ -369,7 +369,7 @@ class DropoutSample(BaseMarker):
 	color_def = (1, 1, 1, .5)
 	color_sel = (0, 0, 1, 1)
 
-	def __init__(self, vispy_canvas, a, b, surrounding=None):
+	def __init__(self, vispy_canvas, a, b, surrounding=None, gain=None):
 		BaseMarker.__init__(self, vispy_canvas, self.color_def, self.color_sel)
 		self.a = a
 		self.b = b
@@ -385,6 +385,10 @@ class DropoutSample(BaseMarker):
 			self.surrounding = self.vispy_canvas.props.dropout_widget.surrounding
 		else:
 			self.surrounding = surrounding
+		if gain is None:
+			self.gain = 0.0
+		else:
+			self.gain = gain
 		# create & store speed visual
 		r = 0.1
 		rect = scene.Rectangle(center=self.speed_center, width=r, height=r, radius=0)
@@ -419,11 +423,11 @@ class DropoutSample(BaseMarker):
 		self.set_color(self.color_sel)
 
 	def to_cfg(self):
-		return self.a[0], self.a[1], self.b[0], self.b[1], self.surrounding
+		return self.a[0], self.a[1], self.b[0], self.b[1], self.surrounding, self.gain
 
 	@classmethod
-	def from_cfg(cls, canvas, a0, a1, b0, b1, surrounding):
-		return cls(canvas, (a0, a1), (b0, b1), surrounding)
+	def from_cfg(cls, canvas, a0, a1, b0, b1, surrounding, gain):
+		return cls(canvas, (a0, a1), (b0, b1), surrounding, gain)
 
 
 class LagSample(BaseMarker):

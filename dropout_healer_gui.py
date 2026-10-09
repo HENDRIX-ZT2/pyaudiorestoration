@@ -71,7 +71,9 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.output_widget.mode_l.setVisible(False)
 		self.parent.props.output_widget.mode_c.setVisible(False)
 		self.freeze()
+		# todo use different signal because this only toggles when the user leaves the widget
 		self.parent.props.dropout_widget.surrounding_s.editingFinished.connect(self.update_surrounding)
+		self.parent.props.dropout_widget.gain_s.editingFinished.connect(self.update_gain)
 
 	@property
 	def dropouts(self):
@@ -85,6 +87,12 @@ class Canvas(spectrum.SpectrumCanvas):
 		for reg in self.dropouts:
 			if reg.selected:
 				reg.surrounding = f
+
+	def update_gain(self):
+		f = self.parent.props.dropout_widget.gain
+		for reg in self.dropouts:
+			if reg.selected:
+				reg.gain = f
 
 	def run_resample(self):
 		self.resample_files((self.filenames[1],))
@@ -154,6 +162,7 @@ class Canvas(spectrum.SpectrumCanvas):
 						fp_db = np.swapaxes(fp_db, 0, 1)
 						# calculate boost to bring dropout up to desired volume
 						gain_db = fp_db - spectrum_db[bin_l:bin_u, frame_b:frame_a]
+						gain_db += drop.gain
 						# take at least as much as the previous gain for each bin
 						np.clip(gain_db, gain_db_whole[bin_l:bin_u, frame_b:frame_a], 255, out=gain_db)
 						# store boost in mask
@@ -176,10 +185,12 @@ class Canvas(spectrum.SpectrumCanvas):
 				# are they in spec_view?
 				if a is not None and b is not None:
 					spec = self.spectra[0]
+					surrounding = self.parent.props.dropout_widget.surrounding
+					gain = self.parent.props.dropout_widget.gain
 					t_0, t_1, f_lower, f_upper = spec.get_times_freqs(a, b)
 					# direct mode
 					if "Shift" in event.modifiers:
-						marker = markers.DropoutSample(self, a, b)
+						marker = markers.DropoutSample(self, a, b, surrounding=surrounding, gain=gain)
 						self.props.undo_stack.push(AddAction((marker,)))
 					# batch detection
 					elif "Alt" in event.modifiers:
@@ -237,7 +248,7 @@ class Canvas(spectrum.SpectrumCanvas):
 								logging.exception(f"Could not refine width at peak {f_peak}")
 							t_before = t_center-half_width
 							t_after = t_center+half_width
-							marker = markers.DropoutSample(self, (t_before, f_lower), (t_after, f_upper))
+							marker = markers.DropoutSample(self, (t_before, f_lower), (t_after, f_upper), surrounding=surrounding, gain=gain)
 							_markers.append(marker)
 						self.props.undo_stack.push(AddAction(_markers))
 

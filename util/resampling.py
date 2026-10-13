@@ -7,6 +7,7 @@ import os
 from numba import jit  # , prange, guvectorize
 import math
 import threading
+import resampy
 
 from util.timing import log_duration
 
@@ -159,6 +160,19 @@ def lag_to_pos(sampletimes, lags, num_imput_samples):
 	print(speeds[i])
 
 
+def resample_expand(x, speed, fac):
+	# dither_noise = np.random.normal(0,0.01*fac,len(x))
+	# rng = np.random.default_rng()
+	# dither_noise = rng.integers(-1, 2, size=len(x))
+	# n = 1
+	# dither_noise = rng.integers(-n, n+1, size=len(x))
+	# dithered_speed = (speed*fac + dither_noise).round().astype(np.int64)
+	print(speed.shape)
+	dithered_speed = (speed*fac).round().astype(np.int64)
+	expanded = np.repeat(x, dithered_speed, axis=0)
+	return resampy.resample(expanded, fac, 1, axis=0, filter='sinc_window', num_zeros=8)
+
+
 def run(filenames, signal_data=None, speed_curve=None, resampling_mode="Linear", sinc_quality=50, use_channels=(),
 		prog_sig=None, lag_curve=None, suffix=""):
 	if prog_sig:
@@ -215,20 +229,24 @@ def run(filenames, signal_data=None, speed_curve=None, resampling_mode="Linear",
 			# if no channels are requested, just resample all
 			use_channels = tuple(range(num_channels))
 		with log_duration("Resampling"):
-			length = len(sample_at)
 			# create multichannel output array
 			num_channels = len(use_channels)
-			# first create the output array
-			output = np.empty((length, num_channels), dtype="float32")
+			if resampling_mode == "Expand":
+				speed = np.interp(np.arange(len(signal)), speed_curve[:, 0] * sr, speed_curve[:, 1])
+				output = resample_expand(signal, speed, 100.0)
+			else:
+				length = len(sample_at)
+				# first create the output array
+				output = np.empty((length, num_channels), dtype="float32")
 
-			# enumerate because maybe we want to resample less channels than input has
-			for out_channel, in_channel in enumerate(use_channels):
-				if resampling_mode == "Sinc":
-					sinc_wrapper_mt(output[:, out_channel], sample_at, signal[:, in_channel], lowpass, sinc_quality)
-				elif resampling_mode == "Linear":
-					output[:, out_channel] = np.interp(sample_at, samples_in, signal[:, in_channel], left=0.0, right=0.0)
-				if prog_sig:
-					prog_sig.notifyProgress.emit((out_channel + 1) / num_channels * 100)
+				# enumerate because maybe we want to resample less channels than input has
+				for out_channel, in_channel in enumerate(use_channels):
+					if resampling_mode == "Sinc":
+						sinc_wrapper_mt(output[:, out_channel], sample_at, signal[:, in_channel], lowpass, sinc_quality)
+					elif resampling_mode == "Linear":
+						output[:, out_channel] = np.interp(sample_at, samples_in, signal[:, in_channel], left=0.0, right=0.0)
+					if prog_sig:
+						prog_sig.notifyProgress.emit((out_channel + 1) / num_channels * 100)
 
 		# after all pieces have been resampled, write it out to the file
 		with log_duration("Writing"):

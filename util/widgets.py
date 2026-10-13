@@ -997,7 +997,8 @@ class OutputWidget(QtWidgets.QGroupBox, ConfigStorer):
         super().__init__("Output")
         self.mode_l = QtWidgets.QLabel("Mode")
         self.mode_c = QtWidgets.QComboBox(self)
-        self.mode_c.addItems(("Linear", "Sinc"))
+        # self.mode_c.addItems(("Linear", "Sinc", "Expand"))  # Expand mode is not better than sinc and much slower
+        self.mode_c.addItems(("Linear", "Sinc",))
         self.mode_c.currentIndexChanged.connect(self.toggle_resampling_quality)
         self.mode_c.setToolTip(
             "Linear is fast, but low quality. Always use Sinc for production!")

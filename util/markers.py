@@ -209,9 +209,8 @@ class TraceLine(BaseMarker):
 		self.speed += offset
 
 		# calculate the centers
-		mean_times = np.mean(self.times)
-		self.spec_center = np.array((mean_times, np.mean(self.freqs)))
-		self.speed_center = np.array((mean_times, np.mean(self.speed)))
+		self.spec_center = np.array((self.t_center, np.mean(self.freqs)))
+		self.speed_center = np.array((self.t_center, np.mean(self.speed)))
 
 		# create the speed curve visualization
 		self.speed_data = np.stack((self.times, self.speed), axis=-1)
@@ -224,6 +223,10 @@ class TraceLine(BaseMarker):
 		self.visuals.append(scene.Line(pos=spec_data, color=color_def, **line_settings))
 		# the data is in Hz, so to visualize correctly, it has to be mel'ed
 		self.visuals[1].transform = vispy_canvas.spectra[0].mel_transform
+
+	@property
+	def t_center(self):
+		return np.mean(self.times)
 
 	@property
 	def start(self):
@@ -674,6 +677,59 @@ class MasterSpeedLine(BaseLine):
 class MasterRegLine(BaseLine):
 	"""Stores and displays the average, ie. master speed curve."""
 
+	def auto_phase_offsets(self, regs):
+		"""Automatically choose integer cycle offsets for the regressions."""
+		if not regs:
+			return
+
+		pi2 = 2 * np.pi
+
+		# Ensure chronological order
+		regs.sort(key=lambda reg: reg.t_center)
+
+		t = np.array([reg.t_center for reg in regs], dtype=float)
+		omega = np.array([reg.omega for reg in regs], dtype=float)
+
+		# Phase at each center before applying its cycle offset
+		raw_phase = omega * t + np.array(
+			[reg.phase % pi2 for reg in regs]
+		)
+
+		# Equivalent phases within one 2*pi cycle
+		wrapped_phase = np.mod(raw_phase, pi2)
+
+		# Unwrapped phase, starting from the first regression's offset
+		phi = np.empty(len(regs), dtype=float)
+		phi[0] = raw_phase[0] + regs[0].offset * pi2
+
+		for i in range(1, len(regs)):
+			dt = t[i] - t[i - 1]
+
+			if dt <= 0:
+				raise ValueError(
+					"Regression centers must have distinct times."
+				)
+
+			# Predict phase advance by integrating the interpolated frequency
+			expected_advance = (
+					0.5 * (omega[i - 1] + omega[i]) * dt
+			)
+			predicted_phase = phi[i - 1] + expected_advance
+
+			# Choose the equivalent phase closest to the prediction
+			cycles = np.rint(
+				(predicted_phase - wrapped_phase[i]) / pi2
+			)
+			phi[i] = wrapped_phase[i] + cycles * pi2
+
+			# Convert the selected phase into your existing offset convention
+			regs[i].offset = int(
+				np.rint((phi[i] - raw_phase[i]) / pi2)
+			)
+
+			# Match the phase convention used by the existing update() method
+			phi[i] = raw_phase[i] + regs[i].offset * pi2
+
 	def update(self):
 		if self.vispy_canvas.regs:
 
@@ -683,32 +739,60 @@ class MasterRegLine(BaseLine):
 
 			times = self.get_times()
 
-			# sort the regressions by their time
-			self.vispy_canvas.regs.sort(key=lambda tup: tup.t_center)
+			# Sort regressions chronologically
+			self.vispy_canvas.markers.sort(
+				key=lambda reg: reg.t_center
+			)
+
+			# Automatically determine the cycle offsets
+			self.auto_phase_offsets(self.vispy_canvas.regs)
 
 			pi2 = 2 * np.pi
 			t_centers = []
 			amp_centers = []
 			phi_centers = []
+
 			for i, reg in enumerate(self.vispy_canvas.regs):
 				if i == 0:
-					phi_centers.append(reg.omega * times[0] + reg.phase % pi2 + reg.offset * pi2)
+					phi_centers.append(
+						reg.omega * times[0]
+						+ reg.phase % pi2
+						+ reg.offset * pi2
+					)
 					t_centers.append(times[0])
 					amp_centers.append(reg.amplitude)
-				phi_centers.append(reg.omega * reg.t_center + reg.phase % pi2 + reg.offset * pi2)
+
+				phi_centers.append(
+					reg.omega * reg.t_center
+					+ reg.phase % pi2
+					+ reg.offset * pi2
+				)
 				t_centers.append(reg.t_center)
 				amp_centers.append(reg.amplitude)
+
 				if i == len(self.vispy_canvas.regs) - 1:
-					phi_centers.append(reg.omega * times[-1] + reg.phase % pi2 + reg.offset * pi2)
+					phi_centers.append(
+						reg.omega * times[-1]
+						+ reg.phase % pi2
+						+ reg.offset * pi2
+					)
 					t_centers.append(times[-1])
 					amp_centers.append(reg.amplitude)
-			sine_curve = np.sin(np.interp(times, t_centers, phi_centers))
-			amplitudes_sampled = np.interp(times, t_centers, amp_centers)
 
-			# create the speed curve visualization, boost it a bit to distinguish from the raw curves
-			self.data = np.stack((times, 1.5 * amplitudes_sampled * sine_curve), axis=-1)
+			sine_curve = np.sin(
+				np.interp(times, t_centers, phi_centers)
+			)
+			amplitudes_sampled = np.interp(
+				times, t_centers, amp_centers
+			)
+
+			self.data = np.stack(
+				(times, 1.5 * amplitudes_sampled * sine_curve),
+				axis=-1,
+			)
 		else:
 			self.data = self.empty
+
 		self.line_speed.set_data(pos=self.data)
 
 

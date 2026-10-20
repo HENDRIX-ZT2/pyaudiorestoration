@@ -40,7 +40,8 @@ class BoundsBrush:
 			spec_canvas.selection_box.update_coords(np.array(verts))
 
 class LivePeakBrush:
-	MAX_LEN = 100
+	# todo - make this parametric from GUI
+	MAX_LEN = 0.5  # sec for the trace
 
 	@classmethod
 	def update_selection_widget(cls, trail, spec_canvas):
@@ -65,20 +66,23 @@ class LivePeakBrush:
 			spec_canvas.selection_box.update_coords(np.array(verts))
 
 	@classmethod
-	def follow_track(cls, deltas, frame, frame_0, inc, old_freq, spec_canvas, spec_data, tolerance, verts):
+	def follow_track(cls, deltas, frame, frame_0, inc, old_freq, spec_canvas, spec_data, tolerance_oct, verts):
+		max_len = cls.MAX_LEN / 2.0 / (spec_canvas.hop / spec_canvas.sr)
+		# the tolerance is around the center so take half of it
+		half_tolerance_oct = tolerance_oct / 2
 		while True:
 			# prepare borders for sampling next fft
-			f_low, f_high = cls.freq_plus_tolerance(old_freq, tolerance)
+			f_low, f_high = cls.freq_plus_tolerance(old_freq, tolerance_oct)
 			b_low, b_high = cls.get_bin_limits(f_low, f_high, spec_canvas)
 
 			freq = cls.get_peak(spec_data, spec_canvas, frame, b_low, b_high, allow_window=False)
-			# log2 frequency delta per sec = octaves per sec
-			d_f = abs((np.log2(freq) - np.log2(old_freq)) / (spec_canvas.hop / spec_canvas.sr))  # / 12
-			# print(d_f)
+			# log2 frequency delta
+			# this is just a frequency step, irrespective of time, to prevent jumping between
+			d_f = abs((np.log2(freq) - np.log2(old_freq)))
 			deltas.append(d_f)
-			if frame != frame_0 and d_f > 3.5:
+			if frame != frame_0 and d_f > half_tolerance_oct:
 				break
-			if abs(frame - frame_0) > cls.MAX_LEN:
+			if abs(frame - frame_0) > max_len:
 				break
 			if inc>0:
 				verts.append((spec_canvas.frame_2_time(frame), freq, -2.0))

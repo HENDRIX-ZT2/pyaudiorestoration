@@ -22,40 +22,128 @@ def interp_nans(y):
 	y[nans] = np.interp(x(nans), x(~nans), y[~nans])
 
 
+class BoundsBrush:
+
+	@classmethod
+	def update_selection_widget(cls, trail, spec_canvas):
+		if trail is not None:
+			a = spec_canvas.px_to_spectrum(trail[0])
+			b = spec_canvas.px_to_spectrum(trail[-1])
+			l, r = sorted((a[0], b[0]))
+			b, t = sorted((a[1], b[1]))
+			verts = []
+			verts.append((l, b, -2.0))
+			verts.append((l, t, -2.0))
+			verts.append((r, t, -2.0))
+			verts.append((r, b, -2.0))
+			verts.append((l, b, -2.0))
+			spec_canvas.selection_box.update_coords(np.array(verts))
+
+class LivePeakBrush:
+	MAX_LEN = 100
+
+	@classmethod
+	def update_selection_widget(cls, trail, spec_canvas):
+		if trail is not None:
+			current_pos = trail[-1]
+			pos = spec_canvas.px_to_spectrum(current_pos)
+			t = pos[0]
+			f = pos[1]
+			frame_0 = spec_canvas.time_2_frame(t)
+			tolerance = spec_canvas.props.tracing_widget.tolerance / 12
+			# grow forward from mouse position
+			old_freq = f
+			frame = frame_0
+			spec = spec_canvas.spectra[0]
+			spec_data = spec.fft_storage[spec.key]
+			deltas = []
+			verts = []
+			cls.follow_track(deltas, frame, frame_0, +1, old_freq, spec_canvas, spec_data, tolerance, verts)
+			cls.follow_track(deltas, frame, frame_0, -1, old_freq, spec_canvas, spec_data, tolerance, verts)
+
+			# print(deltas, max(deltas))
+			spec_canvas.selection_box.update_coords(np.array(verts))
+
+	@classmethod
+	def follow_track(cls, deltas, frame, frame_0, inc, old_freq, spec_canvas, spec_data, tolerance, verts):
+		while True:
+			# prepare borders for sampling next fft
+			f_low, f_high = cls.freq_plus_tolerance(old_freq, tolerance)
+			b_low, b_high = cls.get_bin_limits(f_low, f_high, spec_canvas)
+
+			freq = cls.get_peak(spec_data, spec_canvas, frame, b_low, b_high, allow_window=False)
+			# log2 frequency delta per sec = octaves per sec
+			d_f = abs((np.log2(freq) - np.log2(old_freq)) / (spec_canvas.hop / spec_canvas.sr))  # / 12
+			# print(d_f)
+			deltas.append(d_f)
+			if frame != frame_0 and d_f > 3.5:
+				break
+			if abs(frame - frame_0) > cls.MAX_LEN:
+				break
+			if inc>0:
+				verts.append((spec_canvas.frame_2_time(frame), freq, -2.0))
+			else:
+				verts.insert(0, (spec_canvas.frame_2_time(frame), freq, -2.0))
+			frame += inc
+			old_freq = float(freq)
+
+
+class EdgeBrush:
+
+	@classmethod
+	def update_selection_widget(cls, trail, spec_canvas):
+		if trail is not None:
+			verts = []
+			tolerance = spec_canvas.props.tracing_widget.tolerance / 12
+			for v in trail:
+				p = spec_canvas.px_to_spectrum(v)
+				if p is not None:
+					logfreq = np.log2(p[1])
+					f_low = np.power(2, (logfreq - tolerance))
+					verts.append((p[0], f_low, -2.0))
+			for v in reversed(trail):
+				p = spec_canvas.px_to_spectrum(v)
+				if p is not None:
+					logfreq = np.log2(p[1])
+					f_low = np.power(2, (logfreq + tolerance))
+					verts.append((p[0], f_low, -2.0))
+			if verts:
+				verts.append(verts[0])
+			spec_canvas.selection_box.update_coords(np.array(verts))
+
+
 # todo: create a hann window in log space?
-# or just lerp 0, 1, 0 for NL, i, NU
+# or just lerp 0, 1, 0 for b_low, i, b_high
 
 class Track:
 
 	tooltip = ""
+	# minimal amount of bins to consider
+	min_bins = 4
 
-	def __init__(self, spectrum, signal, trail, fft_size, hop, sr, tolerance_st=1, adaptation_mode="Linear",
+	def __init__(self, spec_canvas, spectrum, signal, trail, hop, sr, tolerance_st=1, adaptation_mode="Linear",
 				 dB_cutoff=75):
 
 		# parameters of the fourier transform that was used
-		self.fft_size = fft_size
 		self.hop = hop
 		self.sr = sr
+		self.spec_canvas = spec_canvas
 		self.spectrum = spectrum
 		self.signal = signal
-		self.fft_freqs = fourier.fft_freqs(fft_size, sr)
+		self.fft_freqs = fourier.fft_freqs(spec_canvas.effective_fft_size, sr)
 
 		# start and stop reading the FFT data here, unless...
 		self.frame_0 = 0
 		self.num_bins, self.frame_1 = self.spectrum.shape
 
+		trail = self.pick_trail(trail)
 		# prepare the given frequency trail and build the output data
 		self.sample_trail(trail)
 
-		# upper and lower limit of the current band
-		self.NL = 0
-		self.NU = 0
 		# we define the tolerance in semitones
 		# on log2 scale, one semitone is 1/12 (of an octave = 1)
 		self.tolerance = tolerance_st / 12
 
-		# minimal amount of bins to consider
-		self.min_bins = 4
 		self.trace()
 		# post-pro, remove NANs
 		interp_nans(self.freqs)
@@ -64,127 +152,78 @@ class Track:
 		pass
 
 	def sample_trail(self, trail):
-		# TODO: vectorize this: a[a[:,0].argsort()]
-		trail.sort(key=lambda tup: tup[0])
+		trail = np.array(trail)
+		trail = trail[trail[:, 0].argsort()]
 		times_raw = [d[0] for d in trail]
 		freqs_raw = [d[1] for d in trail]
 
 		self.ensure_frames(times_raw[0], times_raw[-1])
-		self.times = np.linspace(self.frame_0 * self.hop / self.sr, self.frame_1 * self.hop / self.sr,
-								 self.frame_1 - self.frame_0)
-		# this is both the input, ie. drawn frequency curve, and the output - the freqs are altered in place
+		self.times = np.linspace(self.spec_canvas.frame_2_time(self.frame_0), self.spec_canvas.frame_2_time(self.frame_1), self.frame_1 - self.frame_0)
+		# this is both the input, i.e. drawn frequency curve, and the output - the freqs are altered in place
 		self.freqs = np.interp(self.times, times_raw, freqs_raw)
-
-	def bin_2_freq(self, b):
-		return b / self.fft_size * self.sr
-
-	def freq_2_bin(self, f):
-		return max(1, min(self.num_bins - 1, int(round(f * self.fft_size / self.sr))))
-
-	def time_2_frame(self, t):
-		return int(t * self.sr / self.hop)
 
 	def ensure_frames(self, t0, t1):
 		# we have specified start and stop times, which is the usual case
 		if t0:
 			# make sure we force start and stop at the ends!
-			self.frame_0 = max(self.frame_0, self.time_2_frame(t0))
+			self.frame_0 = max(self.frame_0, self.spec_canvas.time_2_frame(t0))
 		if t1:
-			self.frame_1 = min(self.frame_1, self.time_2_frame(t1))
+			self.frame_1 = min(self.frame_1, self.spec_canvas.time_2_frame(t1))
 		if self.frame_0 == self.frame_1:
 			logging.warning("No point in tracing just one FFT")
 
-	def set_bin_limits(self, fL, fU):
+	@classmethod
+	def get_bin_limits(cls, f_low, f_high, spec_canvas):
 		"""Turn boundary frequencies into valid bin indices, enforcing a minimal bin width"""
 		# Just to be sure: clamp to valid frequency range
-		fL = max(1.0, fL)
-		fU = min(self.sr / 2, fU)
+		f_low = max(1.0, f_low)
+		f_high = min(spec_canvas.sr / 2, f_high)
 		# make sure that the bins are far enough apart
-		self.NL = self.freq_2_bin(fL)
-		self.NU = self.freq_2_bin(fU)
-		while (self.NU - self.NL) < self.min_bins:
-			self.NL -= 1
-			self.NU += 1
+		b_low = spec_canvas.freq_2_bin(f_low)
+		b_high = spec_canvas.freq_2_bin(f_high)
+		while (b_high - b_low) < cls.min_bins:
+			b_low -= 1
+			b_high += 1
+		return b_low, b_high
 
-	def freq_plus_tolerance(self, freq, tolerance=None):
-		# so take our input frequency, log2 it, +- tolerance
+	@classmethod
+	def freq_plus_tolerance(cls, freq, tolerance_oct):
+		# so take our input frequency, log2 it, +- tolerance (in octaves)
 		# and take power of two of result to go back to Hz
-		if tolerance is None:
-			tolerance = self.tolerance
 		logfreq = np.log2(freq)
-		fL = np.power(2, (logfreq - tolerance))
-		fU = np.power(2, (logfreq + tolerance))
-		return fL, fU
+		f_low = np.power(2, (logfreq - tolerance_oct))
+		f_high = np.power(2, (logfreq + tolerance_oct))
+		return f_low, f_high
 
-	def get_peak(self, i, allow_window=False):
-		fft_frame = self.spectrum[:, self.frame_0 + i]
-		fft_clip = fft_frame[self.NL:self.NU]
-		window_len = self.NU-self.NL
+	@classmethod
+	def get_peak(cls, spectrum, spec_canvas, frame_i, b_low, b_high, allow_window=False):
+		fft_frame = spectrum[:, frame_i]
+		fft_clip = fft_frame[b_low:b_high]
+		window_len = b_high - b_low
 		if window_len > 4 and allow_window:
 			window = np.hanning(window_len)
 		else:
 			window = np.ones(window_len)
 		peak_in_clip = np.argmax(fft_clip * window)
-		# print(peak_i)
-		peak_in_frame = self.NL + peak_in_clip
+		peak_in_frame = b_low + peak_in_clip
 		# make sure i_raw is really a peak and not just a border effect
-		if self.is_peak(fft_frame, peak_in_frame):
+		if cls.is_peak(fft_frame, peak_in_frame):
 			# do quadratic interpolation to get more accurate peak
 			peak_in_frame, amp_db = parabolic(fft_frame, peak_in_frame)
-		return self.bin_2_freq(peak_in_frame)
+		return spec_canvas.bin_2_freq(peak_in_frame)
 
 	@staticmethod
 	def is_peak(fft_frame, peak_i):
-		"""Returns true if the peak is an actual peak, ie. its amplitude surpasses its neighboring bins"""
+		"""Returns true if the peak is an actual peak, i.e. its amplitude surpasses its neighboring bins"""
 		return fft_frame[peak_i-1] < fft_frame[peak_i] > fft_frame[peak_i+1]
 
+	def track_towards(self, local_frame_i, raw_freq):
+		f_low, f_high = self.freq_plus_tolerance(raw_freq, self.tolerance)
+		b_low, b_high = self.get_bin_limits(f_low, f_high, self.spec_canvas)
+		return self.get_peak(self.spectrum, self.spec_canvas, self.frame_0+local_frame_i, b_low, b_high, allow_window=False)
 
-def adapt_band(freqs, num_bins, freq_2_bin, tolerance, adaptation_mode, i):
-	"""
-	The goal of this function is, given the last frequency peaks, to return suitable boundaries for the next frequency detection
-	
-	freqs: the input frequency list
-	num_bins: the amount of bins, for limiting
-	freq_2_bin: the factor a freq has to be multiplied with to get the corresponding bin
-	tolerance: tolerance above and below peak, in semitones (1/12th of an octave)
-	adaptation_mode: how should the "prediction" happen?
-	
-	maxrise: tolerance for absolute rise between a frame, in semitones (redundant? - could be a fraction of tolerance), should this be done here or in postpro?
-	"""
-	logfreq = np.log2(freqs[i])
-	if adaptation_mode == "None":
-		# keep the initial limits
-		# implement this elsewhere?
-		pass
-	elif adaptation_mode == "Constant":
-		# do nothing to the freq
-		pass
-	elif adaptation_mode == "Linear":
-		# repeat the trend and predict the freq of the next bin to get the boundaries accordingly
-		# this should be done in logspace
-		if len(freqs) > 1:
-			delta = logfreq - np.log2(freqs[i - 2])
-			logfreq += delta
-	elif adaptation_mode == "Average":
-		# take the average of n deltas,
-		# and use the preceding freqs as the starting point to avoid outliers?
-		logfreqs = np.log2(freqs[max(0, i - 3):i + 1])
-		deltas = np.diff(logfreqs)
-		logfreq = logfreqs[0]
-		if len(deltas): logfreq += np.nanmean(deltas) * len(logfreqs)
-	# print(deltas,logfreq)
-
-	fL = np.power(2, (logfreq - tolerance / 12))
-	fU = np.power(2, (logfreq + tolerance / 12))
-	NL = max(1, min(num_bins - 3, int(round(fL * freq_2_bin))))
-	NU = min(num_bins - 2, max(1, int(round(fU * freq_2_bin))))
-
-	if NU - NL > 5:
-		window = np.interp(np.arange(NL, NU), (NL, np.power(2, logfreq) * freq_2_bin, NU - 1), (0, 1, 0))
-	# print(len(window),window)
-	else:
-		window = np.ones(NU - NL)
-	return NL, NU, window, logfreq
+	def pick_trail(self, trail):
+		return trail
 
 
 def fit_sin(tt, yy, assumed_freq=None):
@@ -253,81 +292,26 @@ def trace_sine_reg(speed_curve, t0, t1, rpm=None):
 	return res["amp"], res["omega"], res["phase"], 0
 
 
-class CenterOfGravity(Track):
-	name = 'Center of Gravity'
-
-	def COG(self, i):
-		# adapted from Czyzewski et al. (2007)
-		# 18 calculate the COG with hanned frequency importance
-		# error in the printed formula: the divisor also has to contain the hann window
-		weighted_magnitudes = np.hanning(self.NU - self.NL) * self.spectrum[self.NL:self.NU, i]
-		# 19 convert the center of gravity from log2 space back into linear Hz space
-		return 2 ** (np.sum(weighted_magnitudes * np.log2(self.fft_freqs[self.NL:self.NU])) / np.sum(
-			weighted_magnitudes))
-
-	def trace(self):
-		# adapted from Czyzewski et al. (2007)
-
-		# #calculate the first COG
-		# SCoct0  = self.COG( self.frame_0 )
-
-		# #TODO: use uniform tolerance for upper and lower limit?
-		# #16a,b
-		# #the limits for the first time frame
-		# #constant for all time frames
-		# #SCoct[0]: the the first COG
-		# dfL = SCoct0 - np.log2(fL)
-		# dfU = np.log2(fU) - SCoct0
-
-		fL, fU = self.freq_plus_tolerance(self.freqs[0])
-		self.set_bin_limits(fL, fU)
-		for i in range(len(self.freqs)):
-			# 18 calculate the COG with hanned frequency importance
-			self.freqs[i] = self.COG(self.frame_0 + i)
-			# 15a,b
-			# set the limits for the consecutive frame [i+1]
-			# based on those of the first frame
-			fL, fU = self.freq_plus_tolerance(self.freqs[i])
-			self.set_bin_limits(fL, fU)
-
-
-class PeakTracker(Track):
+class PeakTracker(Track, EdgeBrush):
 	name = 'Peak'
-	tooltip = "Tracks the mouse input to the loudest peak frequency"
+	tooltip = "Follows the mouse input to the loudest peak frequency"
 
 	def trace(self):
 		# this is mostly driven from the user input and never strays from it
-		for i, raw_freq in enumerate(self.freqs):
-			fL, fU = self.freq_plus_tolerance(raw_freq)
-			self.set_bin_limits(fL, fU)
+		for local_frame_i, raw_freq in enumerate(self.freqs):
 			# overwrite with new result
-			self.freqs[i] = self.get_peak(i)
+			self.freqs[local_frame_i] = self.track_towards(local_frame_i, raw_freq)
 
 
-class PeakTrackTracker(Track):
-	name = 'Peak Track'
-	tooltip = "Follows the first peak frequency established"
+class PeakTrackTracker(Track, LivePeakBrush):
+	name = 'Magnetic'
+	tooltip = "Grows the track from the mouse position"
 
-	def trace(self):
-		"""start with user tolerance, then decrease down to min_bins and proceed with freq_plus_tolerance(self.freqs[i-1]"""
-		# possible approaches
-		# start with user tolerance, then decrease down to min_bins and proceed with freq_plus_tolerance(self.freqs[i-1]
-		# or
-		# work as usual from raw_freq, but tag outliers as NaN, then do a second pass to interp them from the surrounding
-		# either lerp or with peak interpolation
-		freq = self.freqs[0]
-		for i, raw_freq in enumerate(self.freqs):
-			if i > 2:
-				tolerance = self.tolerance / 2
-			else:
-				tolerance = self.tolerance
-			fL, fU = self.freq_plus_tolerance(freq, tolerance)
-			self.set_bin_limits(fL, fU)
-			# overwrite with new result
-			self.freqs[i] = self.get_peak(i, allow_window=False)
+	def pick_trail(self, trail):
+		return self.spec_canvas.selection_box.visuals[0].pos
 
 
-class ZeroCrossingTracker(Track):
+class ZeroCrossingTracker(Track, BoundsBrush):
 	name = 'Zero-Crossing'
 	tooltip = "Track the distance between zero-crossings of the waveform. Good for flutter detection of clean signals"
 
@@ -335,11 +319,11 @@ class ZeroCrossingTracker(Track):
 
 		# bandpass the signal to the range of the selection + tolerance
 		# todo - instead, create a spectral mask and apply it?
-		fL, _ = self.freq_plus_tolerance(np.min(self.freqs))
-		_, fU = self.freq_plus_tolerance(np.max(self.freqs))
+		f_low, _ = self.freq_plus_tolerance(np.min(self.freqs), self.tolerance)
+		_, f_high = self.freq_plus_tolerance(np.max(self.freqs), self.tolerance)
 		s_0 = int(self.times[0] * self.sr)
 		s_1 = int(self.times[-1] * self.sr)
-		filtered_sig = filters.butter_bandpass_filter(self.signal[s_0:s_1, 0], fL, fU, self.sr, order=3)
+		filtered_sig = filters.butter_bandpass_filter(self.signal[s_0:s_1, 0], f_low, f_high, self.sr, order=3)
 
 		# detect zero-crossings
 		crossings = zero_crossings(filtered_sig)
@@ -358,7 +342,7 @@ class ZeroCrossingTracker(Track):
 		self.freqs[:] = np.interp(self.times, crossings[:len(deltas_conv)] / self.sr + self.times[0], self.sr / 2 / deltas_conv)
 
 
-class PartialsTracker(Track):
+class PartialsTracker(Track, BoundsBrush):
 	name = 'Partials'
 
 	# super slow
@@ -379,38 +363,38 @@ class PartialsTracker(Track):
 		import librosa
 		fl = np.min(self.freqs)
 		fu = np.max(self.freqs)
-		# pitches, magnitudes = librosa.piptrack(S=np.array(self.spectrum[self.frame_0:self.frame_1]), sr=self.sr, n_fft=self.fft_size, hop_length=self.hop, fmin=150.0, fmax=4000.0, threshold=0.1)
-		pitches, magnitudes = librosa.piptrack(y=self.signal[:, 0], sr=self.sr, n_fft=self.fft_size, hop_length=self.hop, fmin=fl, fmax=fu, threshold=0.15)
+		# pitches, magnitudes = librosa.piptrack(S=np.array(self.spectrum[self.frame_0:self.frame_1]), sr=self.sr, n_fft=self.spec_canvas.effective_fft_size, hop_length=self.hop, fmin=150.0, fmax=4000.0, threshold=0.1)
+		pitches, magnitudes = librosa.piptrack(y=self.signal[:, 0], sr=self.sr, n_fft=self.spec_canvas.effective_fft_size, hop_length=self.hop, fmin=fl, fmax=fu, threshold=0.15)
 		# plt.imshow(pitches[:, :], aspect="auto", interpolation="nearest", origin='lower')
 		plt.yscale('symlog')
 		plt.pcolormesh(pitches)
 		plt.show()
 
 
-class FreehandTracker(Track):
+class FreehandTracker(Track, EdgeBrush):
 	name = 'Freehand Draw'
 
 	def trace(self):
 		pass
 
-class CorrelationTracker(Track):
+class CorrelationTracker(Track, BoundsBrush):
 	name = 'Correlation'
 	tooltip = "Compare the spectra for each segment and track the offsets between"
 
 	def trace(self):
-		fL = min(self.freqs)
-		fU = max(self.freqs)
-		self.set_bin_limits(fL, fU)
-		num_freq_samples = (self.NU - self.NL) * 4
+		f_low = min(self.freqs)
+		f_high = max(self.freqs)
+		b_low, b_high = self.get_bin_limits(f_low, f_high, self.spec_canvas)
+		num_freq_samples = (b_high - b_low) * 4
 
-		log_fft_freqs = np.log2(self.fft_freqs[self.NL:self.NU])
+		log_fft_freqs = np.log2(self.fft_freqs[b_low:b_high])
 
 		linspace_fft_freqs = np.linspace(log_fft_freqs[0], log_fft_freqs[-1], num_freq_samples)
 
 		# create a new array to store FFTs resampled on a log2 scale
 		resampled = np.ones((num_freq_samples, len(self.freqs) + 1), )
 		for i in range(len(self.freqs)):
-			interpolator = scipy.interpolate.interp1d(log_fft_freqs, self.spectrum[self.NL:self.NU, i], kind='quadratic')
+			interpolator = scipy.interpolate.interp1d(log_fft_freqs, self.spectrum[b_low:b_high, i], kind='quadratic')
 			resampled[:, i] = interpolator(linspace_fft_freqs)
 
 		wind = np.hanning(num_freq_samples)
@@ -431,12 +415,12 @@ class CorrelationTracker(Track):
 		# on log scale, +1 means double frequency or speed
 		speed = speed / num_freq_samples * (log_fft_freqs[-1] - log_fft_freqs[0])
 
-		log_mean_freq = np.log2((fL + fU) / 2)
+		log_mean_freq = np.log2((f_low + f_high) / 2)
 		# convert to scale and from log2 scale
 		np.power(2, (log_mean_freq + speed), self.freqs)
 
 
-class SineRegression(Track):
+class SineRegression(Track, BoundsBrush):
 	name = 'Sine Regression'
 	tooltip = "Perform a regression on an area of the master speed curve to yield a sine fit"
 

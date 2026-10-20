@@ -20,7 +20,6 @@ from util.undo import AddAction, MoveAction, MergeAction
 from util.config import logging_setup
 from util.units import to_dB, to_fac, to_mel, to_Hz
 from util.widgets import vbox2
-from util.wow_detection import wow_detectors
 
 logging_setup()
 HEAD = 3

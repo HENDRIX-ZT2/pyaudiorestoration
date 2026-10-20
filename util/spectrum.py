@@ -10,6 +10,7 @@ from util import vispy_ext, qt_threads, units, colormaps
 from util.markers import Cursor, SelectionBox
 
 from util.undo import DeleteAction
+from util.wow_detection import wow_detectors
 
 
 class FlatRed(BaseColormap):
@@ -287,6 +288,27 @@ class SpectrumCanvas(scene.SceneCanvas):
 
 		self.freeze()
 
+
+	@property
+	def effective_fft_size(self):
+		return self.fft_size * self.zeropad
+
+	@property
+	def num_bins(self):
+		return self.effective_fft_size / 2 + 1
+
+	def bin_2_freq(self, b):
+		return b / self.effective_fft_size * self.sr
+
+	def freq_2_bin(self, f):
+		return max(1, min(self.num_bins - 1, int(round(f * self.effective_fft_size / self.sr))))
+
+	def time_2_frame(self, t):
+		return int(t * self.sr / self.hop)
+
+	def frame_2_time(self, f):
+		return f * self.hop / self.sr
+
 	def setup_grid(self, label_color):
 		grid = self.central_widget.add_grid(margin=10)
 		grid.spacing = 0
@@ -502,37 +524,10 @@ class SpectrumCanvas(scene.SceneCanvas):
 		# selection box
 		if event.button == 1 and "Control" in event.modifiers:
 			trail = event.trail()
-			if trail is not None:
-				verts = []
-				# bounding box widget
-				if self.props.tracing_widget.mode in ("Partials", "Correlation"):
-					a = self.px_to_spectrum(trail[0])
-					b = self.px_to_spectrum(trail[-1])
-					l, r = sorted((a[0], b[0]))
-					b, t = sorted((a[1], b[1]))
-					verts.append((l, b, -2.0))
-					verts.append((l, t, -2.0))
-					verts.append((r, t, -2.0))
-					verts.append((r, b, -2.0))
-					verts.append((l, b, -2.0))
-				# brush widget
-				else:
-					tolerance = self.props.tracing_widget.tolerance / 12
-					for v in trail:
-						p = self.px_to_spectrum(v)
-						if p is not None:
-							logfreq = np.log2(p[1])
-							fL = np.power(2, (logfreq - tolerance))
-							verts.append((p[0], fL, -2.0))
-					for v in reversed(trail):
-						p = self.px_to_spectrum(v)
-						if p is not None:
-							logfreq = np.log2(p[1])
-							fL = np.power(2, (logfreq + tolerance))
-							verts.append((p[0], fL, -2.0))
-				self.selection_box.visuals[0].pos = np.array(verts)
+			tracker_class = wow_detectors[self.props.tracing_widget.mode]
+			tracker_class.update_selection_widget(trail, self)
 		else:
-			self.selection_box.visuals[0].pos = self.selection_box.default_pos
+			self.selection_box.update_coords()
 
 	def _get_closest(self, items, a, b):
 		assert len(items) == len(a)

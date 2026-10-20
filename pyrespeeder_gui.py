@@ -184,8 +184,7 @@ class Canvas(spectrum.SpectrumCanvas):
 				else:
 					spec = self.spectra[0]
 					track = wow_detectors[settings.mode](
-						spec.fft_storage[spec.key], spec.signal, trail, self.fft_size*self.zeropad,
-						self.hop, spec.sr, settings.tolerance, settings.adapt)
+						self, spec.fft_storage[spec.key], spec.signal, trail, self.hop, spec.sr, settings.tolerance, settings.adapt)
 					marker = markers.TraceLine(self, track.times, track.freqs, auto_align=settings.auto_align)
 				self.props.undo_stack.push(AddAction((marker,)))
 				return

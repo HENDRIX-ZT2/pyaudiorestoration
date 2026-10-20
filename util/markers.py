@@ -320,10 +320,16 @@ class SelectionBox(BaseMarker):
 		self.width = 1.0
 		self.height = 1.0
 		self.default_pos = np.array(((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
-		poly = scene.Polygon(pos=self.default_pos, color=None, border_color=color_def, triangulate=False)
+		poly = scene.Line(pos=self.default_pos, color=color_def, connect='strip')
 		self.visuals.append(poly)
 		# the data is in Hz, so to visualize correctly, it has to be mel'ed
 		self.visuals[0].transform = vispy_canvas.spectra[0].mel_transform
+
+	def update_coords(self, verts=None):
+		if verts is None or len(verts) == 0:
+			self.visuals[0].set_data(pos=self.default_pos)
+		else:
+			self.visuals[0].set_data(pos=verts)
 
 class PanSample(BaseMarker):
 	"""Stores a single sinc regression's data and displays it"""

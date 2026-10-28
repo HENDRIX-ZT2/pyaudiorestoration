@@ -381,6 +381,17 @@ class FreehandTracker(Track, EdgeBrush):
 	def trace(self):
 		pass
 
+class PointDrawTracker(Track):
+	name = 'Point Draw'
+	tooltip = "Place control points with Ctrl+Click, drag them to shape the curve, then Apply"
+
+	def trace(self):
+		pass
+
+	@classmethod
+	def update_selection_widget(cls, trail, spec_canvas):
+		# control points are placed on press, so there is no brush preview
+		pass
 class CorrelationTracker(Track, BoundsBrush):
 	name = 'Correlation'
 	tooltip = "Compare the spectra for each segment and track the offsets between"

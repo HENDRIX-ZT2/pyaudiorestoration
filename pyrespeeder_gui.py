@@ -67,6 +67,11 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.parent.props.alignment_widget.setVisible(False)
 		self.parent.props.dropout_widget.setVisible(False)
 		self.parent.props.noise_widget.setVisible(False)
+		# interactive point drawing state
+		self.point_draft = None
+		self.drag_point = None
+		self.last_trace_mode = self.parent.props.tracing_widget.mode
+		self.parent.props.tracing_widget.trace_c.currentIndexChanged.connect(self.on_trace_mode_changed)
 		self.freeze()
 
 	@property
@@ -162,7 +167,73 @@ class Canvas(spectrum.SpectrumCanvas):
 		self.master_speed.update()
 		self.master_reg_speed.update()
 
+	def on_trace_mode_changed(self, *_):
+		# leaving Point Draw discards any unapplied control points
+		if self.last_trace_mode == "Point Draw" and self.point_draft is not None:
+			self.cancel_point_draft()
+		self.last_trace_mode = self.parent.props.tracing_widget.mode
+
+	def get_point_draft(self):
+		if self.point_draft is None:
+			self.point_draft = markers.PointDraft(self)
+			self.point_draft.show()
+		return self.point_draft
+
+	def cancel_point_draft(self):
+		if self.point_draft is not None:
+			self.point_draft.remove()
+			self.point_draft = None
+		self.drag_point = None
+
+	def commit_point_draft(self):
+		if self.point_draft is None:
+			return
+		if len(self.point_draft.points) < 2:
+			logging.warning("Place at least two control points before applying")
+			return
+		times, freqs = self.point_draft.commit_data()
+		marker = markers.TraceLine(self, times, freqs, auto_align=self.parent.props.tracing_widget.auto_align)
+		self.cancel_point_draft()
+		self.props.undo_stack.push(AddAction((marker,)))
+
+	def on_mouse_press(self, event):
+		if self.filenames[0] and event.button == 1 and self.parent.props.tracing_widget.mode == "Point Draw":
+			if "Control" in event.modifiers:
+				# place a new control point
+				pos = self.px_to_spectrum(event.pos)
+				if pos is not None:
+					self.get_point_draft().add_point(pos[0], pos[1])
+					event.handled = True
+					return
+			else:
+				# grab an existing control point for dragging
+				if self.point_draft is not None:
+					ind = self.point_draft.nearest_point(event.pos)
+					if ind is not None:
+						self.drag_point = ind
+						event.handled = True
+						return
+		spectrum.SpectrumCanvas.on_mouse_press(self, event)
+
+	def on_mouse_move(self, event):
+		if self.drag_point is not None:
+			pos = self.px_to_spectrum(event.pos)
+			if pos is not None:
+				self.point_draft.move_point(self.drag_point, pos[0], pos[1])
+		else:
+			spectrum.SpectrumCanvas.on_mouse_move(self, event)
+
+	def on_key_press(self, event):
+		if self.point_draft is not None:
+			if event.key == "Enter":
+				self.commit_point_draft()
+			elif event.key == "Escape":
+				self.cancel_point_draft()
 	def on_mouse_release(self, event):
+		if self.parent.props.tracing_widget.mode == "Point Draw":
+			# points are placed on press, so never build a trace from the trail here
+			self.drag_point = None
+			return
 		if self.filenames[0] and (event.trail() is not None) and event.button == 1 and "Control" in event.modifiers:
 			# event.trail() is integer pixel coordinates on vispy canvas
 			trail = [self.px_to_spectrum(click) for click in event.trail()]

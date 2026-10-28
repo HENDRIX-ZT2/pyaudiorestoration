@@ -464,6 +464,11 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.autoalign_b.setChecked(True)
         self.autoalign_b.setToolTip("Should new traces be aligned with existing ones?")
 
+        self.points_b = QtWidgets.QPushButton("Apply Points")
+        self.points_b.setToolTip("Create a trace from the placed control points. Enter commits, Escape cancels.")
+        self.points_b.clicked.connect(self.apply_points)
+        self.points_b.setVisible(False)
+
         show_l = QtWidgets.QLabel("Show")
         self.show_c = QtWidgets.QComboBox(self)
         self.show_c.addItems(("Both", "Traces", "Regressions"))
@@ -472,7 +477,7 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
         buttons = (
             (show_l, self.show_c), (trace_l, self.trace_c), (adapt_l, self.adapt_c), (self.rpm_l, self.rpm_c),
             (self.phase_l, self.phase_s), (tolerance_l, self.tolerance_s), (target_l, self.target_s),
-            (self.target_b,), (self.autoalign_b,))
+            (self.target_b,), (self.autoalign_b,), (self.points_b,))
         vbox(self, grid(buttons))
 
         self.toggle_trace_mode()
@@ -513,6 +518,11 @@ class TracingWidget(QtWidgets.QGroupBox, ConfigStorer):
         self.rpm_c.setVisible(b)
         self.phase_l.setVisible(b)
         self.phase_s.setVisible(b)
+        self.points_b.setVisible(mode == "Point Draw")
+
+    def apply_points(self):
+        if getattr(self, "canvas", None) is not None and hasattr(self.canvas, "commit_point_draft"):
+            self.canvas.commit_point_draft()
 
     def update_show_settings(self):
         show = self.show_c.currentText()

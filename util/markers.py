@@ -279,6 +279,108 @@ class TraceLine(BaseMarker):
 		return list(self.times), list(self.freqs), self.offset
 
 
+class PointDraft(BaseMarker):
+	"""A trace draft built from draggable control points, committed as a TraceLine"""
+
+	# max distance in pixels to grab a control point for dragging
+	GRAB_RADIUS = 12
+	# cap on the preview curve samples, to keep dragging responsive on long selections
+	MAX_PREVIEW = 5000
+
+	def __init__(self, vispy_canvas):
+
+		color_def = (1, 1, 0, .9)
+		BaseMarker.__init__(self, vispy_canvas, color_def, color_def)
+		# control points in spectrum coordinates, in placement order
+		self.points = []
+		self.drag_index = None
+
+		# create the speed curve preview
+		self.visuals.append(scene.Line(pos=np.empty((0, 2)), color=color_def, **wide_line_settings))
+		# create the spectral preview, the data is in Hz, so to visualize correctly,
+		# it has to be mel'ed, like the trace lines
+		self.visuals.append(scene.Line(pos=np.empty((0, 3)), color=color_def, **wide_line_settings))
+		self.visuals[1].transform = vispy_canvas.spectra[0].mel_transform
+		# create the control point handles
+		self.visuals.append(scene.visuals.Markers(pos=np.empty((0, 3)), face_color=color_def, size=10))
+
+	def show(self):
+		# the curve previews live in their own views, the handles only in the spectrum view
+		self.visuals[0].parent = self.parents[0]
+		self.visuals[1].parent = self.parents[1]
+		self.visuals[2].parent = self.parents[1]
+
+	def remove(self):
+		# a draft is never part of the marker container, so only unparent the visuals
+		for v in self.visuals:
+			v.parent = None
+
+	def add_point(self, t, f):
+		self.points.append((t, f))
+		self.rebuild()
+
+	def move_point(self, index, t, f):
+		self.points[index] = (t, f)
+		self.rebuild()
+
+	def nearest_point(self, click):
+		"""Return the index of the control point under the pixel click position, if any"""
+		if not self.points or click is None:
+			return None
+		pts_px = np.array([self.vispy_canvas.spectrum_to_px((t, f))[0:2] for t, f in self.points])
+		d = np.sum((pts_px - np.asarray(click)[0:2]) ** 2, axis=1)
+		ind = int(d.argmin())
+		if d[ind] <= self.GRAB_RADIUS ** 2:
+			return ind
+		return None
+
+	def sorted_points(self):
+		"""The control points sorted by time, duplicates in time averaged out"""
+		times = np.array([p[0] for p in self.points])
+		freqs = np.array([p[1] for p in self.points])
+		order = np.argsort(times)
+		times, freqs = times[order], freqs[order]
+		unique_times, inverse = np.unique(times, return_inverse=True)
+		unique_freqs = np.array([freqs[inverse == i].mean() for i in range(len(unique_times))])
+		return unique_times, unique_freqs
+
+	def sample_curve(self, max_samples=None):
+		"""Sample the interpolated curve through the control points at FFT frame resolution"""
+		times, freqs = self.sorted_points()
+		canvas = self.vispy_canvas
+		frame_0 = max(0, canvas.time_2_frame(times[0]))
+		frame_1 = max(frame_0 + 1, canvas.time_2_frame(times[-1]))
+		num_samples = max(2, frame_1 - frame_0)
+		if max_samples is not None:
+			num_samples = min(num_samples, max_samples)
+		out_times = np.linspace(canvas.frame_2_time(frame_0), canvas.frame_2_time(frame_1), num_samples)
+		if len(times) > 1:
+			# interpolate in log frequency, so the curve is smooth in speed
+			spline = interpolate.CubicSpline(times, np.log2(freqs), bc_type="natural")
+			out_freqs = np.power(2.0, spline(out_times))
+		else:
+			out_freqs = np.full(len(out_times), freqs[0])
+		return out_times, out_freqs
+
+	def rebuild(self):
+		times, freqs = self.sample_curve(max_samples=self.MAX_PREVIEW)
+		# update the speed curve preview
+		speed_data = np.stack((times, np.log2(freqs)), axis=-1)
+		self.visuals[0].set_data(pos=speed_data, color=self.color_def)
+		# update the spectral preview
+		spec_data = np.stack((times, freqs, np.ones(len(times), dtype=np.float32) * -2), axis=-1)
+		self.visuals[1].set_data(pos=spec_data, color=self.color_def)
+		# update the control point handles
+		if self.points:
+			pts = np.array([(t, f, -2.0) for t, f in self.points], dtype=np.float32)
+		else:
+			pts = np.empty((0, 3))
+		self.visuals[2].set_data(pos=pts, face_color=self.color_def)
+
+	def commit_data(self):
+		"""The final times and freqs for a TraceLine, sampled like a traced track"""
+		return self.sample_curve()
+
 class Cursor(BaseMarker):
 	"""Cursor for position of audio playback"""
 
